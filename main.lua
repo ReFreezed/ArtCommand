@@ -18,19 +18,57 @@ local checkerImage, checkerQuad
 
 
 
-local function printFileMessage(path, ln, s, ...)
-	print(string.format("%s:%d: "..s, path, ln, ...))
+local function printFileMessage(pathOrContext, ln, s, ...)
+	print(string.format("%s:%d: "..s, (pathOrContext.path or pathOrContext), ln, ...))
 end
 
-local function printFileError(path, ln, s, ...)
-	print(string.format("%s:%d: Error: "..s, path, ln, ...))
+local function printFileError(pathOrContext, ln, s, ...)
+	print(string.format("%s:%d: Error: "..s, (pathOrContext.path or pathOrContext), ln, ...))
 end
 
-local function printFileWarning(path, ln, s, ...)
-	print(string.format("%s:%d: Warning: "..s, path, ln, ...))
+local function printFileWarning(pathOrContext, ln, s, ...)
+	print(string.format("%s:%d: Warning: "..s, (pathOrContext.path or pathOrContext), ln, ...))
 end
 
 
+
+local function getLast(arr)
+	return arr[#arr]
+end
+
+
+
+local COMMANDS = {
+	-- command = { {argName1,defaultValue}, ... },
+
+	-- Settings, init.
+	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
+
+	-- Settings, dynamic.
+	round   = { },
+	noround = { },
+
+	-- State.
+	push     = { },
+	pop      = { },
+	color    = { {"r",1},{"g",1},{"b",1},{"a",1} },
+	font     = { {"size",12} },
+	makemask = { },
+	mask     = { },
+	nomask   = { },
+	set      = { {"var",""}, {"value",nil} },
+	origin   = { },
+	move     = { {"x",0},{"y",0} },
+	rotate   = { {"a",0} },
+	scale    = { {"x",1},{"y",1/0--[[=x]]} },
+
+	-- Drawing.
+	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	clear    = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	circle   = { {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]}, {"fill",true},{"line",false} },
+	rect     = { {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"fill",true},{"line",false} },
+	text     = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
+}
 
 local function StackEntry()
 	return {
@@ -39,9 +77,9 @@ local function StackEntry()
 	}
 end
 
-local function findInStack(stack, member, k)
-	for i = #stack, 1, -1 do
-		local v = stack[i][member][k]
+local function findInStack(context, member, k)
+	for i = #context.stack, 1, -1 do
+		local v = context.stack[i][member][k]
 		if v ~= nil then  return v  end
 	end
 	return nil -- Not found!
@@ -88,229 +126,93 @@ local function parseNumber(nStr)
 	end
 end
 
-local COMMANDS = {
-	-- command = { {argName1,defaultValue}, ... },
+local function ensureCanvas(context)
+	if context.art.canvas then  return  end
 
-	-- Settings, init.
-	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
+	context.art.canvas = LG.newCanvas(context.canvasW,context.canvasH, {msaa=(context.msaa > 1 and context.msaa or nil)})
+	context.maskCanvas = LG.newCanvas(context.canvasW,context.canvasH, {format="r8"})
 
-	-- Settings, dynamic.
-	round   = { },
-	noround = { },
+	shaderMain:send("useMask", false)
+	shaderMain:send("mask", context.maskCanvas)
 
-	-- State.
-	push     = { },
-	pop      = { },
-	color    = { {"r",1},{"g",1},{"b",1},{"a",1} },
-	font     = { {"size",12} },
-	makemask = { },
-	mask     = { },
-	nomask   = { },
-	set      = { {"var",""}, {"value",nil} },
-	origin   = { },
-	move     = { {"x",0},{"y",0} },
-	rotate   = { {"a",0} },
-	scale    = { {"x",1},{"y",1/0--[[=x]]} },
+	LG.setCanvas(context.art.canvas)
+	LG.setShader(shaderMain)
+end
 
-	-- Drawing.
-	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	clear    = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	circle   = { {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]}, {"fill",true},{"line",false} },
-	rect     = { {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"fill",true},{"line",false} },
-	text     = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
-}
+local function maybeRound(context, x)
+	return context.doRound and math.floor(x+.5) or x
+end
 
-local function loadArtFile(path)
-	print("Loading "..path.."...")
-	LG.reset()
+-- nextLineNumber|nil = processCommandLine( context, lineNumber )
+local function processCommandLine(context, ln)
+	local line = context.lines[ln]
+	if line == "" then  return ln+1  end
 
-	local art = {
-		canvas   = nil,
-		backdrop = {0,0,0,0},
-	}
+	local command, argsStr = parseCommand(line)
+	if not command then  return printFileError(context, ln, "Bad line format: %s", line)  end
 
-	local lines      = {}
-	local maskCanvas = nil
+	--
+	-- Function declaration.
+	--
+	if command == "func" then
+		local funcName, funcArgsStr = argsStr:match"(%S+)(.*)"
+		if not funcName             then  return printFileError(context, ln, "Missing function name after 'func'.")  end
+		if not funcName:find"^%a+$" then  return printFileError(context, ln, "Bad function name '%s'. Must only contain letters.", funcName)  end -- @UX: Not a good rule. Maybe require space after the command?
+		if not funcName:find"^%u"   then  return printFileError(context, ln, "Bad function name '%s'. Must start with an uppercase letter.", funcName)  end
 
-	local canvasW = LG.getWidth()
-	local canvasH = LG.getHeight()
-	local msaa    = 1
-	local doRound = false
+		if getLast(context.stack).funcs[funcName] then  printFileWarning(context, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
 
-	for line in love.filesystem.lines(path) do
-		line = line:gsub("^%s+", "")
-		table.insert(lines, (line:find"^#" and "" or line))
-	end
+		local funcInfo                         = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
+		getLast(context.stack).funcs[funcName] = funcInfo
 
-	local function ensureCanvas()
-		if art.canvas then  return  end
-
-		art.canvas = LG.newCanvas(canvasW,canvasH, {msaa=(msaa > 1 and msaa or nil)})
-		maskCanvas = LG.newCanvas(canvasW,canvasH, {format="r8"})
-
-		shaderMain:send("useMask", false)
-		shaderMain:send("mask", maskCanvas)
-
-		LG.setCanvas(art.canvas)
-		LG.setShader(shaderMain)
-	end
-
-	local function maybeRound(x)
-		return doRound and math.floor(x+.5) or x
-	end
-
-	-- nextLineNumber|nil = processCommandLine( lineNumber, line, stack )
-	local function processCommandLine(ln, line, stack)
-		if line == "" then  return ln+1  end
-
-		local command, argsStr = parseCommand(line)
-		if not command then  return printFileError(path, ln, "Bad line format: %s", line)  end
-
-		--
-		-- Function declaration.
-		--
-		if command == "func" then
-			local funcName, funcArgsStr = argsStr:match"(%S+)(.*)"
-			if not funcName             then  return printFileError(path, ln, "Missing function name after 'func'.")  end
-			if not funcName:find"^%a+$" then  return printFileError(path, ln, "Bad function name '%s'. Must only contain letters.", funcName)  end -- @UX: Not a good rule. Maybe require space after the command?
-			if not funcName:find"^%u"   then  return printFileError(path, ln, "Bad function name '%s'. Must start with an uppercase letter.", funcName)  end
-
-			if stack[#stack].funcs[funcName] then  printFileWarning(path, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
-
-			local funcInfo                = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
-			stack[#stack].funcs[funcName] = funcInfo
-
-			for funcArg in funcArgsStr:gmatch"%S+" do
-				if funcArg:find"^#" then  break  end
-				table.insert(funcInfo, funcArg)
-			end
-
-			local endLn = ln
-			local depth = 1
-
-			while true do
-				endLn = endLn + 1
-				line  = lines[endLn]
-				if not line then  return printFileError(path, ln, "Missing end of function '%s'.", funcName)  end
-
-				command = (line == "") and "" or parseCommand(line)
-				if not command then  return printFileError(path, endLn, "Bad line format: %s", line)  end
-
-				if command == "for" or command == "func" then -- @Volatile
-					depth = depth + 1
-
-				elseif command == "end" then
-					depth = depth - 1
-
-					if depth == 0 then
-						funcInfo.bodyLn2 = endLn - 1
-						return endLn+1
-					end
-				end
-			end
-
-		--
-		-- For-loop.
-		--
-		elseif command == "for" then
-			return printFileError(path, ln, "@Incomplete: Command '%s'.", command)
-
-		--
-		-- Function call.
-		--
-		elseif command:find"^%u" then
-			local funcInfo = findInStack(stack, "funcs", command)
-			if not funcInfo then  return printFileError(path, ln, "No function '%s'.", command)  end
-
-			local entry = StackEntry()
-
-			-- Arguments.
-			-- @Copypaste from below.
-			local argN         = 0
-			local ignoreBefore = 1
-
-			for pos, argStr in argsStr:gmatch"()(%S+)" do
-				if pos < ignoreBefore then
-					-- void
-
-				-- Comment
-				elseif argStr:find"^#" then
-					break
-
-				else
-					argN = argN + 1
-
-					if not funcInfo[argN] then
-						return printFileError(path, ln, "Too many arguments.")
-
-					-- Number: N
-					elseif argStr:find"^%-?%.?%d" then
-						local n = parseNumber(argStr)
-						if not n then  return printFileError(path, ln, "Failed parsing number: %s", argStr)  end
-
-						entry.vars[funcInfo[argN]] = n
-
-					-- String: "S" OR "S OR 'S' OR 'S
-					-- @Incomplete: Newlines.
-					elseif argStr:find"^[\"']" then
-						local q  = argStr:sub(1, 1)
-						local i1 = pos + 1
-						local i  = argsStr:find(q, i1, true)
-
-						if    i
-						then  entry.vars[funcInfo[argN]] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(path, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
-						else  entry.vars[funcInfo[argN]] = argsStr:sub(i1     ) ; break  end
-
-					-- Variable: Var
-					elseif argStr:find"^%u" then
-						local var = argStr -- @Incomplete: Validate variable name.
-
-						local v = stack[#stack].vars[var]--findInStack(stack, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
-						if v == nil then  return printFileError(path, ln, "No variable '%s'.", var)  end
-
-						entry.vars[funcInfo[argN]] = v
-
-					else
-						return printFileError(path, ln, "Failed parsing argument #%d: %s", argN, argStr)
-					end
-
-					print(funcInfo[argN], entry.vars[funcInfo[argN]])
-				end
-			end
-
-			if funcInfo[argN+1] then
-				return printFileError(path, ln, "Too few arguments. (Expected %d, got %d)", #funcInfo, argN)
-			end
-
-			-- Run function.
-			local funcLn = funcInfo.bodyLn1
-			table.insert(stack, entry)
-
-			while funcLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
-				funcLn = processCommandLine(funcLn, lines[funcLn], stack)
-				if not funcLn then  return printFileMessage(path, ln, "in '%s' (%s:%d)", command, path, funcInfo.bodyLn1-1)  end
-			end
-
-			table.remove(stack)
-			return ln+1
+		for funcArg in funcArgsStr:gmatch"%S+" do
+			if funcArg:find"^#" then  break  end
+			table.insert(funcInfo, funcArg)
 		end
 
-		--
-		-- Normal command.
-		--
-		local commandInfo = COMMANDS[command]
-		if not commandInfo then  return printFileError(path, ln, "Bad command '%s'.", command)  end
+		local endLn = ln
+		local depth = 1
 
-		local args = {}
+		while true do
+			endLn = endLn + 1
+			line  = context.lines[endLn]
+			if not line then  return printFileError(context, ln, "Missing end of function '%s'.", funcName)  end
 
-		for _, argInfo in ipairs(commandInfo) do
-			args[argInfo[1]] = argInfo[2]
+			command = (line == "") and "" or parseCommand(line)
+			if not command then  return printFileError(context, endLn, "Bad line format: %s", line)  end
+
+			if command == "for" or command == "func" then -- @Volatile
+				depth = depth + 1
+
+			elseif command == "end" then
+				depth = depth - 1
+
+				if depth == 0 then
+					funcInfo.bodyLn2 = endLn - 1
+					return endLn+1
+				end
+			end
 		end
 
+	--
+	-- For-loop.
+	--
+	elseif command == "for" then
+		return printFileError(context, ln, "@Incomplete: Command '%s'.", command)
+
+	--
+	-- Function call.
+	--
+	elseif command:find"^%u" then
+		local funcInfo = findInStack(context, "funcs", command)
+		if not funcInfo then  return printFileError(context, ln, "No function '%s'.", command)  end
+
+		local entry = StackEntry()
+
+		-- Arguments.
+		-- @Copypaste from below.
 		local argN         = 0
 		local ignoreBefore = 1
-		local orderN       = {number=0, string=0}
-		local visited      = {--[[ [k1]=true, ... ]]}
 
 		for pos, argStr in argsStr:gmatch"()(%S+)" do
 			if pos < ignoreBefore then
@@ -323,214 +225,328 @@ local function loadArtFile(path)
 			else
 				argN = argN + 1
 
-				-- Set flag: X
-				if type(args[argStr]) == "boolean" then -- @Incomplete: Handle the "any" type.
-					args[argStr] = true
+				if not funcInfo[argN] then
+					return printFileError(context, ln, "Too many arguments.")
 
-				-- Unset flag: !X
-				elseif argStr:find"^!%l" then
-					local k = argStr:sub(2)
-					if type(args[k]) ~= "boolean" then  return printFileError(path, ln, "Argument '%s' is not a boolean.", k)  end -- @Incomplete: Handle the "any" type.
+				-- Number: N
+				elseif argStr:find"^%-?%.?%d" then
+					local n = parseNumber(argStr)
+					if not n then  return printFileError(context, ln, "Failed parsing number: %s", argStr)  end
 
-					args[k] = false
+					entry.vars[funcInfo[argN]] = n
 
-				-- Number: nameN OR N
-				elseif argStr:find"^%l*%-?%.?%d" then
-					local k, nStr = argStr:match"^(%l*)(.+)"
-
-					-- Named.
-					if k ~= "" then
-						if not (type(args[k]) == "number" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-							return printFileError(path, ln, "Argument '%s' is not a number.", k)
-						end
-
-					-- Ordered.
-					else
-						local argInfo = findNextUnnamedArgument(commandInfo, orderN, "number")
-						if not argInfo then  return printFileError(path, ln, "Too many unnamed arguments of type 'number'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
-						k = argInfo[1]
-					end
-
-					if visited[k] then  return printFileError(path, ln, "Duplicate argument '%s'.", k)  end
-					visited[k] = true
-
-					local n, nKind = parseNumber(nStr)
-					if not n then  return printFileError(path, ln, "Failed parsing number: %s", nStr)  end
-
-					args[k] = n
-
-				-- String: name"S" OR name"S OR name'S' OR name'S OR "S" OR "S OR 'S' OR 'S
+				-- String: "S" OR "S OR 'S' OR 'S
 				-- @Incomplete: Newlines.
-				elseif argStr:find"^%l*[\"']" then
-					local k, q = argStr:match"^(%l*)(.)"
-					local i1   = pos + #k + 1
-					local i    = argsStr:find(q, i1, true)
-
-					-- Named.
-					if k ~= "" then
-						if not (type(args[k]) == "string" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-							return printFileError(path, ln, "Argument '%s' is not a string.", k)
-						end
-
-					-- Ordered.
-					else
-						local argInfo = findNextUnnamedArgument(commandInfo, orderN, "string")
-						if not argInfo then  return printFileError(path, ln, "Too many unnamed arguments of type 'string'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
-						k = argInfo[1]
-					end
-
-					if visited[k] then  return printFileError(path, ln, "Duplicate argument '%s'.", k)  end
-					visited[k] = true
+				elseif argStr:find"^[\"']" then
+					local q  = argStr:sub(1, 1)
+					local i1 = pos + 1
+					local i  = argsStr:find(q, i1, true)
 
 					if    i
-					then  args[k] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(path, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
-					else  args[k] = argsStr:sub(i1     ) ; break  end
+					then  entry.vars[funcInfo[argN]] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos, i))  end
+					else  entry.vars[funcInfo[argN]] = argsStr:sub(i1     ) ; break  end
 
-				-- Special case: Treat `set X` as `set "X"`.
-				elseif command == "set" and argN == 1 and argStr:find"^%u" then
-					orderN.string = 1
-					args.var      = argStr -- @Incomplete: Validate variable name.
+				-- Variable: Var
+				elseif argStr:find"^%u" then
+					local var = argStr -- @Incomplete: Validate variable name.
 
-				-- Variable: nameVar OR Var
-				elseif argStr:find"^%l*%u" then
-					local k, var = argStr:match"^(%l*)(.+)" -- @Incomplete: Validate variable name.
+					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
+					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
-					-- Named.
-					if k ~= "" then
-
-					-- Ordered.
-					else
-						local v = stack[#stack].vars[var]--findInStack(stack, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
-						if v == nil then  return printFileError(path, ln, "No variable '%s'.", var)  end
-
-						-- This might be confusing! We're using the type of the variable's value to assign an argument number.
-						local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
-						if not argInfo then  return printFileError(path, ln, "Too many unnamed arguments of type %s. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
-						k = argInfo[1]
-					end
-
-					if visited[k] then  return printFileError(path, ln, "Duplicate argument '%s'.", k)  end
-					visited[k] = true
-
-					local v = stack[#stack].vars[var]--findInStack(stack, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).  @Speed: Duplicate work, sometimes.
-					if v == nil then  return printFileError(path, ln, "No variable '%s'.", var)  end
-
-					if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-						return printFileError(path, ln, "Argument '%s' is not a %s.", k, type(args[k]))
-					end
-
-					args[k] = v
+					entry.vars[funcInfo[argN]] = v
 
 				else
-					return printFileError(path, ln, "Failed parsing argument #%d: %s", argN, argStr)
+					return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
 				end
 			end
 		end
 
-		-- Settings, init.
-		if command == "canvas" then
-			if art.canvas then  return printFileError(path, ln, "Cannot use '%s' after drawing commands.", command)  end
-			canvasW = (args.w >= 1) and args.w or LG.getWidth()
-			canvasH = (args.h >= 1) and args.h or LG.getHeight()
-			msaa    = args.aa^2
-
-		-- Settings, dynamic.
-		elseif command == "round" then
-			doRound = true
-		elseif command == "noround" then
-			doRound = false
-
-		-- State.
-		elseif command == "push" then
-			LG.push("all")
-		elseif command == "pop" then
-			if    love.graphics.getStackDepth() == 0
-			then  printFileWarning(path, ln, "Too many 'pop' commands! Ignoring.")
-			else  LG.pop()  end
-
-		elseif command == "color" then
-			LG.setColor(args.r, args.g, args.b, args.a)
-
-		elseif command == "font" then
-			LG.setNewFont(args.size)
-
-		elseif command == "makemask" then
-			ensureCanvas()
-			LG.setCanvas(maskCanvas)
-			LG.setShader(shaderMask)
-			LG.clear(0, 0, 0, 1)
-		elseif command == "mask" then
-			ensureCanvas()
-			shaderMain:send("useMask", true)
-			LG.setCanvas(art.canvas)
-			LG.setShader(shaderMain)
-		elseif command == "nomask" then
-			ensureCanvas()
-			shaderMain:send("useMask", false)
-			LG.setCanvas(art.canvas)
-			LG.setShader(shaderMain)
-
-		elseif command == "set" then
-			if args.var   == ""  then  return printFileError(path, ln, "Missing variable name.")  end
-			if args.value == nil then  return printFileError(path, ln, "Missing value to assign to '%s'.", args.var)  end
-			stack[#stack].vars[args.var] = args.value
-
-		elseif command == "origin" then
-			LG.origin()
-		elseif command == "move" then
-			LG.translate(maybeRound(args.x), maybeRound(args.y))
-		elseif command == "rotate" then
-			LG.rotate(args.a)
-		elseif command == "scale" then
-			LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
-
-		-- Drawing.
-		elseif command == "backdrop" then
-			art.backdrop[1] = args.r
-			art.backdrop[2] = args.g
-			art.backdrop[3] = args.b
-			art.backdrop[4] = args.a
-
-		elseif command == "clear" then
-			ensureCanvas()
-			LG.clear(args.r, args.g, args.b, args.a)
-
-		elseif command == "circle" then
-			ensureCanvas()
-			local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
-			if args.fill then  LG.circle("fill", maybeRound(args.x),maybeRound(args.y), args.r, segs)  end
-			if args.line then  LG.circle("line", maybeRound(args.x),maybeRound(args.y), args.r, segs)  end
-		elseif command == "rect" then
-			ensureCanvas()
-			if args.fill then  LG.rectangle("fill", maybeRound(args.x-args.ax*args.w),maybeRound(args.y-args.ay*args.h), maybeRound(args.w),maybeRound(args.h))  end
-			if args.line then  LG.rectangle("line", maybeRound(args.x-args.ax*args.w),maybeRound(args.y-args.ay*args.h), maybeRound(args.w),maybeRound(args.h))  end
-		elseif command == "text" then
-			ensureCanvas()
-			local font         = LG.getFont()
-			local w, textLines = font:getWrap(args.text, 1/0)
-			local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight()
-			LG.print(args.text, maybeRound(args.x-args.ax*w),maybeRound(args.y-args.ay*h))
-
-		else
-			printFileWarning(path, ln, "@Incomplete: Command '%s'. Ignoring.", command)
+		if funcInfo[argN+1] then
+			return printFileError(context, ln, "Too few arguments. (Expected %d, got %d)", #funcInfo, argN)
 		end
 
+		-- Run function.
+		local funcLn = funcInfo.bodyLn1
+		table.insert(context.stack, entry)
+
+		while funcLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
+			funcLn = processCommandLine(context, funcLn)
+			if not funcLn then  return printFileMessage(context, ln, "in '%s' (%s:%d)", command, context.path, funcInfo.bodyLn1-1)  end
+		end
+
+		table.remove(context.stack)
 		return ln+1
 	end
 
-	local stack = {StackEntry()}
-	local ln    = 1
+	--
+	-- Normal command.
+	--
+	local commandInfo = COMMANDS[command]
+	if not commandInfo then  return printFileError(context, ln, "Bad command '%s'.", command)  end
 
-	while lines[ln] do
-		ln = processCommandLine(ln, lines[ln], stack)
-		if not ln then  return nil  end
+	local args = {}
+
+	for _, argInfo in ipairs(commandInfo) do
+		args[argInfo[1]] = argInfo[2]
 	end
 
-	assert(#stack == 1)
+	local argN         = 0
+	local ignoreBefore = 1
+	local orderN       = {number=0, string=0}
+	local visited      = {--[[ [k1]=true, ... ]]}
+
+	for pos, argStr in argsStr:gmatch"()(%S+)" do
+		if pos < ignoreBefore then
+			-- void
+
+		-- Comment
+		elseif argStr:find"^#" then
+			break
+
+		else
+			argN = argN + 1
+
+			-- Set flag: X
+			if type(args[argStr]) == "boolean" then -- @Incomplete: Handle the "any" type.
+				args[argStr] = true
+
+			-- Unset flag: !X
+			elseif argStr:find"^!%l" then
+				local k = argStr:sub(2)
+				if type(args[k]) ~= "boolean" then  return printFileError(context, ln, "Argument '%s' is not a boolean.", k)  end -- @Incomplete: Handle the "any" type.
+
+				args[k] = false
+
+			-- Number: nameN OR N
+			elseif argStr:find"^%l*%-?%.?%d" then
+				local k, nStr = argStr:match"^(%l*)(.+)"
+
+				-- Named.
+				if k ~= "" then
+					if not (type(args[k]) == "number" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+						return printFileError(context, ln, "Argument '%s' is not a number.", k)
+					end
+
+				-- Ordered.
+				else
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, "number")
+					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type 'number'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'.", k)  end
+				visited[k] = true
+
+				local n, nKind = parseNumber(nStr)
+				if not n then  return printFileError(context, ln, "Failed parsing number: %s", nStr)  end
+
+				args[k] = n
+
+			-- String: name"S" OR name"S OR name'S' OR name'S OR "S" OR "S OR 'S' OR 'S
+			-- @Incomplete: Newlines.
+			elseif argStr:find"^%l*[\"']" then
+				local k, q = argStr:match"^(%l*)(.)"
+				local i1   = pos + #k + 1
+				local i    = argsStr:find(q, i1, true)
+
+				-- Named.
+				if k ~= "" then
+					if not (type(args[k]) == "string" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+						return printFileError(context, ln, "Argument '%s' is not a string.", k)
+					end
+
+				-- Ordered.
+				else
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, "string")
+					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type 'string'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'.", k)  end
+				visited[k] = true
+
+				if    i
+				then  args[k] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
+				else  args[k] = argsStr:sub(i1     ) ; break  end
+
+			-- Special case: Treat `set X` as `set "X"`.
+			elseif command == "set" and argN == 1 and argStr:find"^%u" then
+				orderN.string = 1
+				args.var      = argStr -- @Incomplete: Validate variable name.
+
+			-- Variable: nameVar OR Var
+			elseif argStr:find"^%l*%u" then
+				local k, var = argStr:match"^(%l*)(.+)" -- @Incomplete: Validate variable name.
+
+				-- Named.
+				if k ~= "" then
+
+				-- Ordered.
+				else
+					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
+					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
+
+					-- This might be confusing! We're using the type of the variable's value to assign an argument number.
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
+					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type %s. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'.", k)  end
+				visited[k] = true
+
+				local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).  @Speed: Duplicate work, sometimes.
+				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
+
+				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
+				end
+
+				args[k] = v
+
+			else
+				return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
+			end
+		end
+	end
+
+	-- Settings, init.
+	if command == "canvas" then
+		if context.art.canvas then  return printFileError(context, ln, "Cannot use '%s' after drawing commands.", command)  end
+		context.canvasW = (args.w >= 1) and args.w or LG.getWidth()
+		context.canvasH = (args.h >= 1) and args.h or LG.getHeight()
+		context.msaa    = args.aa^2
+
+	-- Settings, dynamic.
+	elseif command == "round" then
+		context.doRound = true
+	elseif command == "noround" then
+		context.doRound = false
+
+	-- State.
+	elseif command == "push" then
+		LG.push("all")
+	elseif command == "pop" then
+		if    love.graphics.getStackDepth() == 0
+		then  printFileWarning(context, ln, "Too many 'pop' commands! Ignoring.")
+		else  LG.pop()  end
+
+	elseif command == "color" then
+		LG.setColor(args.r, args.g, args.b, args.a)
+
+	elseif command == "font" then
+		LG.setNewFont(args.size)
+
+	elseif command == "makemask" then
+		ensureCanvas(context)
+		LG.setCanvas(context.maskCanvas)
+		LG.setShader(shaderMask)
+		LG.clear(0, 0, 0, 1)
+	elseif command == "mask" then
+		ensureCanvas(context)
+		shaderMain:send("useMask", true)
+		LG.setCanvas(context.art.canvas)
+		LG.setShader(shaderMain)
+	elseif command == "nomask" then
+		ensureCanvas(context)
+		shaderMain:send("useMask", false)
+		LG.setCanvas(context.art.canvas)
+		LG.setShader(shaderMain)
+
+	elseif command == "set" then
+		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
+		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
+		getLast(context.stack).vars[args.var] = args.value
+
+	elseif command == "origin" then
+		LG.origin()
+	elseif command == "move" then
+		LG.translate(maybeRound(context,args.x), maybeRound(context,args.y))
+	elseif command == "rotate" then
+		LG.rotate(args.a)
+	elseif command == "scale" then
+		LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
+
+	-- Drawing.
+	elseif command == "backdrop" then
+		context.art.backdrop[1] = args.r
+		context.art.backdrop[2] = args.g
+		context.art.backdrop[3] = args.b
+		context.art.backdrop[4] = args.a
+
+	elseif command == "clear" then
+		ensureCanvas(context)
+		LG.clear(args.r, args.g, args.b, args.a)
+
+	elseif command == "circle" then
+		ensureCanvas(context)
+		local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
+		if args.fill then  LG.circle("fill", maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)  end
+		if args.line then  LG.circle("line", maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)  end
+	elseif command == "rect" then
+		ensureCanvas(context)
+		if args.fill then  LG.rectangle("fill", maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))  end
+		if args.line then  LG.rectangle("line", maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))  end
+	elseif command == "text" then
+		ensureCanvas(context)
+		local font         = LG.getFont()
+		local w, textLines = font:getWrap(args.text, 1/0)
+		local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight()
+		LG.print(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h))
+
+	else
+		printFileWarning(context, ln, "@Incomplete: Command '%s'. Ignoring.", command)
+	end
+
+	return ln+1
+end
+
+local function loadArtFile(path)
+	print("Loading "..path.."...")
+	LG.reset()
+
+	local context = {
+		art = {
+			canvas   = nil,
+			backdrop = {0,0,0,0},
+		},
+
+		path       = path,
+		lines      = {},
+		stack      = {},
+		maskCanvas = nil,
+
+		canvasW = LG.getWidth(),
+		canvasH = LG.getHeight(),
+		msaa    = 1,
+		doRound = false,
+	}
+
+	for line in love.filesystem.lines(context.path) do
+		line = line:gsub("^%s+", "")
+		table.insert(context.lines, (line:find"^#" and "" or line))
+	end
+
+	table.insert(context.stack, StackEntry())
+	local ln = 1
+
+	while context.lines[ln] do
+		ln = processCommandLine(context, ln)
+		if not ln then
+			LG.setCanvas(nil)
+			if context.canvas     then  context.canvas    :release()  end
+			if context.maskCanvas then  context.maskCanvas:release()  end
+			return nil
+		end
+	end
+
+	assert(#context.stack == 1)
 	LG.setCanvas(nil)
 
-	print("Loading "..path.."... done!")
-	return art.canvas and art
+	print("Loading "..context.path.."... done!")
+
+	if context.maskCanvas then  context.maskCanvas:release()  end
+	return context.art.canvas and context.art
 end
 
 

@@ -12,18 +12,18 @@ circle 50 50 10
 move 50 50
 
 push
-rotate 20deg
-color 1 1 1
-rect 0 0 10 10 ax.5 ay.5
+	rotate 20deg
+	color 1 1 1
+	rect 0 0 10 10 ax.5 ay.5
 pop
 
 makemask
-rect w20 h20
-font 24
-text text"Hello, world!" x12
+	rect w20 h20
+	font 24
+	text text"Hello, world!" x12
 mask
-color 1 50% 1
-rect w1000 h1000 ax.5 ay.5
+	color 1 50% 1
+	rect w1000 h1000 ax.5 ay.5
 nomask
 
 color 1 1 0
@@ -41,6 +41,8 @@ func DrawCircle X Y #outer
 end
 
 set RG .7
+set Tens 30
 color RG RG 1
 DrawCircle 80 150 #outer
 DrawCircle 70 170 #outer
+# DrawCircle 70 (200 - Tens) #outer
