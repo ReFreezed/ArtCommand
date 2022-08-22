@@ -1,0 +1,33 @@
+aa 4
+clear .4 .4 .4
+
+color 1 1 1 .1
+font 64
+text 10 text"TEST TEST TEST TEST TEST
+
+color 0 0 0
+circle 50 50 10
+
+move 50 50
+
+push
+rotate 20deg
+color 1 1 1
+rect 0 0 10 10 ax.5 ay.5
+pop
+
+makemask
+rect w20 h20
+font 24
+text text"Hello, world!" x12
+mask
+color 1 50% 1
+rect w1000 h1000 ax.5 ay.5
+nomask
+
+color 1 1 0
+circle !fill line r24
+
+origin
+color 1 1 .89
+circle r20
