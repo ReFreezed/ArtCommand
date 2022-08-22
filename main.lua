@@ -18,6 +18,10 @@ local checkerImage, checkerQuad
 
 
 
+local function printFileMessage(path, ln, s, ...)
+	print(string.format("%s:%d: "..s, path, ln, ...))
+end
+
 local function printFileError(path, ln, s, ...)
 	print(string.format("%s:%d: Error: "..s, path, ln, ...))
 end
@@ -28,8 +32,41 @@ end
 
 
 
+local function StackEntry()
+	return {
+		funcs = {--[[ [funcName1]=funcInfo, ... ]]},
+		vars  = {--[[ [varName1 ]=value   , ... ]]},
+	}
+end
+
+local function findInStack(stack, member, k)
+	for i = #stack, 1, -1 do
+		local v = stack[i][member][k]
+		if v ~= nil then  return v  end
+	end
+	return nil -- Not found!
+end
+
+local function findNextUnnamedArgument(argInfos, orderN, vType)
+	orderN[vType] = orderN[vType] + 1
+	local n       = 0
+
+	for _, argInfo in ipairs(argInfos) do
+		if type(argInfo[2]) == vType or argInfo[2] == nil then -- @Incomplete: Handle the "any" type (defaultValue=nil) better. (Should they update orderN for all types?)
+			n = n + 1
+			if n == orderN[vType] then  return argInfo  end
+		end
+	end
+
+	return nil
+end
+
 local function parseCommand(line)
-	return line:match"^(%a+)(.*)"
+	if line:match"^%u" then
+		return line:match"^(%a+)(.*)" -- Function name for call.
+	else
+		return line:match"^(%l+)(.*)" -- Normal command.
+	end
 end
 
 -- number|nil, kind = parseNumber( numberString )
@@ -52,6 +89,8 @@ local function parseNumber(nStr)
 end
 
 local COMMANDS = {
+	-- command = { {argName1,defaultValue}, ... },
+
 	-- Settings, init.
 	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
 
@@ -67,6 +106,7 @@ local COMMANDS = {
 	makemask = { },
 	mask     = { },
 	nomask   = { },
+	set      = { {"var",""}, {"value",nil} },
 	origin   = { },
 	move     = { {"x",0},{"y",0} },
 	rotate   = { {"a",0} },
@@ -96,7 +136,6 @@ local function loadArtFile(path)
 	local canvasH = LG.getHeight()
 	local msaa    = 1
 	local doRound = false
-	local funcs   = {--[[ [funcName1]=funcInfo, ... ]]}
 
 	for line in love.filesystem.lines(path) do
 		line = line:gsub("^%s+", "")
@@ -120,8 +159,8 @@ local function loadArtFile(path)
 		return doRound and math.floor(x+.5) or x
 	end
 
-	-- nextLineNumber|nil = processLine( lineNumber, line, isTopLevel )
-	local function processLine(ln, line, isTopLevel)
+	-- nextLineNumber|nil = processCommandLine( lineNumber, line, stack )
+	local function processCommandLine(ln, line, stack)
 		if line == "" then  return ln+1  end
 
 		local command, argsStr = parseCommand(line)
@@ -131,14 +170,15 @@ local function loadArtFile(path)
 		-- Function declaration.
 		--
 		if command == "func" then
-			if not isTopLevel then  return printFileError(path, ln, "Cannot nest functions.")  end -- @Incomplete: Scoped functions.
-
 			local funcName, funcArgsStr = argsStr:match"(%S+)(.*)"
-			if not funcName    then  return printFileError(path, ln, "Missing function name after 'func'.")  end
-			if funcs[funcName] then  return printFileError(path, ln, "Duplicate function '%s'.", funcName)  end
+			if not funcName             then  return printFileError(path, ln, "Missing function name after 'func'.")  end
+			if not funcName:find"^%a+$" then  return printFileError(path, ln, "Bad function name '%s'. Must only contain letters.", funcName)  end -- @UX: Not a good rule. Maybe require space after the command?
+			if not funcName:find"^%u"   then  return printFileError(path, ln, "Bad function name '%s'. Must start with an uppercase letter.", funcName)  end
 
-			local funcInfo  = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
-			funcs[funcName] = funcInfo
+			if stack[#stack].funcs[funcName] then  printFileWarning(path, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
+
+			local funcInfo                = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
+			stack[#stack].funcs[funcName] = funcInfo
 
 			for funcArg in funcArgsStr:gmatch"%S+" do
 				table.insert(funcInfo, funcArg)
@@ -155,7 +195,7 @@ local function loadArtFile(path)
 				command = (line == "") and "" or parseCommand(line)
 				if not command then  return printFileError(path, endLn, "Bad line format: %s", line)  end
 
-				if command == "for" or command == "func" then
+				if command == "for" or command == "func" then -- @Volatile
 					depth = depth + 1
 
 				elseif command == "end" then
@@ -178,17 +218,23 @@ local function loadArtFile(path)
 		-- Function call.
 		--
 		elseif command:find"^%u" then
-			local funcInfo = funcs[command]
+			local funcInfo = findInStack(stack, "funcs", command)
 			if not funcInfo then  return printFileError(path, ln, "No function '%s'.", command)  end
 
+			local entry = StackEntry()
+			table.insert(stack, entry)
+
 			-- @Incomplete: Arguments.
+			-- for ? do  entry.vars[varName] = ?  end
+
 			local funcLn = funcInfo.bodyLn1
 
 			while funcLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
-				funcLn = processLine(funcLn, lines[funcLn], false)
-				if not funcLn then  return nil  end
+				funcLn = processCommandLine(funcLn, lines[funcLn], stack)
+				if not funcLn then  return printFileMessage(path, ln, "in '%s' (%s:%d)", command, path, funcInfo.bodyLn1-1)  end
 			end
 
+			table.remove(stack)
 			return ln+1
 		end
 
@@ -204,10 +250,15 @@ local function loadArtFile(path)
 			args[argInfo[1]] = argInfo[2]
 		end
 
-		local orderN       = 0
+		local argN         = 0
+		local orderN       = {number=0, string=0}
+		local visited      = {--[[ [k1]=true, ... ]]}
 		local ignoreBefore = 1
 
 		for pos, argStr in argsStr:gmatch"()(%S+)" do
+			argN = argN + 1
+
+			-- Processed string contents.
 			if pos < ignoreBefore then
 				-- void
 
@@ -216,50 +267,102 @@ local function loadArtFile(path)
 				break
 
 			-- Set flag: X
-			elseif type(args[argStr]) == "boolean" then
+			elseif type(args[argStr]) == "boolean" then -- @Incomplete: Handle the "any" type.
 				args[argStr] = true
 
 			-- Unset flag: !X
-			elseif argStr:find"^!" then
+			elseif argStr:find"^!%l" then
 				local k = argStr:sub(2)
-				if type(args[k]) ~= "boolean" then  return printFileError(path, ln, "Argument '%s' is not a boolean.", k)  end
+				if type(args[k]) ~= "boolean" then  return printFileError(path, ln, "Argument '%s' is not a boolean.", k)  end -- @Incomplete: Handle the "any" type.
 
 				args[k] = false
 
-			-- Named string: name"S" OR name"S OR name'S' OR name'S
-			-- @Incomplete: Newlines.
-			elseif argStr:find"^%a+[\"']" then
-				local k, q = argStr:match"^(%a+)(.)"
-				if type(args[k]) ~= "string" then  return printFileError(path, ln, "Argument '%s' is not a string.", k)  end
+			-- Number: nameN OR N
+			elseif argStr:find"^%l*%-?%.?%d" then
+				local k, nStr = argStr:match"^(%l*)(.+)"
 
-				local i = argsStr:find(q, pos+#k+1, true)
+				-- Named.
+				if k ~= "" then
+					if not (type(args[k]) == "number" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+						return printFileError(path, ln, "Argument '%s' is not a number.", k)
+					end
 
-				if    i
-				then  args[k] = argsStr:sub(pos+#k+1, i-1) ; ignoreBefore = i + 1 ; if argsStr:find("^%S", i+1) then  return printFileError(path, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
-				else  args[k] = argsStr:sub(pos+#k+1     ) ; break  end
+				-- Ordered.
+				else
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, "number")
+					if not argInfo then  return printFileError(path, ln, "Too many unnamed arguments of type 'number'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
 
-			-- Named number: nameN
-			elseif argStr:find"^%a+%-?%.?%d" then
-				local k, nStr = argStr:match"^(%a+)(.+)"
-				if type(args[k]) ~= "number" then  return printFileError(path, ln, "Argument '%s' is not a number.", k)  end
+				if visited[k] then  return printFileError(path, ln, "Duplicate argument '%s'.", k)  end
+				visited[k] = true
 
 				local n, nKind = parseNumber(nStr)
 				if not n then  return printFileError(path, ln, "Failed parsing number: %s", nStr)  end
 
 				args[k] = n
 
-			-- Ordered number: N
-			elseif argStr:find"^%-?%.?%d" then
-				orderN        = orderN + 1
-				local argInfo = commandInfo[orderN]
-				if not argInfo then  return printFileError(path, ln, "Too many ordered arguments. (At #%d: %s)", orderN, argStr)  end
+			-- String: name"S" OR name"S OR name'S' OR name'S OR "S" OR "S OR 'S' OR 'S
+			-- @Incomplete: Newlines.
+			elseif argStr:find"^%l*[\"']" then
+				local k, q = argStr:match"^(%l*)(.)"
+				local i1   = pos + #k + 1
+				local i    = argsStr:find(q, i1, true)
 
-				if type(argInfo[2]) ~= "number" then  return printFileError(path, ln, "Argument #%d (%s) is not a number.", orderN, argInfo[1])  end
+				-- Named.
+				if k ~= "" then
+					if not (type(args[k]) == "string" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+						return printFileError(path, ln, "Argument '%s' is not a string.", k)
+					end
 
-				local n, nKind = parseNumber(argStr)
-				if not n then  return printFileError(path, ln, "Failed parsing number: %s", argStr)  end
+				-- Ordered.
+				else
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, "string")
+					if not argInfo then  return printFileError(path, ln, "Too many unnamed arguments of type 'string'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
 
-				args[argInfo[1]] = n
+				if visited[k] then  return printFileError(path, ln, "Duplicate argument '%s'.", k)  end
+				visited[k] = true
+
+				if    i
+				then  args[k] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(path, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
+				else  args[k] = argsStr:sub(i1     ) ; break  end
+
+			-- Special case: Treat `set X` as `set "X"`.
+			elseif command == "set" and argN == 1 and argStr:find"^%u" then
+				orderN.string = 1
+				args.var      = argStr -- @Incomplete: Validate variable name.
+
+			-- Variable: nameVar OR Var
+			elseif argStr:find"^%l*%u" then
+				local k, var = argStr:match"^(%l*)(.+)" -- @Incomplete: Validate variable name.
+
+				-- Named.
+				if k ~= "" then
+
+				-- Ordered.
+				else
+					local v = stack[#stack].vars[var]--findInStack(stack, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
+					if v == nil then  return printFileError(path, ln, "No variable '%s'.", var)  end
+
+					-- This might be confusing! We're using the type of the variable's value to assign an argument number.
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
+					if not argInfo then  return printFileError(path, ln, "Too many unnamed arguments of type %s. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
+
+				if visited[k] then  return printFileError(path, ln, "Duplicate argument '%s'.", k)  end
+				visited[k] = true
+
+				local v = stack[#stack].vars[var]--findInStack(stack, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).  @Speed: Duplicate work, sometimes.
+				if v == nil then  return printFileError(path, ln, "No variable '%s'.", var)  end
+
+				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+					return printFileError(path, ln, "Argument '%s' is not a %s.", k, type(args[k]))
+				end
+
+				args[k] = v
 
 			else
 				return printFileError(path, ln, "Failed parsing argument: %s", argStr)
@@ -309,6 +412,11 @@ local function loadArtFile(path)
 			LG.setCanvas(art.canvas)
 			LG.setShader(shaderMain)
 
+		elseif command == "set" then
+			if args.var   == ""  then  return printFileError(path, ln, "Missing variable name.")  end
+			if args.value == nil then  return printFileError(path, ln, "Missing value to assign to '%s'.", args.var)  end
+			stack[#stack].vars[args.var] = args.value
+
 		elseif command == "origin" then
 			LG.origin()
 		elseif command == "move" then
@@ -352,13 +460,15 @@ local function loadArtFile(path)
 		return ln+1
 	end
 
-	local ln = 1
+	local stack = {StackEntry()}
+	local ln    = 1
 
 	while lines[ln] do
-		ln = processLine(ln, lines[ln], true)
+		ln = processCommandLine(ln, lines[ln], stack)
 		if not ln then  return nil  end
 	end
 
+	assert(#stack == 1)
 	LG.setCanvas(nil)
 
 	print("Loading "..path.."... done!")
