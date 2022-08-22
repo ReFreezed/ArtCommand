@@ -3,7 +3,7 @@ backdrop0 .3 0 .5
 clear.4 .4 .4
 
 color 1 1 1 .1
-font 64 # Big boy!
+font 64  # Big boy!
 text 10 0 "TEST TEST TEST
 
 color 0 0 0
@@ -33,14 +33,14 @@ origin
 color 1 1 .89
 circle r20
 
-func Foo X Y  # outer
-	func Foo X Y  # inner
-		circle 100 100 10
-		# circle X Y 10
+func DrawCircle X Y #outer
+	func DrawCircle X Y #inner
+		circle X Y 10
 	end
-	Foo X Y  # inner
+	DrawCircle X Y #inner
 end
 
-set R .7
-color R .7 1
-Foo 80 150  # outer
+set RG .7
+color RG RG 1
+DrawCircle 80 150 #outer
+DrawCircle 70 170 #outer
