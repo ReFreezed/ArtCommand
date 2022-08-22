@@ -33,16 +33,15 @@ origin
 color 1 1 .89
 circle r20
 
-func DrawCircle X Y #outer
+func DrawCircle X Y
 	func DrawCircle X Y #inner
 		circle X Y 10
 	end
-	DrawCircle X Y #inner
+	DrawCircle (2*X) Y #inner
 end
 
 set RG .7
-set Tens 30
 color RG RG 1
-DrawCircle 80 150 #outer
-DrawCircle 70 170 #outer
-# DrawCircle 70 (200 - Tens) #outer
+set Tens (2*15)
+DrawCircle 80 150
+DrawCircle(50+25) (200 - Tens)

@@ -36,6 +36,13 @@ local function getLast(arr)
 	return arr[#arr]
 end
 
+local function itemWith1(arr, k, v)
+	for i = 1, #arr do
+		if arr[i][k] == v then  return arr[i], i  end
+	end
+	return nil
+end
+
 
 
 local COMMANDS = {
@@ -70,6 +77,17 @@ local COMMANDS = {
 	text     = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
 
+local CONSTANTS = {
+	["true" ] = true,
+	["false"] = false,
+	["huge" ] = 1/0,
+	["-huge"] = -1/0,
+	["pi"   ] = math.pi,
+	["-pi"  ] = -math.pi,
+	["tau"  ] = TAU,
+	["-tau" ] = -TAU,
+}
+
 local function StackEntry()
 	return {
 		funcs = {--[[ [funcName1]=funcInfo, ... ]]},
@@ -86,6 +104,8 @@ local function findInStack(context, member, k)
 end
 
 local function findNextUnnamedArgument(argInfos, orderN, vType)
+	if not orderN[vType] then  return nil  end -- Unsupported type.
+
 	orderN[vType] = orderN[vType] + 1
 	local n       = 0
 
@@ -165,9 +185,9 @@ local function processCommandLine(context, ln)
 		local funcInfo                         = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
 		getLast(context.stack).funcs[funcName] = funcInfo
 
-		for funcArg in funcArgsStr:gmatch"%S+" do
-			if funcArg:find"^#" then  break  end
-			table.insert(funcInfo, funcArg)
+		for argName in funcArgsStr:gmatch"%S+" do
+			if argName:find"^#" then  break  end
+			table.insert(funcInfo, argName) -- @Incomplete: Validate variable name format.
 		end
 
 		local endLn = ln
@@ -207,6 +227,10 @@ local function processCommandLine(context, ln)
 		local funcInfo = findInStack(context, "funcs", command)
 		if not funcInfo then  return printFileError(context, ln, "No function '%s'.", command)  end
 
+		if context.callstack[funcInfo] then
+			return printFileError(context, ln, "Recursively calling '%s'. (%s:%d)", command, context.path, funcInfo.bodyLn1-1)
+		end
+
 		local entry = StackEntry()
 
 		-- Arguments.
@@ -223,9 +247,10 @@ local function processCommandLine(context, ln)
 				break
 
 			else
-				argN = argN + 1
+				argN          = argN + 1
+				local argName = funcInfo[argN]
 
-				if not funcInfo[argN] then
+				if not argName then
 					return printFileError(context, ln, "Too many arguments.")
 
 				-- Number: N
@@ -233,7 +258,7 @@ local function processCommandLine(context, ln)
 					local n = parseNumber(argStr)
 					if not n then  return printFileError(context, ln, "Failed parsing number: %s", argStr)  end
 
-					entry.vars[funcInfo[argN]] = n
+					entry.vars[argName] = n
 
 				-- String: "S" OR "S OR 'S' OR 'S
 				-- @Incomplete: Newlines.
@@ -243,17 +268,40 @@ local function processCommandLine(context, ln)
 					local i  = argsStr:find(q, i1, true)
 
 					if    i
-					then  entry.vars[funcInfo[argN]] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos, i))  end
-					else  entry.vars[funcInfo[argN]] = argsStr:sub(i1     ) ; break  end
+					then  entry.vars[argName] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos, i))  end
+					else  entry.vars[argName] = argsStr:sub(i1     ) ; break  end
 
 				-- Variable: Var
 				elseif argStr:find"^%u" then
-					local var = argStr -- @Incomplete: Validate variable name.
+					local var = argStr -- @Incomplete: Validate variable name format.
 
 					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
 					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
-					entry.vars[funcInfo[argN]] = v
+					entry.vars[argName] = v
+
+				-- Constant: K
+				elseif CONSTANTS[argStr] then
+					entry.vars[argName] = CONSTANTS[argStr]
+
+				-- Parenthesis: (expression)
+				elseif argStr:find"^%(" then
+					local expr, nextPos = argsStr:match("^(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
+					if not expr then  return printFileError(context, ln, "Missing end parens: %s", argsStr:sub(pos))  end
+
+					local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
+						__index = function(_, k, v)  return CONSTANTS[k] or getLast(context.stack).vars[k]  end,
+					}))
+					if not chunk then  return printFileError(context, ln, "Invalid expression '%s'. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
+
+					local ok, vOrErr = pcall(chunk)
+					if not ok then  return printFileError(context, ln, "Failed evaluating expression '%s'. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
+					local v = vOrErr
+
+					entry.vars[argName] = v
+
+					ignoreBefore = nextPos
+					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after '%s': %s", expr, argsStr:match("^%S+", pos+#expr))  end
 
 				else
 					return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
@@ -266,8 +314,10 @@ local function processCommandLine(context, ln)
 		end
 
 		-- Run function.
-		local funcLn = funcInfo.bodyLn1
 		table.insert(context.stack, entry)
+		context.callstack[funcInfo] = true
+
+		local funcLn = funcInfo.bodyLn1
 
 		while funcLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
 			funcLn = processCommandLine(context, funcLn)
@@ -275,6 +325,8 @@ local function processCommandLine(context, ln)
 		end
 
 		table.remove(context.stack)
+		context.callstack[funcInfo] = nil
+
 		return ln+1
 	end
 
@@ -292,7 +344,7 @@ local function processCommandLine(context, ln)
 
 	local argN         = 0
 	local ignoreBefore = 1
-	local orderN       = {number=0, string=0}
+	local orderN       = {number=0, string=0, boolean=0}
 	local visited      = {--[[ [k1]=true, ... ]]}
 
 	for pos, argStr in argsStr:gmatch"()(%S+)" do
@@ -308,12 +360,20 @@ local function processCommandLine(context, ln)
 
 			-- Set flag: X
 			if type(args[argStr]) == "boolean" then -- @Incomplete: Handle the "any" type.
-				args[argStr] = true
+				local k = argStr
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
+				visited[k] = true
+
+				args[k] = true
 
 			-- Unset flag: !X
 			elseif argStr:find"^!%l" then
 				local k = argStr:sub(2)
 				if type(args[k]) ~= "boolean" then  return printFileError(context, ln, "Argument '%s' is not a boolean.", k)  end -- @Incomplete: Handle the "any" type.
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
+				visited[k] = true
 
 				args[k] = false
 
@@ -323,9 +383,7 @@ local function processCommandLine(context, ln)
 
 				-- Named.
 				if k ~= "" then
-					if not (type(args[k]) == "number" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-						return printFileError(context, ln, "Argument '%s' is not a number.", k)
-					end
+					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
 
 				-- Ordered.
 				else
@@ -334,8 +392,12 @@ local function processCommandLine(context, ln)
 					k = argInfo[1]
 				end
 
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'.", k)  end
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
 				visited[k] = true
+
+				if not (type(args[k]) == "number" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+					return printFileError(context, ln, "Argument '%s' is not a number.", k)
+				end
 
 				local n, nKind = parseNumber(nStr)
 				if not n then  return printFileError(context, ln, "Failed parsing number: %s", nStr)  end
@@ -351,9 +413,7 @@ local function processCommandLine(context, ln)
 
 				-- Named.
 				if k ~= "" then
-					if not (type(args[k]) == "string" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-						return printFileError(context, ln, "Argument '%s' is not a string.", k)
-					end
+					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
 
 				-- Ordered.
 				else
@@ -362,8 +422,12 @@ local function processCommandLine(context, ln)
 					k = argInfo[1]
 				end
 
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'.", k)  end
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
 				visited[k] = true
+
+				if not (type(args[k]) == "string" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+					return printFileError(context, ln, "Argument '%s' is not a string.", k)
+				end
 
 				if    i
 				then  args[k] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
@@ -372,37 +436,98 @@ local function processCommandLine(context, ln)
 			-- Special case: Treat `set X` as `set "X"`.
 			elseif command == "set" and argN == 1 and argStr:find"^%u" then
 				orderN.string = 1
-				args.var      = argStr -- @Incomplete: Validate variable name.
+				args.var      = argStr -- @Incomplete: Validate variable name format.
 
 			-- Variable: nameVar OR Var
 			elseif argStr:find"^%l*%u" then
-				local k, var = argStr:match"^(%l*)(.+)" -- @Incomplete: Validate variable name.
+				local k, var = argStr:match"^(%l*)(.+)" -- @Incomplete: Validate variable name format.
+
+				local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
+				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
 				-- Named.
 				if k ~= "" then
+					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
 
 				-- Ordered.
 				else
-					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
-					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
-
 					-- This might be confusing! We're using the type of the variable's value to assign an argument number.
 					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
 					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type %s. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
 					k = argInfo[1]
 				end
 
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'.", k)  end
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
 				visited[k] = true
-
-				local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).  @Speed: Duplicate work, sometimes.
-				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
 				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
 					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
 				end
 
 				args[k] = v
+
+			-- Constant: K
+			-- @Incomplete: nameK, somehow. For now parentheses can be used.
+			elseif CONSTANTS[argStr] then
+				local k = "" -- @Temp
+				local v = CONSTANTS[argStr]
+
+				-- Named.
+				if k ~= "" then
+					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
+
+				-- Ordered.
+				else
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
+					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type '%s'. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
+				visited[k] = true
+
+				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
+				end
+
+				args[k] = v
+
+			-- Parenthesis: name(expression) OR (expression)
+			elseif argStr:find"^%l*%(" then
+				local k, expr, nextPos = argsStr:match("^(%l*)(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
+				if not expr then  return printFileError(context, ln, "Missing end parens: %s", argsStr:sub(pos))  end
+
+				local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
+					__index = function(_, k, v)  return CONSTANTS[k] or getLast(context.stack).vars[k]  end,
+				}))
+				if not chunk then  return printFileError(context, ln, "Invalid expression '%s'. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
+
+				local ok, vOrErr = pcall(chunk)
+				if not ok then  return printFileError(context, ln, "Failed evaluating expression '%s'. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
+				local v = vOrErr
+
+				-- Named.
+				if k ~= "" then
+					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
+
+				-- Ordered.
+				else
+					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
+					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type '%s'. (At: %s)", type(v), expr)  end -- @UX: Better message if the command take no arguments of the type.
+					k = argInfo[1]
+				end
+
+				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
+				visited[k] = true
+
+				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
+					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
+				end
+
+				args[k] = v
+
+				ignoreBefore = nextPos
+				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after '%s': %s", expr, argsStr:match("^%S+", pos+#k+#expr))  end
 
 			else
 				return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
@@ -513,7 +638,8 @@ local function loadArtFile(path)
 
 		path       = path,
 		lines      = {},
-		stack      = {},
+		stack      = {--[[ stackEntry1, ... ]]},
+		callstack  = {--[[ [funcInfo1]=true, ... ]]},
 		maskCanvas = nil,
 
 		canvasW = LG.getWidth(),
