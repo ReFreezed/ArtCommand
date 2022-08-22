@@ -1,9 +1,10 @@
-canvas aa4
-clear .4 .4 .4
+canvas 500 500 aa4
+backdrop0 .3 0 .5
+clear.4 .4 .4
 
 color 1 1 1 .1
-font 64
-text 10 text"TEST TEST TEST TEST TEST
+font 64 # Big boy!
+text 10 text"TEST TEST TEST
 
 color 0 0 0
 circle 50 50 10
@@ -26,8 +27,15 @@ rect w1000 h1000 ax.5 ay.5
 nomask
 
 color 1 1 0
-circle !fill line r24
+circle line !fill r24
 
 origin
 color 1 1 .89
 circle r20
+
+func Foo X Y
+	circle 100 100 10
+	# circle line !fill X Y 10
+end
+
+Foo 200 50

@@ -11,7 +11,7 @@ local TAU = 2*math.pi
 
 local LG = love.graphics
 
-local theCanvas  = nil
+local theArt     = nil
 local shaderMain = nil
 local shaderMask = nil
 local checkerImage, checkerQuad
@@ -27,6 +27,10 @@ local function printFileWarning(path, ln, s, ...)
 end
 
 
+
+local function parseCommand(line)
+	return line:match"^(%a+)(.*)"
+end
 
 -- number|nil, kind = parseNumber( numberString )
 local function parseNumber(nStr)
@@ -69,36 +73,46 @@ local COMMANDS = {
 	scale    = { {"x",1},{"y",1/0--[[=x]]} },
 
 	-- Drawing.
-	clear  = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	circle = { {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]}, {"fill",true},{"line",false} },
-	rect   = { {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"fill",true},{"line",false} },
-	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
+	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	clear    = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	circle   = { {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]}, {"fill",true},{"line",false} },
+	rect     = { {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"fill",true},{"line",false} },
+	text     = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
 
 local function loadArtFile(path)
 	print("Loading "..path.."...")
 	LG.reset()
 
-	local ln = 0
+	local art = {
+		canvas   = nil,
+		backdrop = {0,0,0,0},
+	}
 
-	local canvas     = nil
+	local lines      = {}
 	local maskCanvas = nil
 
 	local canvasW = LG.getWidth()
 	local canvasH = LG.getHeight()
 	local msaa    = 1
 	local doRound = false
+	local funcs   = {--[[ [funcName1]=funcInfo, ... ]]}
+
+	for line in love.filesystem.lines(path) do
+		line = line:gsub("^%s+", "")
+		table.insert(lines, (line:find"^#" and "" or line))
+	end
 
 	local function ensureCanvas()
-		if canvas then  return  end
+		if art.canvas then  return  end
 
-		canvas     = LG.newCanvas(canvasW,canvasH, {msaa=(msaa > 1 and msaa or nil)})
+		art.canvas = LG.newCanvas(canvasW,canvasH, {msaa=(msaa > 1 and msaa or nil)})
 		maskCanvas = LG.newCanvas(canvasW,canvasH, {format="r8"})
 
 		shaderMain:send("useMask", false)
 		shaderMain:send("mask", maskCanvas)
 
-		LG.setCanvas{ canvas--[[, stencil=true]] }
+		LG.setCanvas(art.canvas)
 		LG.setShader(shaderMain)
 	end
 
@@ -106,174 +120,249 @@ local function loadArtFile(path)
 		return doRound and math.floor(x+.5) or x
 	end
 
-	for line in love.filesystem.lines(path) do
-		line = line:gsub("^%s+", "")
-		ln   = ln + 1
+	-- nextLineNumber|nil = processLine( lineNumber, line, isTopLevel )
+	local function processLine(ln, line, isTopLevel)
+		if line == "" then  return ln+1  end
 
-		if not (line == "" or line:find"^#") then
-			local command, argsStr = line:match"^(%a+)(.*)"
-			if not command then  return printFileError(path, ln, "Bad line format: %s", line)  end
+		local command, argsStr = parseCommand(line)
+		if not command then  return printFileError(path, ln, "Bad line format: %s", line)  end
 
-			local commandInfo = COMMANDS[command]
-			if not commandInfo then  return printFileError(path, ln, "Bad command '%s'.", command)  end
+		--
+		-- Function declaration.
+		--
+		if command == "func" then
+			if not isTopLevel then  return printFileError(path, ln, "Cannot nest functions.")  end -- @Incomplete: Scoped functions.
 
-			local args = {}
+			local funcName, funcArgsStr = argsStr:match"(%S+)(.*)"
+			if not funcName    then  return printFileError(path, ln, "Missing function name after 'func'.")  end
+			if funcs[funcName] then  return printFileError(path, ln, "Duplicate function '%s'.", funcName)  end
 
-			for _, argInfo in ipairs(commandInfo) do
-				args[argInfo[1]] = argInfo[2]
+			local funcInfo  = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
+			funcs[funcName] = funcInfo
+
+			for funcArg in funcArgsStr:gmatch"%S+" do
+				table.insert(funcInfo, funcArg)
 			end
 
-			local orderN       = 0
-			local ignoreBefore = 1
+			local endLn = ln
+			local depth = 1
 
-			for pos, argStr in argsStr:gmatch"()(%S+)" do
-				if pos < ignoreBefore then
-					-- void
+			while true do
+				endLn = endLn + 1
+				line  = lines[endLn]
+				if not line then  return printFileError(path, ln, "Missing end of function '%s'.", funcName)  end
 
-				-- Set flag: X
-				elseif type(args[argStr]) == "boolean" then
-					args[argStr] = true
+				command = (line == "") and "" or parseCommand(line)
+				if not command then  return printFileError(path, endLn, "Bad line format: %s", line)  end
 
-				-- Unset flag: !X
-				elseif argStr:find"^!" then
-					local k = argStr:sub(2)
-					if type(args[k]) ~= "boolean" then  return printFileError(path, ln, "Argument '%s' is not a boolean.", k)  end
+				if command == "for" or command == "func" then
+					depth = depth + 1
 
-					args[k] = false
+				elseif command == "end" then
+					depth = depth - 1
 
-				-- Named string: name"S" OR name"S OR name'S' OR name'S
-				-- @Incomplete: Newlines.
-				elseif argStr:find'^%a+"' then
-					local k = argStr:match"^%a+"
-					if type(args[k]) ~= "string" then  return printFileError(path, ln, "Argument '%s' is not a string.", k)  end
-
-					local i = argsStr:find('"', pos+#k+1, true)
-
-					if    i
-					then  args[k] = argsStr:sub(pos+#k+1, i-1) ; ignoreBefore = i + 1
-					else  args[k] = argsStr:sub(pos+#k+1     ) ; break  end
-
-				elseif argStr:find"^%a+'" then
-					local k = argStr:match"^%a+"
-					if type(args[k]) ~= "string" then  return printFileError(path, ln, "Argument '%s' is not a string.", k)  end
-
-					local i = argsStr:find("'", pos+#k+1, true)
-
-					if    i
-					then  args[k] = argsStr:sub(pos+#k+1, i-1) ; ignoreBefore = i + 1
-					else  args[k] = argsStr:sub(pos+#k+1     ) ; break  end
-
-				-- Named number: nameN
-				elseif argStr:find"^%a+%-?%.?%d" then
-					local k, nStr = argStr:match"^(%a+)(.+)"
-					if type(args[k]) ~= "number" then  return printFileError(path, ln, "Argument '%s' is not a number.", k)  end
-
-					local n, nKind = parseNumber(nStr)
-					if not n then  return printFileError(path, ln, "Failed parsing number: %s", nStr)  end
-
-					args[k] = n
-
-				-- Ordered number: N
-				elseif argStr:find"^%-?%.?%d" then
-					orderN        = orderN + 1
-					local argInfo = commandInfo[orderN]
-					if not argInfo then  return printFileError(path, ln, "Too many ordered arguments. (At #%d: %s)", orderN, argStr)  end
-
-					if type(argInfo[2]) ~= "number" then  return printFileError(path, ln, "Argument #%d (%s) is not a number.", orderN, argInfo[1])  end
-
-					local n, nKind = parseNumber(argStr)
-					if not n then  return printFileError(path, ln, "Failed parsing number: %s", argStr)  end
-
-					args[argInfo[1]] = n
-
-				else
-					return printFileError(path, ln, "Failed parsing argument: %s", argStr)
+					if depth == 0 then
+						funcInfo.bodyLn2 = endLn - 1
+						return endLn+1
+					end
 				end
 			end
 
-			-- Settings, init.
-			if command == "canvas" then
-				if canvas then  return printFileError(path, ln, "Cannot use '%s' after drawing commands.", command)  end
-				canvasW = (args.w >= 1) and args.w or LG.getWidth()
-				canvasH = (args.h >= 1) and args.h or LG.getHeight()
-				msaa    = args.aa^2
+		--
+		-- For-loop.
+		--
+		elseif command == "for" then
+			return printFileError(path, ln, "@Incomplete: Command '%s'.", command)
 
-			-- Settings, dynamic.
-			elseif command == "round" then
-				doRound = true
-			elseif command == "noround" then
-				doRound = false
+		--
+		-- Function call.
+		--
+		elseif command:find"^%u" then
+			local funcInfo = funcs[command]
+			if not funcInfo then  return printFileError(path, ln, "No function '%s'.", command)  end
 
-			-- State.
-			elseif command == "push" then
-				LG.push("all")
-			elseif command == "pop" then
-				if    love.graphics.getStackDepth() == 0
-				then  printFileWarning(path, ln, "Too many 'pop' commands! Ignoring.")
-				else  LG.pop()  end
+			-- @Incomplete: Arguments.
+			local funcLn = funcInfo.bodyLn1
 
-			elseif command == "color" then
-				LG.setColor(args.r, args.g, args.b, args.a)
+			while funcLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
+				funcLn = processLine(funcLn, lines[funcLn], false)
+				if not funcLn then  return nil  end
+			end
 
-			elseif command == "font" then
-				LG.setNewFont(args.size)
+			return ln+1
+		end
 
-			elseif command == "makemask" then
-				ensureCanvas()
-				LG.setCanvas(maskCanvas)
-				LG.setShader(shaderMask)
-				LG.clear(0, 0, 0, 1)
-			elseif command == "mask" then
-				ensureCanvas()
-				shaderMain:send("useMask", true)
-				LG.setCanvas{ canvas--[[, stencil=true]] }
-				LG.setShader(shaderMain)
-			elseif command == "nomask" then
-				ensureCanvas()
-				shaderMain:send("useMask", false)
-				LG.setCanvas{ canvas--[[, stencil=true]] }
-				LG.setShader(shaderMain)
+		--
+		-- Normal command.
+		--
+		local commandInfo = COMMANDS[command]
+		if not commandInfo then  return printFileError(path, ln, "Bad command '%s'.", command)  end
 
-			elseif command == "origin" then
-				LG.origin()
-			elseif command == "move" then
-				LG.translate(maybeRound(args.x), maybeRound(args.y))
-			elseif command == "rotate" then
-				LG.rotate(args.a)
-			elseif command == "scale" then
-				LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
+		local args = {}
 
-			-- Drawing.
-			elseif command == "clear" then
-				ensureCanvas()
-				LG.clear(args.r, args.g, args.b, args.a)
+		for _, argInfo in ipairs(commandInfo) do
+			args[argInfo[1]] = argInfo[2]
+		end
 
-			elseif command == "circle" then
-				ensureCanvas()
-				local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
-				if args.fill then  LG.circle("fill", maybeRound(args.x),maybeRound(args.y), args.r, segs)  end
-				if args.line then  LG.circle("line", maybeRound(args.x),maybeRound(args.y), args.r, segs)  end
-			elseif command == "rect" then
-				ensureCanvas()
-				if args.fill then  LG.rectangle("fill", maybeRound(args.x-args.ax*args.w),maybeRound(args.y-args.ay*args.h), maybeRound(args.w),maybeRound(args.h))  end
-				if args.line then  LG.rectangle("line", maybeRound(args.x-args.ax*args.w),maybeRound(args.y-args.ay*args.h), maybeRound(args.w),maybeRound(args.h))  end
-			elseif command == "text" then
-				ensureCanvas()
-				local font     = LG.getFont()
-				local w, lines = font:getWrap(args.text, 1/0)
-				local h        = (#lines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight()
-				LG.print(args.text, maybeRound(args.x-args.ax*w),maybeRound(args.y-args.ay*h))
+		local orderN       = 0
+		local ignoreBefore = 1
+
+		for pos, argStr in argsStr:gmatch"()(%S+)" do
+			if pos < ignoreBefore then
+				-- void
+
+			-- Comment
+			elseif argStr:find"^#" then
+				break
+
+			-- Set flag: X
+			elseif type(args[argStr]) == "boolean" then
+				args[argStr] = true
+
+			-- Unset flag: !X
+			elseif argStr:find"^!" then
+				local k = argStr:sub(2)
+				if type(args[k]) ~= "boolean" then  return printFileError(path, ln, "Argument '%s' is not a boolean.", k)  end
+
+				args[k] = false
+
+			-- Named string: name"S" OR name"S OR name'S' OR name'S
+			-- @Incomplete: Newlines.
+			elseif argStr:find"^%a+[\"']" then
+				local k, q = argStr:match"^(%a+)(.)"
+				if type(args[k]) ~= "string" then  return printFileError(path, ln, "Argument '%s' is not a string.", k)  end
+
+				local i = argsStr:find(q, pos+#k+1, true)
+
+				if    i
+				then  args[k] = argsStr:sub(pos+#k+1, i-1) ; ignoreBefore = i + 1 ; if argsStr:find("^%S", i+1) then  return printFileError(path, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
+				else  args[k] = argsStr:sub(pos+#k+1     ) ; break  end
+
+			-- Named number: nameN
+			elseif argStr:find"^%a+%-?%.?%d" then
+				local k, nStr = argStr:match"^(%a+)(.+)"
+				if type(args[k]) ~= "number" then  return printFileError(path, ln, "Argument '%s' is not a number.", k)  end
+
+				local n, nKind = parseNumber(nStr)
+				if not n then  return printFileError(path, ln, "Failed parsing number: %s", nStr)  end
+
+				args[k] = n
+
+			-- Ordered number: N
+			elseif argStr:find"^%-?%.?%d" then
+				orderN        = orderN + 1
+				local argInfo = commandInfo[orderN]
+				if not argInfo then  return printFileError(path, ln, "Too many ordered arguments. (At #%d: %s)", orderN, argStr)  end
+
+				if type(argInfo[2]) ~= "number" then  return printFileError(path, ln, "Argument #%d (%s) is not a number.", orderN, argInfo[1])  end
+
+				local n, nKind = parseNumber(argStr)
+				if not n then  return printFileError(path, ln, "Failed parsing number: %s", argStr)  end
+
+				args[argInfo[1]] = n
 
 			else
-				printFileWarning(path, ln, "@Incomplete: Command '%s'. Ignoring.", command)
+				return printFileError(path, ln, "Failed parsing argument: %s", argStr)
 			end
 		end
+
+		-- Settings, init.
+		if command == "canvas" then
+			if art.canvas then  return printFileError(path, ln, "Cannot use '%s' after drawing commands.", command)  end
+			canvasW = (args.w >= 1) and args.w or LG.getWidth()
+			canvasH = (args.h >= 1) and args.h or LG.getHeight()
+			msaa    = args.aa^2
+
+		-- Settings, dynamic.
+		elseif command == "round" then
+			doRound = true
+		elseif command == "noround" then
+			doRound = false
+
+		-- State.
+		elseif command == "push" then
+			LG.push("all")
+		elseif command == "pop" then
+			if    love.graphics.getStackDepth() == 0
+			then  printFileWarning(path, ln, "Too many 'pop' commands! Ignoring.")
+			else  LG.pop()  end
+
+		elseif command == "color" then
+			LG.setColor(args.r, args.g, args.b, args.a)
+
+		elseif command == "font" then
+			LG.setNewFont(args.size)
+
+		elseif command == "makemask" then
+			ensureCanvas()
+			LG.setCanvas(maskCanvas)
+			LG.setShader(shaderMask)
+			LG.clear(0, 0, 0, 1)
+		elseif command == "mask" then
+			ensureCanvas()
+			shaderMain:send("useMask", true)
+			LG.setCanvas(art.canvas)
+			LG.setShader(shaderMain)
+		elseif command == "nomask" then
+			ensureCanvas()
+			shaderMain:send("useMask", false)
+			LG.setCanvas(art.canvas)
+			LG.setShader(shaderMain)
+
+		elseif command == "origin" then
+			LG.origin()
+		elseif command == "move" then
+			LG.translate(maybeRound(args.x), maybeRound(args.y))
+		elseif command == "rotate" then
+			LG.rotate(args.a)
+		elseif command == "scale" then
+			LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
+
+		-- Drawing.
+		elseif command == "backdrop" then
+			art.backdrop[1] = args.r
+			art.backdrop[2] = args.g
+			art.backdrop[3] = args.b
+			art.backdrop[4] = args.a
+
+		elseif command == "clear" then
+			ensureCanvas()
+			LG.clear(args.r, args.g, args.b, args.a)
+
+		elseif command == "circle" then
+			ensureCanvas()
+			local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
+			if args.fill then  LG.circle("fill", maybeRound(args.x),maybeRound(args.y), args.r, segs)  end
+			if args.line then  LG.circle("line", maybeRound(args.x),maybeRound(args.y), args.r, segs)  end
+		elseif command == "rect" then
+			ensureCanvas()
+			if args.fill then  LG.rectangle("fill", maybeRound(args.x-args.ax*args.w),maybeRound(args.y-args.ay*args.h), maybeRound(args.w),maybeRound(args.h))  end
+			if args.line then  LG.rectangle("line", maybeRound(args.x-args.ax*args.w),maybeRound(args.y-args.ay*args.h), maybeRound(args.w),maybeRound(args.h))  end
+		elseif command == "text" then
+			ensureCanvas()
+			local font         = LG.getFont()
+			local w, textLines = font:getWrap(args.text, 1/0)
+			local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight()
+			LG.print(args.text, maybeRound(args.x-args.ax*w),maybeRound(args.y-args.ay*h))
+
+		else
+			printFileWarning(path, ln, "@Incomplete: Command '%s'. Ignoring.", command)
+		end
+
+		return ln+1
+	end
+
+	local ln = 1
+
+	while lines[ln] do
+		ln = processLine(ln, lines[ln], true)
+		if not ln then  return nil  end
 	end
 
 	LG.setCanvas(nil)
 
 	print("Loading "..path.."... done!")
-	return canvas
+	return art.canvas and art
 end
 
 
@@ -324,9 +413,9 @@ function love.keypressed(key)
 		love.event.quit()
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
-		if theCanvas then
+		if theArt then
 			print("Saving output.png...")
-			theCanvas:newImageData():encode("png", "output.png")
+			theArt.canvas:newImageData():encode("png", "output.png")
 			print("Saving output.png... done!")
 		end
 	end
@@ -347,17 +436,23 @@ function love.update(dt)
 		local modtime = info and info.modtime
 
 		if modtime and modtime ~= theModtime then
-			theModtime   = modtime
-			local canvas = loadArtFile(thePath)
+			theModtime = modtime
+			local art  = loadArtFile(thePath)
 
 			for i = 1, LG.getStackDepth() do
 				LG.pop()
 			end
 			LG.reset()
 
-			if canvas then
-				if theCanvas then  theCanvas:release()  end
-				theCanvas = canvas
+			if art then
+				if theArt then  theArt.canvas:release()  end
+				theArt = art
+
+				love.window.setTitle(string.format(
+					"%s (%dx%d) - Art Command",
+					thePath:gsub("^.*[/\\]", ""),
+					theArt.canvas:getWidth(), theArt.canvas:getHeight()
+				))
 			end
 		end
 	end
@@ -374,13 +469,31 @@ function love.draw()
 	LG.setColor(.6, .6, .6)
 	LG.draw(checkerImage, checkerQuad)
 
-	if theCanvas then
+	if theArt then
+		if theArt.backdrop[4] > 0 then
+			LG.setColor(theArt.backdrop)
+			LG.rectangle("fill", 0,0, ww,wh)
+		end
+
 		-- LG.setBlendMode("alpha", "premultiplied")
 		LG.setColor(1, 1, 1)
-		LG.draw(theCanvas
-			, math.max(math.floor((ww-theCanvas:getWidth ())/2), 0)
-			, math.max(math.floor((wh-theCanvas:getHeight())/2), 0)
+		LG.draw(theArt.canvas
+			, math.max(math.floor((ww-theArt.canvas:getWidth ())/2), 0)
+			, math.max(math.floor((wh-theArt.canvas:getHeight())/2), 0)
 		)
+
+	else
+		local text = "No art loaded"
+		local w    = LG.getFont():getWidth(text)
+		local h    = LG.getFont():getHeight()
+		local x    = math.floor((ww-w)/2)
+		local y    = math.floor((wh-h)/2)
+
+		LG.setColor(0, 0, 0)
+		LG.rectangle("fill", x-4,y-2, w+8,h+4)
+
+		LG.setColor(1, 1, 1)
+		LG.print(text, x,y)
 	end
 end
 
