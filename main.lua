@@ -49,7 +49,7 @@ end
 
 local COMMANDS = {
 	-- Settings, init.
-	aa = { {"n",1} },
+	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
 
 	-- Settings, dynamic.
 	round   = { },
@@ -70,7 +70,7 @@ local COMMANDS = {
 
 	-- Drawing.
 	clear  = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	circle = { {"x",0},{"y",0}, {"r",10}, {"segs",0}, {"fill",true},{"line",false} },
+	circle = { {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]}, {"fill",true},{"line",false} },
 	rect   = { {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"fill",true},{"line",false} },
 	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
@@ -83,14 +83,17 @@ local function loadArtFile(path)
 
 	local canvas     = nil
 	local maskCanvas = nil
-	local msaa       = 1
-	local doRound    = false
+
+	local canvasW = LG.getWidth()
+	local canvasH = LG.getHeight()
+	local msaa    = 1
+	local doRound = false
 
 	local function ensureCanvas()
 		if canvas then  return  end
 
-		canvas     = LG.newCanvas(LG.getWidth(),LG.getHeight(), {msaa=(msaa > 1 and msaa or nil)})
-		maskCanvas = LG.newCanvas(LG.getWidth(),LG.getHeight(), {format="r8"})
+		canvas     = LG.newCanvas(canvasW,canvasH, {msaa=(msaa > 1 and msaa or nil)})
+		maskCanvas = LG.newCanvas(canvasW,canvasH, {format="r8"})
 
 		shaderMain:send("useMask", false)
 		shaderMain:send("mask", maskCanvas)
@@ -189,9 +192,11 @@ local function loadArtFile(path)
 			end
 
 			-- Settings, init.
-			if command == "aa" then
+			if command == "canvas" then
 				if canvas then  return printFileError(path, ln, "Cannot use '%s' after drawing commands.", command)  end
-				msaa = args.n^2
+				canvasW = (args.w >= 1) and args.w or LG.getWidth()
+				canvasH = (args.h >= 1) and args.h or LG.getHeight()
+				msaa    = args.aa^2
 
 			-- Settings, dynamic.
 			elseif command == "round" then
@@ -361,16 +366,21 @@ end
 
 
 function love.draw()
+	local ww,wh = LG.getDimensions()
+
 	LG.clear(.4, .4, .4, 1)
 
-	checkerQuad:setViewport(0,0, LG.getDimensions())
+	checkerQuad:setViewport(0,0, ww,wh)
 	LG.setColor(.6, .6, .6)
 	LG.draw(checkerImage, checkerQuad)
 
 	if theCanvas then
 		-- LG.setBlendMode("alpha", "premultiplied")
 		LG.setColor(1, 1, 1)
-		LG.draw(theCanvas)
+		LG.draw(theCanvas
+			, math.max(math.floor((ww-theCanvas:getWidth ())/2), 0)
+			, math.max(math.floor((wh-theCanvas:getHeight())/2), 0)
+		)
 	end
 end
 
