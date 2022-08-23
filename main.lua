@@ -288,12 +288,17 @@ local function processCommandLine(context, ln)
 					end
 
 				-- Variable: Var
-				elseif argStr:find"^%u" then
-					local var = argStr
+				elseif argStr:find"^%-?%u" then
+					local negate, var = argStr:match"^(%-?)(.+)"
 					if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
 					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
 					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
+
+					if negate == "-" then
+						if type(v) ~= "number" then  return printFileError(context, ln, "Cannot negate value. (%s is a %s.)", var, type(v))  end
+						v = -v
+					end
 
 					entry.vars[argName] = v
 
@@ -457,12 +462,17 @@ local function processCommandLine(context, ln)
 				args.var      = argStr
 
 			-- Variable: nameVar OR Var
-			elseif argStr:find"^%l*%u" then
-				local k, var = argStr:match"^(%l*)(.+)"
+			elseif argStr:find"^%l*%-?%u" then
+				local k, negate, var = argStr:match"^(%l*)(%-?)(.+)"
 				if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
 				local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
 				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
+
+				if negate == "-" then
+					if type(v) ~= "number" then  return printFileError(context, ln, "Cannot negate value. (%s is a %s.)", var, type(v))  end
+					v = -v
+				end
 
 				-- Named.
 				if k ~= "" then

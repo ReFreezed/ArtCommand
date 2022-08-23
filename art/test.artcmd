@@ -17,6 +17,9 @@ push
 	rotate 20deg
 	color 1 1 1
 	rect 0 0 10 10 ax.5 ay.5
+
+	set X 16
+	circle -X 0 3
 pop
 
 # Masks.
