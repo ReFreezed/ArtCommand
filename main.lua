@@ -95,17 +95,6 @@ local COMMANDS = {
 	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
 
-local CONSTANTS = {
-	["true" ] = true,
-	["false"] = false,
-	["huge" ] = 1/0,
-	["-huge"] = -1/0,
-	["pi"   ] = math.pi,
-	["-pi"  ] = -math.pi,
-	["tau"  ] = TAU,
-	["-tau" ] = -TAU,
-}
-
 local function StackEntry()
 	return {
 		funcs = {--[[ [funcName1]=funcInfo, ... ]]},
@@ -308,10 +297,6 @@ local function processCommandLine(context, ln)
 
 					entry.vars[argName] = v
 
-				-- Constant: K
-				elseif CONSTANTS[argStr] ~= nil then
-					entry.vars[argName] = CONSTANTS[argStr]
-
 				-- Parenthesis: (expression)
 				elseif argStr:find"^%(" then
 					local expr, nextPos = argsStr:match("^(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
@@ -320,7 +305,7 @@ local function processCommandLine(context, ln)
 					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
 
 					local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-						__index = function(_, k, v)  return CONSTANTS[k] or getLast(context.stack).vars[k]  end,
+						__index = function(_, k, v)  return getLast(context.stack).vars[k]  end,
 					}))
 					if not chunk then  return printFileError(context, ln, "Invalid expression '%s'. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
 
@@ -500,32 +485,6 @@ local function processCommandLine(context, ln)
 
 				args[k] = v
 
-			-- Constant: K
-			-- @Incomplete: nameK, somehow. For now parentheses can be used.
-			elseif CONSTANTS[argStr] ~= nil then
-				local k = "" -- @Temp
-				local v = CONSTANTS[argStr]
-
-				-- Named.
-				if k ~= "" then
-					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
-
-				-- Ordered.
-				else
-					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
-					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type '%s'. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
-					k = argInfo[1]
-				end
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
-				end
-
-				args[k] = v
-
 			-- Parenthesis: name(expression) OR (expression)
 			elseif argStr:find"^%l*%(" then
 				local k, expr, nextPos = argsStr:match("^(%l*)(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
@@ -534,7 +493,7 @@ local function processCommandLine(context, ln)
 				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
 
 				local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-					__index = function(_, k, v)  return CONSTANTS[k] or getLast(context.stack).vars[k]  end,
+					__index = function(_, k, v)  return getLast(context.stack).vars[k]  end,
 				}))
 				if not chunk then  return printFileError(context, ln, "Invalid expression '%s'. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
 
@@ -800,7 +759,15 @@ local function loadArtFile(path)
 		table.insert(context.lines, (line:find"^#" and "" or line))
 	end
 
-	table.insert(context.stack, StackEntry())
+	local entry      = StackEntry()
+	entry.vars.True  = true
+	entry.vars.False = false
+	entry.vars.Huge  = 1/0
+	entry.vars.Pi    = math.pi
+	entry.vars.Tau   = TAU
+
+	table.insert(context.stack, entry)
+
 	local ln = 1
 
 	while context.lines[ln] do

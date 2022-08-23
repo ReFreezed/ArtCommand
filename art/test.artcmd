@@ -27,7 +27,7 @@ makemask
 mask
 	color 1 50% 1
 	rect w1000 h1000 ax.5 ay.5
-mask false
+mask False
 
 # Line shapes.
 color 1 1 0
