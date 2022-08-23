@@ -53,6 +53,9 @@ local COMMANDS = {
 	["for"] = { {"var","I"}, {"from",1},{"to",0},{"step",1} },
 	["end"] = { }, -- Dummy, for error message.
 
+	set  = { {"var",""}, {"value",nil} }, -- Set variable.
+	setx = { {"var",""}, {"value",nil} }, -- Set existing variable.
+
 	-- Settings, init.
 	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
 
@@ -69,20 +72,17 @@ local COMMANDS = {
 	makemask = { {"clear",true} },
 	mask     = { {"mask",true} },
 
-	set  = { {"var",""}, {"value",nil} }, -- Set variable.
-	setx = { {"var",""}, {"value",nil} }, -- Set existing variable.
-
 	origin = { },
 	move   = { {"x",0},{"y",0} },
 	rotate = { {"a",0} },
 	scale  = { {"x",1},{"y",1/0--[[=x]]} },
 
 	-- Drawing.
-	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- (Not part of the image.)
 	clear    = { {"r",0},{"g",0},{"b",0},{"a",1} },
 
-	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]} },
-	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0} },
+	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
+	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
 	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
 
@@ -277,9 +277,14 @@ local function processCommandLine(context, ln)
 					local i1 = pos + 1
 					local i  = argsStr:find(q, i1, true)
 
-					if    i
-					then  entry.vars[argName] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos, i))  end
-					else  entry.vars[argName] = argsStr:sub(i1     ) ; break  end
+					if i then
+						if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s: %s", argsStr:sub(i1-1, i), argsStr:match("^%S+", i+1))  end
+						entry.vars[argName] = argsStr:sub(i1, i-1)
+						ignoreBefore        = i + 1
+					else
+						entry.vars[argName] = argsStr:sub(i1)
+						break
+					end
 
 				-- Variable: Var
 				elseif argStr:find"^%u" then
@@ -300,6 +305,8 @@ local function processCommandLine(context, ln)
 					local expr, nextPos = argsStr:match("^(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
 					if not expr then  return printFileError(context, ln, "Missing end parens: %s", argsStr:sub(pos))  end
 
+					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
+
 					local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
 						__index = function(_, k, v)  return CONSTANTS[k] or getLast(context.stack).vars[k]  end,
 					}))
@@ -310,9 +317,7 @@ local function processCommandLine(context, ln)
 					local v = vOrErr
 
 					entry.vars[argName] = v
-
-					ignoreBefore = nextPos
-					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after '%s': %s", expr, argsStr:match("^%S+", pos+#expr))  end
+					ignoreBefore        = nextPos
 
 				else
 					return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
@@ -440,9 +445,14 @@ local function processCommandLine(context, ln)
 					return printFileError(context, ln, "Argument '%s' is not a string.", k)
 				end
 
-				if    i
-				then  args[k] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
-				else  args[k] = argsStr:sub(i1     ) ; break  end
+				if i then
+					if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s: %s", argsStr:sub(i1-1, i), argsStr:match("^%S+", i+1))  end
+					args[k]      = argsStr:sub(i1, i-1)
+					ignoreBefore = i + 1
+				else
+					args[k] = argsStr:sub(i1)
+					break
+				end
 
 			-- Special case: Treat `set X` as `set "X"` (and same with 'setx' and 'for').
 			elseif (command == "set" or command == "setx" or command == "for") and argN == 1 and argStr:find"^%u" then
@@ -509,6 +519,8 @@ local function processCommandLine(context, ln)
 				local k, expr, nextPos = argsStr:match("^(%l*)(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
 				if not expr then  return printFileError(context, ln, "Missing end parens: %s", argsStr:sub(pos))  end
 
+				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
+
 				local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
 					__index = function(_, k, v)  return CONSTANTS[k] or getLast(context.stack).vars[k]  end,
 				}))
@@ -536,10 +548,8 @@ local function processCommandLine(context, ln)
 					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
 				end
 
-				args[k] = v
-
+				args[k]      = v
 				ignoreBefore = nextPos
-				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after '%s': %s", expr, argsStr:match("^%S+", pos+#k+#expr))  end
 
 			else
 				return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
@@ -548,7 +558,24 @@ local function processCommandLine(context, ln)
 	end
 
 	-- Language.
-	if command == "for" then
+	if command == "set" then
+		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
+		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
+		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
+
+		getLast(context.stack).vars[args.var] = args.value
+
+	elseif command == "setx" then
+		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
+		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
+		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
+
+		local v, stackIndex = findInStack(context, "vars", args.var) -- @Incomplete: Upvalues (which require lexical scope).
+		if v == nil then  return printFileError(context, ln, "No existing variable '%s'.", args.var)  end
+
+		context.stack[stackIndex].vars[args.var] = args.value
+
+	elseif command == "for" then
 		if args.var  == "" then  return printFileError(context, ln, "Missing variable name.")  end
 		if args.step == 0  then  return printFileError(context, ln, "Step is zero.")  end
 
@@ -641,23 +668,6 @@ local function processCommandLine(context, ln)
 		LG.setCanvas(context.art.canvas)
 		LG.setShader(shaderMain)
 
-	elseif command == "set" then
-		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
-		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
-		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
-
-		getLast(context.stack).vars[args.var] = args.value
-
-	elseif command == "setx" then
-		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
-		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
-		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
-
-		local v, stackIndex = findInStack(context, "vars", args.var) -- @Incomplete: Upvalues (which require lexical scope).
-		if v == nil then  return printFileError(context, ln, "No existing variable '%s'.", args.var)  end
-
-		context.stack[stackIndex].vars[args.var] = args.value
-
 	elseif command == "origin" then
 		LG.origin()
 	elseif command == "move" then
@@ -682,10 +692,12 @@ local function processCommandLine(context, ln)
 		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
 		ensureCanvas(context)
 		local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
+		LG.setLineWidth(args.thick)
 		LG.circle(args.mode, maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)
 	elseif command == "rect" then
 		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
 		ensureCanvas(context)
+		LG.setLineWidth(args.thick)
 		LG.rectangle(args.mode, maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))
 	elseif command == "text" then
 		ensureCanvas(context)

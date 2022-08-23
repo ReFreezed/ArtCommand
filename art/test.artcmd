@@ -51,3 +51,10 @@ color .5 0 0 .5
 for 1 7 2
 	rect (200+I*10) 150 10 50
 end
+
+color 0 0 0
+set X 0
+# do
+	set X 100
+# end
+circle "line" thick4 X 250 10
