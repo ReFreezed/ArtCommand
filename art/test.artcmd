@@ -24,10 +24,10 @@ makemask
 mask
 	color 1 50% 1
 	rect w1000 h1000 ax.5 ay.5
-nomask
+mask false
 
 color 1 1 0
-circle line !fill r24
+circle "line" r24
 
 origin
 color 1 1 .89
@@ -40,8 +40,14 @@ func DrawCircle X Y
 	DrawCircle (2*X) Y #inner
 end
 
-set RG .7
+set "RG" .7
 color RG RG 1
-set Tens (2*15)
+set  Tens "foo"
+setx Tens (2*15)
 DrawCircle 80 150
 DrawCircle(50+25) (200 - Tens)
+
+color .5 0 0 .5
+for 1 7 2
+	rect (200+I*10) 150 10 50
+end

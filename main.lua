@@ -7,7 +7,8 @@
 --=
 --============================================================]]
 
-local TAU = 2*math.pi
+local MAX_LOOPS = 10000
+local TAU       = 2*math.pi
 
 local LG = love.graphics
 
@@ -48,33 +49,41 @@ end
 local COMMANDS = {
 	-- command = { {argName1,defaultValue}, ... },
 
+	-- Language.
+	["for"] = { {"var","I"}, {"from",1},{"to",0},{"step",1} },
+	["end"] = { }, -- Dummy, for error message.
+
 	-- Settings, init.
 	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
 
 	-- Settings, dynamic.
-	round   = { },
-	noround = { },
+	round = { {"round",true} },
 
 	-- State.
-	push     = { },
-	pop      = { },
-	color    = { {"r",1},{"g",1},{"b",1},{"a",1} },
-	font     = { {"size",12} },
-	makemask = { },
-	mask     = { },
-	nomask   = { },
-	set      = { {"var",""}, {"value",nil} },
-	origin   = { },
-	move     = { {"x",0},{"y",0} },
-	rotate   = { {"a",0} },
-	scale    = { {"x",1},{"y",1/0--[[=x]]} },
+	push = { },
+	pop  = { },
+
+	color = { {"r",1},{"g",1},{"b",1},{"a",1} },
+	font  = { {"size",12} },
+
+	makemask = { {"clear",true} },
+	mask     = { {"mask",true} },
+
+	set  = { {"var",""}, {"value",nil} }, -- Set variable.
+	setx = { {"var",""}, {"value",nil} }, -- Set existing variable.
+
+	origin = { },
+	move   = { {"x",0},{"y",0} },
+	rotate = { {"a",0} },
+	scale  = { {"x",1},{"y",1/0--[[=x]]} },
 
 	-- Drawing.
 	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} },
 	clear    = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	circle   = { {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]}, {"fill",true},{"line",false} },
-	rect     = { {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"fill",true},{"line",false} },
-	text     = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
+
+	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]} },
+	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0} },
+	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
 
 local CONSTANTS = {
@@ -95,10 +104,11 @@ local function StackEntry()
 	}
 end
 
+-- value|nil, stackIndex = findInStack( context, member, key )
 local function findInStack(context, member, k)
 	for i = #context.stack, 1, -1 do
 		local v = context.stack[i][member][k]
-		if v ~= nil then  return v  end
+		if v ~= nil then  return v, i  end
 	end
 	return nil -- Not found!
 end
@@ -160,7 +170,13 @@ local function ensureCanvas(context)
 end
 
 local function maybeRound(context, x)
-	return context.doRound and math.floor(x+.5) or x
+	return context.round and math.floor(x+.5) or x
+end
+
+local function validateVariableName(context, ln, term, var)
+	if not var:find"^%a+$" then  printFileError(context, ln, "Bad %s '%s'. Must only contain letters."          , term, var) ; return false  end
+	if not var:find"^%u"   then  printFileError(context, ln, "Bad %s '%s'. Must start with an uppercase letter.", term, var) ; return false  end
+	return true
 end
 
 -- nextLineNumber|nil = processCommandLine( context, lineNumber )
@@ -176,9 +192,8 @@ local function processCommandLine(context, ln)
 	--
 	if command == "func" then
 		local funcName, funcArgsStr = argsStr:match"(%S+)(.*)"
-		if not funcName             then  return printFileError(context, ln, "Missing function name after 'func'.")  end
-		if not funcName:find"^%a+$" then  return printFileError(context, ln, "Bad function name '%s'. Must only contain letters.", funcName)  end -- @UX: Not a good rule. Maybe require space after the command?
-		if not funcName:find"^%u"   then  return printFileError(context, ln, "Bad function name '%s'. Must start with an uppercase letter.", funcName)  end
+		if not funcName then  return printFileError(context, ln, "Missing function name after 'func'.")  end
+		if not validateVariableName(context, ln, "function name", funcName) then  return nil  end -- @UX: Need to @Revisit.
 
 		if getLast(context.stack).funcs[funcName] then  printFileWarning(context, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
 
@@ -187,7 +202,8 @@ local function processCommandLine(context, ln)
 
 		for argName in funcArgsStr:gmatch"%S+" do
 			if argName:find"^#" then  break  end
-			table.insert(funcInfo, argName) -- @Incomplete: Validate variable name format.
+			if not validateVariableName(context, ln, "argument name", argName) then  return nil  end
+			table.insert(funcInfo, argName)
 		end
 
 		local endLn = ln
@@ -213,12 +229,6 @@ local function processCommandLine(context, ln)
 				end
 			end
 		end
-
-	--
-	-- For-loop.
-	--
-	elseif command == "for" then
-		return printFileError(context, ln, "@Incomplete: Command '%s'.", command)
 
 	--
 	-- Function call.
@@ -273,7 +283,8 @@ local function processCommandLine(context, ln)
 
 				-- Variable: Var
 				elseif argStr:find"^%u" then
-					local var = argStr -- @Incomplete: Validate variable name format.
+					local var = argStr
+					if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
 					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
 					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
@@ -281,7 +292,7 @@ local function processCommandLine(context, ln)
 					entry.vars[argName] = v
 
 				-- Constant: K
-				elseif CONSTANTS[argStr] then
+				elseif CONSTANTS[argStr] ~= nil then
 					entry.vars[argName] = CONSTANTS[argStr]
 
 				-- Parenthesis: (expression)
@@ -317,11 +328,11 @@ local function processCommandLine(context, ln)
 		table.insert(context.stack, entry)
 		context.callstack[funcInfo] = true
 
-		local funcLn = funcInfo.bodyLn1
+		local bodyLn = funcInfo.bodyLn1
 
-		while funcLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
-			funcLn = processCommandLine(context, funcLn)
-			if not funcLn then  return printFileMessage(context, ln, "in '%s' (%s:%d)", command, context.path, funcInfo.bodyLn1-1)  end
+		while bodyLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
+			bodyLn = processCommandLine(context, bodyLn)
+			if not bodyLn then  return printFileMessage(context, ln, "in '%s' (%s:%d)", command, context.path, funcInfo.bodyLn1-1)  end
 		end
 
 		table.remove(context.stack)
@@ -433,14 +444,15 @@ local function processCommandLine(context, ln)
 				then  args[k] = argsStr:sub(i1, i-1) ; ignoreBefore = i+1 ; if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s", argsStr:sub(pos+#k, i))  end
 				else  args[k] = argsStr:sub(i1     ) ; break  end
 
-			-- Special case: Treat `set X` as `set "X"`.
-			elseif command == "set" and argN == 1 and argStr:find"^%u" then
+			-- Special case: Treat `set X` as `set "X"` (and same with 'setx' and 'for').
+			elseif (command == "set" or command == "setx" or command == "for") and argN == 1 and argStr:find"^%u" then
 				orderN.string = 1
-				args.var      = argStr -- @Incomplete: Validate variable name format.
+				args.var      = argStr
 
 			-- Variable: nameVar OR Var
 			elseif argStr:find"^%l*%u" then
-				local k, var = argStr:match"^(%l*)(.+)" -- @Incomplete: Validate variable name format.
+				local k, var = argStr:match"^(%l*)(.+)"
+				if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
 				local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
 				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
@@ -468,7 +480,7 @@ local function processCommandLine(context, ln)
 
 			-- Constant: K
 			-- @Incomplete: nameK, somehow. For now parentheses can be used.
-			elseif CONSTANTS[argStr] then
+			elseif CONSTANTS[argStr] ~= nil then
 				local k = "" -- @Temp
 				local v = CONSTANTS[argStr]
 
@@ -535,8 +547,65 @@ local function processCommandLine(context, ln)
 		end
 	end
 
+	-- Language.
+	if command == "for" then
+		if args.var  == "" then  return printFileError(context, ln, "Missing variable name.")  end
+		if args.step == 0  then  return printFileError(context, ln, "Step is zero.")  end
+
+		-- Get loop body.
+		local bodyLn1 = ln + 1
+		local bodyLn2 = ln
+		local depth   = 1
+
+		while true do
+			bodyLn2 = bodyLn2 + 1
+			line    = context.lines[bodyLn2]
+			if not line then  return printFileError(context, ln, "Missing end of for-loop.")  end
+
+			command = (line == "") and "" or parseCommand(line)
+			if not command then  return printFileError(context, bodyLn2, "Bad line format: %s", line)  end
+
+			if command == "for" or command == "func" then -- @Volatile
+				depth = depth + 1
+
+			elseif command == "end" then
+				depth = depth - 1
+
+				if depth == 0 then
+					bodyLn2 = bodyLn2 - 1
+					break
+				end
+			end
+		end
+
+		-- Run loop.
+		local entry = StackEntry()
+		table.insert(context.stack, entry)
+
+		local loops = 0
+
+		for n = args.from, args.to, args.step do
+			loops = loops + 1
+
+			if loops >= MAX_LOOPS then -- Maybe there should be a MAX_DRAW_OPERATIONS too? MAX_LOOPS could probably be higher then. @Incomplete
+				printFileError(context, bodyLn1, "Max loops exceeded. Breaking.")
+				break
+			end
+
+			entry.vars[args.var] = n
+			local bodyLn         = bodyLn1
+
+			while bodyLn <= bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
+				bodyLn = processCommandLine(context, bodyLn)
+				if not bodyLn then  return nil  end
+			end
+		end
+
+		table.remove(context.stack)
+		ln = bodyLn2 + 1
+
 	-- Settings, init.
-	if command == "canvas" then
+	elseif command == "canvas" then
 		if context.art.canvas then  return printFileError(context, ln, "Cannot use '%s' after drawing commands.", command)  end
 		context.canvasW = (args.w >= 1) and args.w or LG.getWidth()
 		context.canvasH = (args.h >= 1) and args.h or LG.getHeight()
@@ -544,9 +613,7 @@ local function processCommandLine(context, ln)
 
 	-- Settings, dynamic.
 	elseif command == "round" then
-		context.doRound = true
-	elseif command == "noround" then
-		context.doRound = false
+		context.round = args.round
 
 	-- State.
 	elseif command == "push" then
@@ -566,22 +633,30 @@ local function processCommandLine(context, ln)
 		ensureCanvas(context)
 		LG.setCanvas(context.maskCanvas)
 		LG.setShader(shaderMask)
-		LG.clear(0, 0, 0, 1)
+		if args.clear then  LG.clear(0, 0, 0, 1)  end
+
 	elseif command == "mask" then
 		ensureCanvas(context)
-		shaderMain:send("useMask", true)
-		LG.setCanvas(context.art.canvas)
-		LG.setShader(shaderMain)
-	elseif command == "nomask" then
-		ensureCanvas(context)
-		shaderMain:send("useMask", false)
+		shaderMain:send("useMask", args.mask)
 		LG.setCanvas(context.art.canvas)
 		LG.setShader(shaderMain)
 
 	elseif command == "set" then
 		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
 		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
+		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
+
 		getLast(context.stack).vars[args.var] = args.value
+
+	elseif command == "setx" then
+		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
+		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
+		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
+
+		local v, stackIndex = findInStack(context, "vars", args.var) -- @Incomplete: Upvalues (which require lexical scope).
+		if v == nil then  return printFileError(context, ln, "No existing variable '%s'.", args.var)  end
+
+		context.stack[stackIndex].vars[args.var] = args.value
 
 	elseif command == "origin" then
 		LG.origin()
@@ -604,20 +679,23 @@ local function processCommandLine(context, ln)
 		LG.clear(args.r, args.g, args.b, args.a)
 
 	elseif command == "circle" then
+		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
 		ensureCanvas(context)
 		local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
-		if args.fill then  LG.circle("fill", maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)  end
-		if args.line then  LG.circle("line", maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)  end
+		LG.circle(args.mode, maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)
 	elseif command == "rect" then
+		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
 		ensureCanvas(context)
-		if args.fill then  LG.rectangle("fill", maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))  end
-		if args.line then  LG.rectangle("line", maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))  end
+		LG.rectangle(args.mode, maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))
 	elseif command == "text" then
 		ensureCanvas(context)
 		local font         = LG.getFont()
 		local w, textLines = font:getWrap(args.text, 1/0)
 		local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight()
 		LG.print(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h))
+
+	elseif command == "end" then
+		return printFileError(context, ln, "Unexpected 'end'.")
 
 	else
 		printFileWarning(context, ln, "@Incomplete: Command '%s'. Ignoring.", command)
@@ -645,7 +723,7 @@ local function loadArtFile(path)
 		canvasW = LG.getWidth(),
 		canvasH = LG.getHeight(),
 		msaa    = 1,
-		doRound = false,
+		round   = false,
 	}
 
 	for line in love.filesystem.lines(context.path) do
