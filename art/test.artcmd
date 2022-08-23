@@ -2,6 +2,7 @@ canvas 500 500 aa4
 backdrop0 .3 0 .5
 clear.4 .4 .4
 
+# Draw stuff.
 color 1 1 1 .1
 font 64  # Big boy!
 text 10 0 "TEST TEST TEST
@@ -9,6 +10,7 @@ text 10 0 "TEST TEST TEST
 color 0 0 0
 circle 50 50 10
 
+# Transform.
 move 50 50
 
 push
@@ -17,6 +19,7 @@ push
 	rect 0 0 10 10 ax.5 ay.5
 pop
 
+# Masks.
 makemask
 	rect w20 h20
 	font 24
@@ -26,13 +29,16 @@ mask
 	rect w1000 h1000 ax.5 ay.5
 mask false
 
+# Line shapes.
 color 1 1 0
 circle "line" r24
 
+# Reset transform.
 origin
 color 1 1 .89
 circle r20
 
+# Functions.
 func DrawCircle X Y
 	func DrawCircle X Y #inner
 		circle X Y 10
@@ -47,14 +53,16 @@ setx Tens (2*15)
 DrawCircle 80 150
 DrawCircle(50+25) (200 - Tens)
 
+# Loops.
 color .5 0 0 .5
 for 1 7 2
 	rect (200+I*10) 150 10 50
 end
 
+# Blocks.
 color 0 0 0
 set X 0
-# do
+do
 	set X 100
-# end
+end
 circle "line" thick4 X 250 10

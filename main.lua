@@ -50,11 +50,14 @@ local COMMANDS = {
 	-- command = { {argName1,defaultValue}, ... },
 
 	-- Language.
+	set  = { {"var",""}, {"value",nil} }, -- Set variable.
+	setx = { {"var",""}, {"value",nil} }, -- Set existing variable.
+
+	["do" ] = { },
 	["for"] = { {"var","I"}, {"from",1},{"to",0},{"step",1} },
 	["end"] = { }, -- Dummy, for error message.
 
-	set  = { {"var",""}, {"value",nil} }, -- Set variable.
-	setx = { {"var",""}, {"value",nil} }, -- Set existing variable.
+	-- Special commands: "func", user defined functions.
 
 	-- Settings, init.
 	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
@@ -206,6 +209,7 @@ local function processCommandLine(context, ln)
 			table.insert(funcInfo, argName)
 		end
 
+		-- @Cleanup: defind getEndOfBlock() or something.
 		local endLn = ln
 		local depth = 1
 
@@ -217,7 +221,7 @@ local function processCommandLine(context, ln)
 			command = (line == "") and "" or parseCommand(line)
 			if not command then  return printFileError(context, endLn, "Bad line format: %s", line)  end
 
-			if command == "for" or command == "func" then -- @Volatile
+			if command == "do" or command == "for" or command == "func" then -- @Volatile
 				depth = depth + 1
 
 			elseif command == "end" then
@@ -575,11 +579,52 @@ local function processCommandLine(context, ln)
 
 		context.stack[stackIndex].vars[args.var] = args.value
 
+	elseif command == "do" then
+		-- Get block body.  @Cleanup: defind getEndOfBlock() or something.
+		local bodyLn1 = ln + 1
+		local bodyLn2 = ln
+		local depth   = 1
+
+		while true do
+			bodyLn2 = bodyLn2 + 1
+			line    = context.lines[bodyLn2]
+			if not line then  return printFileError(context, ln, "Missing end of do-block.")  end
+
+			command = (line == "") and "" or parseCommand(line)
+			if not command then  return printFileError(context, bodyLn2, "Bad line format: %s", line)  end
+
+			if command == "do" or command == "for" or command == "func" then -- @Volatile
+				depth = depth + 1
+
+			elseif command == "end" then
+				depth = depth - 1
+
+				if depth == 0 then
+					bodyLn2 = bodyLn2 - 1
+					break
+				end
+			end
+		end
+
+		-- Run block.
+		local entry = StackEntry()
+		table.insert(context.stack, entry)
+
+		local bodyLn = bodyLn1
+
+		while bodyLn <= bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
+			bodyLn = processCommandLine(context, bodyLn)
+			if not bodyLn then  return nil  end
+		end
+
+		table.remove(context.stack)
+		ln = bodyLn2 + 1
+
 	elseif command == "for" then
 		if args.var  == "" then  return printFileError(context, ln, "Missing variable name.")  end
 		if args.step == 0  then  return printFileError(context, ln, "Step is zero.")  end
 
-		-- Get loop body.
+		-- Get loop body.  @Cleanup: defind getEndOfBlock() or something.
 		local bodyLn1 = ln + 1
 		local bodyLn2 = ln
 		local depth   = 1
@@ -592,7 +637,7 @@ local function processCommandLine(context, ln)
 			command = (line == "") and "" or parseCommand(line)
 			if not command then  return printFileError(context, bodyLn2, "Bad line format: %s", line)  end
 
-			if command == "for" or command == "func" then -- @Volatile
+			if command == "do" or command == "for" or command == "func" then -- @Volatile
 				depth = depth + 1
 
 			elseif command == "end" then
@@ -707,8 +752,7 @@ local function processCommandLine(context, ln)
 		LG.print(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h))
 
 	elseif command == "end" then
-		return printFileError(context, ln, "Unexpected 'end'.")
-
+		return printFileError(context, ln, "Unexpected '%s'.", command)
 	else
 		printFileWarning(context, ln, "@Incomplete: Command '%s'. Ignoring.", command)
 	end
