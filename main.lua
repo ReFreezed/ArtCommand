@@ -89,9 +89,10 @@ local COMMANDS = {
 
 	-- Drawing.
 	clear = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	fill  = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
 
-	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
 	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
+	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
 	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
 }
 
@@ -713,18 +714,25 @@ local function processCommandLine(context, ln)
 	elseif command == "clear" then
 		ensureCanvas(context)
 		LG.clear(args.r, args.g, args.b, args.a)
+	elseif command == "fill" then
+		ensureCanvas(context)
+		LG.push("all")
+		LG.origin()
+		LG.setColor(args.r, args.g, args.b, args.a)
+		LG.rectangle("fill", -1,-1, context.art.canvas:getWidth()+2,context.art.canvas:getHeight()+2) -- Not sure if the bleeding is necessary (if msaa>1).
+		LG.pop()
 
+	elseif command == "rect" then
+		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
+		ensureCanvas(context)
+		LG.setLineWidth(args.thick)
+		LG.rectangle(args.mode, maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))
 	elseif command == "circle" then
 		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
 		ensureCanvas(context)
 		local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
 		LG.setLineWidth(args.thick)
 		LG.circle(args.mode, maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)
-	elseif command == "rect" then
-		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
-		ensureCanvas(context)
-		LG.setLineWidth(args.thick)
-		LG.rectangle(args.mode, maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))
 	elseif command == "text" then
 		ensureCanvas(context)
 		local font         = LG.getFont()
