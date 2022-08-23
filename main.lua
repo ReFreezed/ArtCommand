@@ -11,10 +11,13 @@ local MAX_LOOPS = 10000
 local TAU       = 2*math.pi
 
 local LG = love.graphics
+local hotLoader
 
-local theArt     = nil
-local shaderMain = nil
-local shaderMask = nil
+local thePath       = ""
+local thePathIsTest = false
+local theArt        = nil
+local shaderMain    = nil
+local shaderMask    = nil
 local checkerImage, checkerQuad
 
 
@@ -782,7 +785,7 @@ local function loadArtFile(path)
 		round   = false,
 	}
 
-	for line in love.filesystem.lines(context.path) do
+	for line in io.lines(context.path) do
 		line = line:gsub("^%s+", "")
 		table.insert(context.lines, (line:find"^#" and "" or line))
 	end
@@ -809,13 +812,35 @@ local function loadArtFile(path)
 	return context.art.canvas and context.art
 end
 
+local function tryLoadingTheArtFile()
+	local art = loadArtFile(thePath)
+
+	for i = 1, LG.getStackDepth() do
+		LG.pop()
+	end
+	LG.reset()
+
+	if not art then  return  end
+
+	if theArt then  theArt.canvas:release()  end
+	theArt = art
+
+	love.window.setTitle(string.format(
+		"%s (%dx%d) - Art Command",
+		thePath:gsub("^.*[/\\]", ""),
+		theArt.canvas:getWidth(), theArt.canvas:getHeight()
+	))
+end
+
 
 
 function love.load(args, rawArgs)
 	io.stdout:setvbuf("no")
 	io.stderr:setvbuf("no")
 
-	_G.arg = nil
+	_G.arg = nil -- Aaarrrgh!!!
+
+	hotLoader = require"hotLoader"
 
 	shaderMain = LG.newShader[[//GLSL
 		uniform bool useMask;
@@ -847,20 +872,66 @@ function love.load(args, rawArgs)
 	checkerImage:setWrap("repeat", "repeat")
 	checkerQuad = LG.newQuad(0,0, 8,8, checkerImage:getDimensions())
 
-	thePath = args[1] or "art/test.artcmd" -- @Incomplete: Support external files.
+	thePath = args[1]
+
+	if not thePath then
+		thePath       = "art/test.artcmd"
+		thePathIsTest = true
+	end
+
+	if love.system.getOS() == "Windows" then -- hotLoader works best on Windows.
+		hotLoader.allowExternalPaths(true)
+		hotLoader.monitor(thePath, function(path)
+			tryLoadingTheArtFile()
+		end)
+		tryLoadingTheArtFile()
+	end
 end
 
 
+
+-- success, error = writeFile( path, dataString )
+local function writeFile(path, data)
+	local file, err = io.open(path, "wb")
+	if not file then  return false, err  end
+
+	file:write(data)
+	file:close()
+
+	return true
+end
 
 function love.keypressed(key)
 	if key == "escape" then
 		love.event.quit()
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
-		if theArt then
-			print("Saving output.png...")
-			theArt.canvas:newImageData():encode("png", "output.png")
-			print("Saving output.png... done!")
+		if not theArt then  return  end
+
+		if thePathIsTest then
+			local pathOut = "output.png"
+			print("Saving "..pathOut.."...")
+			theArt.canvas:newImageData():encode("png", pathOut)
+			print("Saving "..pathOut.."... done!")
+
+		else
+			local pathOut = thePath:gsub("%.[^.]+$", "")..".png"
+			if pathOut == thePath then
+				print("Error: Input and output paths are the same: "..pathOut)
+				return
+			end
+
+			print("Saving "..pathOut.."...")
+
+			local fileData = theArt.canvas:newImageData():encode("png")
+			local ok, err  = writeFile(pathOut, fileData:getString())
+
+			if not ok then
+				print("Error: "..err)
+				return
+			end
+
+			print("Saving "..pathOut.."... done!")
 		end
 	end
 end
@@ -871,32 +942,21 @@ local theModtime       = -1/0
 local modtimeCheckTime = 0
 
 function love.update(dt)
-	modtimeCheckTime = modtimeCheckTime - dt
+	if love.system.getOS() == "Windows" then -- hotLoader works best on Windows.
+		hotLoader.update(dt)
 
-	if modtimeCheckTime < 0 then
-		modtimeCheckTime = 0.20
+	else
+		modtimeCheckTime = modtimeCheckTime - dt
 
-		local info    = love.filesystem.getInfo(thePath, "file")
-		local modtime = info and info.modtime
+		if modtimeCheckTime < 0 then
+			modtimeCheckTime = 0.20
 
-		if modtime and modtime ~= theModtime then
-			theModtime = modtime
-			local art  = loadArtFile(thePath)
+			local info    = love.filesystem.getInfo(thePath, "file")
+			local modtime = info and info.modtime
 
-			for i = 1, LG.getStackDepth() do
-				LG.pop()
-			end
-			LG.reset()
-
-			if art then
-				if theArt then  theArt.canvas:release()  end
-				theArt = art
-
-				love.window.setTitle(string.format(
-					"%s (%dx%d) - Art Command",
-					thePath:gsub("^.*[/\\]", ""),
-					theArt.canvas:getWidth(), theArt.canvas:getHeight()
-				))
+			if modtime and modtime ~= theModtime then
+				theModtime = modtime
+				tryLoadingTheArtFile()
 			end
 		end
 	end
