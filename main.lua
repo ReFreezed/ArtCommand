@@ -62,6 +62,10 @@ local COMMANDS = {
 
 	-- Special commands: "func", user defined functions.
 
+	-- Settings, app.
+	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- (Not part of the image.)
+	zoom     = { {"zoom",1} },
+
 	-- Settings, init.
 	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
 
@@ -84,8 +88,7 @@ local COMMANDS = {
 	scale  = { {"x",1},{"y",1/0--[[=x]]} },
 
 	-- Drawing.
-	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- (Not part of the image.)
-	clear    = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	clear = { {"r",0},{"g",0},{"b",0},{"a",1} },
 
 	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
 	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
@@ -167,6 +170,8 @@ local function ensureCanvas(context)
 
 	context.art.canvas = LG.newCanvas(context.canvasW,context.canvasH, {msaa=(context.msaa > 1 and context.msaa or nil)})
 	context.maskCanvas = LG.newCanvas(context.canvasW,context.canvasH, {format="r8"})
+
+	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 
 	shaderMain:send("useMask", false)
 	shaderMain:send("mask", context.maskCanvas)
@@ -679,6 +684,16 @@ local function processCommandLine(context, ln)
 		table.remove(context.stack)
 		ln = bodyLn2 + 1
 
+	-- Setting, app.
+	elseif command == "backdrop" then
+		context.art.backdrop[1] = args.r
+		context.art.backdrop[2] = args.g
+		context.art.backdrop[3] = args.b
+		context.art.backdrop[4] = args.a
+
+	elseif command == "zoom" then
+		context.art.zoom = args.zoom
+
 	-- Settings, init.
 	elseif command == "canvas" then
 		if context.art.canvas then  return printFileError(context, ln, "Cannot use '%s' after drawing commands.", command)  end
@@ -726,12 +741,6 @@ local function processCommandLine(context, ln)
 		LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
 
 	-- Drawing.
-	elseif command == "backdrop" then
-		context.art.backdrop[1] = args.r
-		context.art.backdrop[2] = args.g
-		context.art.backdrop[3] = args.b
-		context.art.backdrop[4] = args.a
-
 	elseif command == "clear" then
 		ensureCanvas(context)
 		LG.clear(args.r, args.g, args.b, args.a)
@@ -771,6 +780,7 @@ local function loadArtFile(path)
 		art = {
 			canvas   = nil,
 			backdrop = {0,0,0,0},
+			zoom     = 1.0,
 		},
 
 		path       = path,
@@ -979,12 +989,23 @@ function love.draw()
 			LG.rectangle("fill", 0,0, ww,wh)
 		end
 
+		LG.translate(math.floor(ww/2),math.floor(wh/2))
+		LG.scale(theArt.zoom)
+		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
+
+		local w = theArt.canvas:getWidth()
+		local h = theArt.canvas:getHeight()
+		local x = math.max(math.floor((ww-w)/2), 0)
+		local y = math.max(math.floor((wh-h)/2), 0)
+		LG.setColor(0, 0, 0)
+		LG.rectangle("fill", x-1,y-1, w+2,1)
+		LG.rectangle("fill", x-1,y+h, w+2,1)
+		LG.rectangle("fill", x-1,y-1, 1,h+2)
+		LG.rectangle("fill", x+w,y-1, 1,h+2)
+
 		-- LG.setBlendMode("alpha", "premultiplied")
 		LG.setColor(1, 1, 1)
-		LG.draw(theArt.canvas
-			, math.max(math.floor((ww-theArt.canvas:getWidth ())/2), 0)
-			, math.max(math.floor((wh-theArt.canvas:getHeight())/2), 0)
-		)
+		LG.draw(theArt.canvas, x,y)
 
 	else
 		local text = "No art loaded"
