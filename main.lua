@@ -13,11 +13,12 @@ local TAU       = 2*math.pi
 local LG = love.graphics
 local hotLoader
 
-local thePath       = ""
-local thePathIsTest = false
-local theArt        = nil
-local shaderMain    = nil
-local shaderMask    = nil
+local thePath         = ""
+local thePathIsTest   = false
+local theArt          = nil
+local shaderMain      = nil
+local shaderMakeMask  = nil
+local shaderApplyMask = nil
 local checkerImage, checkerQuad
 
 
@@ -88,8 +89,7 @@ local COMMANDS = {
 	scale  = { {"x",1},{"y",1/0--[[=x]]} },
 
 	-- Drawing.
-	clear = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	fill  = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
+	fill = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
 
 	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
 	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
@@ -155,16 +155,25 @@ local function parseNumber(nStr)
 	end
 end
 
+local function shaderSend(shader, var, ...)
+	pcall(shader.send, shader, var, ...)
+end
+
 local function ensureCanvas(context)
 	if context.art.canvas then  return  end
 
-	context.art.canvas = LG.newCanvas(context.canvasW,context.canvasH, {msaa=(context.msaa > 1 and context.msaa or nil)})
-	context.maskCanvas = LG.newCanvas(context.canvasW,context.canvasH, {format="r8"})
+	local settings = {
+		format = "rgba16",
+		msaa   = (context.msaa > 1 and context.msaa or nil),
+	}
+
+	context.art.canvas   = LG.newCanvas(context.canvasW,context.canvasH, settings)
+	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settings)
+	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r8"})
 
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 
-	shaderMain:send("useMask", false)
-	shaderMain:send("mask", context.maskCanvas)
+	shaderSend(shaderApplyMask, "mask", context.maskCanvas)
 
 	LG.setCanvas(context.art.canvas)
 	LG.setShader(shaderMain)
@@ -178,6 +187,18 @@ local function validateVariableName(context, ln, term, var)
 	if not var:find"^%a+$" then  printFileError(context, ln, "Bad %s '%s'. Must only contain letters."          , term, var) ; return false  end
 	if not var:find"^%u"   then  printFileError(context, ln, "Bad %s '%s'. Must start with an uppercase letter.", term, var) ; return false  end
 	return true
+end
+
+local function maybeApplyMask(context)
+	if LG.getCanvas() ~= context.canvasToMask then  return  end
+
+	LG.push("all")
+	LG.reset()
+	LG.setCanvas(context.art.canvas)
+	LG.setBlendMode("alpha", "premultiplied")
+	LG.setShader(shaderApplyMask)
+	LG.draw(context.canvasToMask)
+	LG.pop()
 end
 
 -- nextLineNumber|nil = processCommandLine( context, lineNumber )
@@ -293,7 +314,7 @@ local function processCommandLine(context, ln)
 					local negate, var = argStr:match"^(%-?)(.+)"
 					if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
-					local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
+					local v = findInStack(context, "vars", var) -- @Incomplete: Proper upvalues (which require lexical scope).
 					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
 					if negate == "-" then
@@ -311,12 +332,12 @@ local function processCommandLine(context, ln)
 					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
 
 					local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-						__index = function(_, k, v)  return getLast(context.stack).vars[k]  end,
+						__index = function(_, k, v)  return findInStack(context, "vars", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
 					}))
-					if not chunk then  return printFileError(context, ln, "Invalid expression '%s'. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
+					if not chunk then  return printFileError(context, ln, "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
 
 					local ok, vOrErr = pcall(chunk)
-					if not ok then  return printFileError(context, ln, "Failed evaluating expression '%s'. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
+					if not ok then  return printFileError(context, ln, "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
 					local v = vOrErr
 
 					entry.vars[argName] = v
@@ -467,7 +488,7 @@ local function processCommandLine(context, ln)
 				local k, negate, var = argStr:match"^(%l*)(%-?)(.+)"
 				if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
-				local v = getLast(context.stack).vars[var]--findInStack(context, "vars", var) -- @Incomplete: Upvalues (which require lexical scope).
+				local v = findInStack(context, "vars", var) -- @Incomplete: Proper upvalues (which require lexical scope).
 				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
 				if negate == "-" then
@@ -504,12 +525,12 @@ local function processCommandLine(context, ln)
 				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
 
 				local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-					__index = function(_, k, v)  return getLast(context.stack).vars[k]  end,
+					__index = function(_, k, v)  return findInStack(context, "vars", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
 				}))
-				if not chunk then  return printFileError(context, ln, "Invalid expression '%s'. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
+				if not chunk then  return printFileError(context, ln, "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
 
 				local ok, vOrErr = pcall(chunk)
-				if not ok then  return printFileError(context, ln, "Failed evaluating expression '%s'. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
+				if not ok then  return printFileError(context, ln, "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
 				local v = vOrErr
 
 				-- Named.
@@ -552,7 +573,7 @@ local function processCommandLine(context, ln)
 		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
 		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
 
-		local v, stackIndex = findInStack(context, "vars", args.var) -- @Incomplete: Upvalues (which require lexical scope).
+		local v, stackIndex = findInStack(context, "vars", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
 		if v == nil then  return printFileError(context, ln, "No existing variable '%s'.", args.var)  end
 
 		context.stack[stackIndex].vars[args.var] = args.value
@@ -691,14 +712,21 @@ local function processCommandLine(context, ln)
 
 	elseif command == "makemask" then
 		ensureCanvas(context)
+		maybeApplyMask(context)
 		LG.setCanvas(context.maskCanvas)
-		LG.setShader(shaderMask)
+		LG.setShader(shaderMakeMask)
 		if args.clear then  LG.clear(0, 0, 0, 1)  end
+		LG.setColor(1, 1, 1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't.
 
 	elseif command == "mask" then
 		ensureCanvas(context)
-		shaderMain:send("useMask", args.mask)
-		LG.setCanvas(context.art.canvas)
+		maybeApplyMask(context)
+		if args.mask then
+			LG.setCanvas(context.canvasToMask)
+			LG.clear(0, 0, 0, 0)
+		else
+			LG.setCanvas(context.art.canvas)
+		end
 		LG.setShader(shaderMain)
 
 	elseif command == "origin" then
@@ -711,9 +739,6 @@ local function processCommandLine(context, ln)
 		LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
 
 	-- Drawing.
-	elseif command == "clear" then
-		ensureCanvas(context)
-		LG.clear(args.r, args.g, args.b, args.a)
 	elseif command == "fill" then
 		ensureCanvas(context)
 		LG.push("all")
@@ -760,11 +785,12 @@ local function loadArtFile(path)
 			zoom     = 1.0,
 		},
 
-		path       = path,
-		lines      = {},
-		stack      = {--[[ stackEntry1, ... ]]},
-		callstack  = {--[[ [funcInfo1]=true, ... ]]},
-		maskCanvas = nil,
+		path         = path,
+		lines        = {},
+		stack        = {--[[ stackEntry1, ... ]]},
+		callstack    = {--[[ [funcInfo1]=true, ... ]]},
+		canvasToMask = nil,
+		maskCanvas   = nil,
 
 		canvasW = LG.getWidth(),
 		canvasH = LG.getHeight(),
@@ -792,18 +818,23 @@ local function loadArtFile(path)
 		ln = processCommandLine(context, ln)
 		if not ln then
 			LG.setCanvas(nil)
-			if context.canvas     then  context.canvas    :release()  end
-			if context.maskCanvas then  context.maskCanvas:release()  end
+			if context.art.canvas   then  context.art.canvas  :release()  end
+			if context.canvasToMask then  context.canvasToMask:release()  end
+			if context.maskCanvas   then  context.maskCanvas  :release()  end
 			return nil
 		end
 	end
-
 	assert(#context.stack == 1)
+
+	if context.art.canvas then
+		maybeApplyMask(context)
+	end
 	LG.setCanvas(nil)
 
 	print("Loading "..context.path.."... done!")
 
-	if context.maskCanvas then  context.maskCanvas:release()  end
+	if context.canvasToMask then  context.canvasToMask:release()  end
+	if context.maskCanvas   then  context.maskCanvas  :release()  end
 	return context.art.canvas and context.art
 end
 
@@ -837,19 +868,25 @@ function love.load(args, rawArgs)
 
 	hotLoader = require"hotLoader"
 
-	shaderMain = LG.newShader[[//GLSL
-		uniform bool useMask;
+	shaderMain = LG.newShader[[//GLSL  @Cleanup: Remove shader as it does nothing special.
+		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
+			return Texel(tex, texPos) * loveColor;
+		}
+	]]
+	shaderMakeMask = LG.newShader[[//GLSL
+		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
+			vec4 color = Texel(tex, texPos) * loveColor;
+			return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
+			// return vec4(1, 0, 0, (color.r+color.g+color.b)/3*color.a); // One way of doing it.
+		}
+	]]
+	shaderApplyMask = LG.newShader[[//GLSL
 		uniform Image mask;
 
 		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
-			vec4 pixel = Texel(tex, texPos);
-			if (useMask)  pixel.a *= Texel(mask, screenPosPx/love_ScreenSize.xy).r;
-			return pixel * loveColor;
-		}
-	]]
-	shaderMask = LG.newShader[[//GLSL
-		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
-			return vec4(1, 1, 1, Texel(tex, texPos).a);
+			vec4 pixel  = Texel(tex, texPos);
+			pixel.rgba *= Texel(mask, texPos).r;
+			return pixel;
 		}
 	]]
 
@@ -885,6 +922,22 @@ end
 
 
 
+local function fixFormatAndDemultiplyAlpha(imageData16)
+	local iw,ih      = imageData16:getDimensions()
+	local imageData8 = love.image.newImageData(iw,ih, "rgba8")
+	local pointer16  = require"ffi".cast("uint16_t*", imageData16:getFFIPointer())
+	local pointer8   = require"ffi".cast("uint8_t*" , imageData8 :getFFIPointer())
+
+	for i = 0, 4*iw*ih-1, 4 do
+		pointer8[i  ] = (pointer16[i  ] * 255) / pointer16[i+3]
+		pointer8[i+1] = (pointer16[i+1] * 255) / pointer16[i+3]
+		pointer8[i+2] = (pointer16[i+2] * 255) / pointer16[i+3]
+		pointer8[i+3] = pointer16[i+3] / 257
+	end
+
+	return imageData8
+end
+
 -- success, error = writeFile( path, dataString )
 local function writeFile(path, data)
 	local file, err = io.open(path, "wb")
@@ -906,7 +959,7 @@ function love.keypressed(key)
 		if thePathIsTest then
 			local pathOut = "output.png"
 			print("Saving "..pathOut.."...")
-			theArt.canvas:newImageData():encode("png", pathOut)
+			fixFormatAndDemultiplyAlpha(theArt.canvas:newImageData()):encode("png", pathOut)
 			print("Saving "..pathOut.."... done!")
 
 		else
@@ -918,7 +971,7 @@ function love.keypressed(key)
 
 			print("Saving "..pathOut.."...")
 
-			local fileData = theArt.canvas:newImageData():encode("png")
+			local fileData = fixFormatAndDemultiplyAlpha(theArt.canvas:newImageData()):encode("png")
 			local ok, err  = writeFile(pathOut, fileData:getString())
 
 			if not ok then
@@ -962,6 +1015,7 @@ end
 function love.draw()
 	local ww,wh = LG.getDimensions()
 
+	LG.reset()
 	LG.clear(.4, .4, .4, 1)
 
 	checkerQuad:setViewport(0,0, ww,wh)
@@ -988,8 +1042,8 @@ function love.draw()
 		LG.rectangle("fill", x-1,y-1, 1,h+2)
 		LG.rectangle("fill", x+w,y-1, 1,h+2)
 
-		-- LG.setBlendMode("alpha", "premultiplied")
 		LG.setColor(1, 1, 1)
+		LG.setBlendMode("alpha", "premultiplied")
 		LG.draw(theArt.canvas, x,y)
 
 	else

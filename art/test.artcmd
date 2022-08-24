@@ -1,6 +1,32 @@
+func TestBlobs X Y Size
+	set Col -1
+
+	func TestBlobColumn R G B
+		setx Col (Col+1)
+		color R G B 1
+		circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) (Size/2)
+		color R G B .75
+		circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) (Size/2)
+		color R G B .50
+		circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) (Size/2)
+		color R G B .25
+		circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) (Size/2)
+	end
+
+	push
+		TestBlobColumn 1 1 1
+		TestBlobColumn 0 0 0
+		TestBlobColumn 1 0 0
+	pop
+end
+
+
+
 canvas 500 500 aa4
 backdrop0 .3 0 .5
-clear.4 .4 .4
+# backdrop (40/255) (40/255) (40/255)
+fill.4 .4 .4 .5
+# zoom 2
 
 # Draw stuff.
 color 1 1 1 .1
@@ -25,12 +51,17 @@ pop
 # Masks.
 makemask
 	rect w20 h20
+	rect w30 h30 y35
 	font 24
 	text text"Hello, world!" x12
+	TestBlobs 1 40 4
+	TestBlobs 1 70 4
 mask
 	color 1 50% 1
 	rect w1000 h1000 ax.5 ay.5
+	TestBlobs 1 1 4
 mask False
+TestBlobs -13 1 4
 
 # Line shapes.
 color 1 1 0
