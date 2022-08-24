@@ -11,8 +11,9 @@
 --=
 --============================================================]]
 
-local MAX_LOOPS = 10000
-local TAU       = 2*math.pi
+local MAX_LOOPS           = 10000
+local MAX_CIRCLE_SEGMENTS = 128
+local TAU                 = 2*math.pi
 
 local COMMANDS = {
 	-- command = { {argName1,defaultValue}, ... },
@@ -347,8 +348,8 @@ local function drawRectangleLine(x,y, w,h, lw)
 	local y3 = h - lw*.5
 	local y4 = h + lw*.5
 
-	local lwx = lw / (x4-x1)
-	local lwy = lw / (y4-y1)
+	local lwU = lw / (x4-x1)
+	local lwV = lw / (y4-y1)
 
 	-- Outer.
 	vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4] = x1,y1, 0,0
@@ -357,14 +358,77 @@ local function drawRectangleLine(x,y, w,h, lw)
 	vertices[8][1],vertices[8][2], vertices[8][3],vertices[8][4] = x1,y4, 0,1
 
 	-- Inner.
-	vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = x2,y2, lwx,lwy
-	vertices[3][1],vertices[3][2], vertices[3][3],vertices[3][4] = x3,y2, 1-lwx,lwy
-	vertices[5][1],vertices[5][2], vertices[5][3],vertices[5][4] = x3,y3, 1-lwx,1-lwy
-	vertices[7][1],vertices[7][2], vertices[7][3],vertices[7][4] = x2,y3, lwx,1-lwy
+	vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = x2,y2, lwU,lwV
+	vertices[3][1],vertices[3][2], vertices[3][3],vertices[3][4] = x3,y2, 1-lwU,lwV
+	vertices[5][1],vertices[5][2], vertices[5][3],vertices[5][4] = x3,y3, 1-lwU,1-lwV
+	vertices[7][1],vertices[7][2], vertices[7][3],vertices[7][4] = x2,y3, lwU,1-lwV
 
 	vertices[ 9][1],vertices[ 9][2], vertices[ 9][3],vertices[ 9][4] = vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4]
 	vertices[10][1],vertices[10][2], vertices[10][3],vertices[10][4] = vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4]
 	mesh:setVertices(vertices)
+	LG.draw(mesh, x,y)
+end
+
+local vertices = {{0,0, .5,.5, 1,1,1,1}}
+local mesh     = nil
+
+for i = 2, MAX_CIRCLE_SEGMENTS+2 do
+	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
+end
+
+local function drawCircleFill(x,y, radius, segs)
+	if not mesh then
+		mesh = LG.newMesh(vertices, "fan", "stream")
+		mesh:setTexture(A.images.rectangle)
+	end
+
+	segs             = clamp(segs, 3, MAX_CIRCLE_SEGMENTS)
+	local deltaAngle = TAU / segs
+
+	for i = 2, segs+2 do
+		local angle = i * deltaAngle
+		local c     = math.cos(angle)
+		local s     = math.sin(angle)
+		vertices[i][1],vertices[i][2], vertices[i][3],vertices[i][4] = radius*c,radius*s, .5+.5*c,.5+.5*s
+	end
+
+	mesh:setVertices(vertices, 1, segs+2)
+	mesh:setDrawRange(         1, segs+2)
+	LG.draw(mesh, x,y)
+end
+
+local vertices = {}
+local mesh     = nil
+
+for i = 1, 2*MAX_CIRCLE_SEGMENTS+2 do
+	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
+end
+
+local function drawCircleLine(x,y, radius, segs, lw)
+	if not mesh then
+		mesh = LG.newMesh(vertices, "strip", "stream")
+		mesh:setTexture(A.images.rectangle)
+	end
+
+	segs             = clamp(segs, 3, MAX_CIRCLE_SEGMENTS)
+	local radius1    = radius - lw*.5
+	local radius2    = radius + lw*.5
+	local deltaAngle = TAU / segs
+	local radiusUv   = (1 - lw/radius2) / 2
+
+	for i = 1, segs do
+		local angle = i * deltaAngle
+		local c     = math.cos(angle)
+		local s     = math.sin(angle)
+		vertices[2*i-1][1],vertices[2*i-1][2], vertices[2*i-1][3],vertices[2*i-1][4] = radius1*c,radius1*s, .5+.5*c,.5+.5*s
+		vertices[2*i  ][1],vertices[2*i  ][2], vertices[2*i  ][3],vertices[2*i  ][4] = radius2*c,radius2*s, .5+radiusUv*c,.5+radiusUv*s
+	end
+
+	vertices[2*segs+1][1],vertices[2*segs+1][2], vertices[2*segs+1][3],vertices[2*segs+1][4] = vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4]
+	vertices[2*segs+2][1],vertices[2*segs+2][2], vertices[2*segs+2][3],vertices[2*segs+2][4] = vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4]
+
+	mesh:setVertices(vertices, 1, 2*segs+2)
+	mesh:setDrawRange(         1, 2*segs+2)
 	LG.draw(mesh, x,y)
 end
 
@@ -971,17 +1035,18 @@ local function processCommandLine(context, ln)
 		end
 
 	elseif command == "circle" then
-		-- @Incomplete: Make gradients work for circles.
-		if not (args.mode == "fill" or args.mode == "line") then
-			return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)
-		end
-
+		-- @Incomplete: Ellipses.
 		ensureCanvas(context)
 
-		local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
+		local x    = maybeRound(context, args.x)
+		local y    = maybeRound(context, args.y)
+		local segs = (args.segs >= 3) and args.segs or math.max(math.floor(args.r*TAU/10), 64)
 
-		LG.setLineWidth(args.thick)
-		LG.circle(args.mode, maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)
+		if     args.mode == "fill" then  drawCircleFill(x,y, args.r, segs)
+		elseif args.mode == "line" then  drawCircleLine(x,y, args.r, segs, args.thick)
+		else
+			return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)
+		end
 
 	elseif command == "text" then
 		if not (args.align == "left" or args.align == "center" or args.align == "right" or args.align == "justify") then

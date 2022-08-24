@@ -104,8 +104,15 @@ circle "line" thick4 X 250 10
 
 # Gradients.
 grad  0 1 1 1  0 0 1 1
-rect (320+0*40) 100 25 50
+rect (320+0*40) 90 30 60
 grad  0 1 1 1  0 0 1 1  45deg scale3
-rect (320+1*40) 100 25 50
-grad  0 1 1 1  0 0 1 1  80deg
-rect (320+2*40) 100 25 50 "line" thick4
+rect (320+1*40) 90 30 60
+grad  0 1 1 1  0 0 1 1  -75deg
+rect (320+2*40) 90 30 60 "line" thick4
+
+grad  0 1 1 1  0 0 1 1
+circle (335+0*40) 175 15
+grad  0 1 1 1  0 0 1 1  45deg scale3
+circle (335+1*40) 175 15
+grad  0 1 1 1  0 0 1 1  -75deg
+circle (335+2*40) 175 15 "line" thick4
