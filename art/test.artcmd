@@ -52,6 +52,7 @@ pop
 makemask
 	rect w20 h20
 	rect w30 h30 y35
+	circle 50 50 10
 	font 24
 	text text"Hello, world!" x12
 	TestBlobs 1 40 4

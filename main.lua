@@ -162,15 +162,20 @@ end
 local function ensureCanvas(context)
 	if context.art.canvas then  return  end
 
-	local settings = {
+	local settingsCanvas = {
 		format = "rgba16",
 		msaa   = (context.msaa > 1 and context.msaa or nil),
 	}
+	local settingsMask = {
+		format = "r16",
+		msaa   = settingsCanvas.msaa,
+	}
 
-	context.art.canvas   = LG.newCanvas(context.canvasW,context.canvasH, settings)
-	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settings)
-	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r8"})
+	context.art.canvas   = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
+	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
+	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, settingsMask)
 
+	context.maskCanvas:setFilter("nearest") -- This fixes weird fuzziness when applying mask.
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 
 	shaderSend(shaderApplyMask, "mask", context.maskCanvas)
@@ -199,6 +204,17 @@ local function maybeApplyMask(context)
 	LG.setShader(shaderApplyMask)
 	LG.draw(context.canvasToMask)
 	LG.pop()
+
+	--[[ DEBUG
+	LG.push("all")
+	LG.reset()
+	LG.setBlendMode("replace")
+	LG.draw(context.canvasToMask)
+	-- LG.draw(context.maskCanvas)
+	LG.present()
+	LG.sleep(1)
+	LG.pop()
+	--]]
 end
 
 -- nextLineNumber|nil = processCommandLine( context, lineNumber )
@@ -228,7 +244,7 @@ local function processCommandLine(context, ln)
 			table.insert(funcInfo, argName)
 		end
 
-		-- @Cleanup: defind getEndOfBlock() or something.
+		-- @Cleanup: Define getEndOfBlock() or something.
 		local endLn = ln
 		local depth = 1
 
@@ -579,7 +595,7 @@ local function processCommandLine(context, ln)
 		context.stack[stackIndex].vars[args.var] = args.value
 
 	elseif command == "do" then
-		-- Get block body.  @Cleanup: defind getEndOfBlock() or something.
+		-- Get block body.  @Cleanup: Define getEndOfBlock() or something.
 		local bodyLn1 = ln + 1
 		local bodyLn2 = ln
 		local depth   = 1
@@ -623,7 +639,7 @@ local function processCommandLine(context, ln)
 		if args.var  == "" then  return printFileError(context, ln, "Missing variable name.")  end
 		if args.step == 0  then  return printFileError(context, ln, "Step is zero.")  end
 
-		-- Get loop body.  @Cleanup: defind getEndOfBlock() or something.
+		-- Get loop body.  @Cleanup: Define getEndOfBlock() or something.
 		local bodyLn1 = ln + 1
 		local bodyLn2 = ln
 		local depth   = 1
@@ -700,7 +716,7 @@ local function processCommandLine(context, ln)
 	elseif command == "push" then
 		LG.push("all")
 	elseif command == "pop" then
-		if    love.graphics.getStackDepth() == 0
+		if    LG.getStackDepth() == 0
 		then  printFileWarning(context, ln, "Too many 'pop' commands! Ignoring.")
 		else  LG.pop()  end
 
@@ -877,15 +893,15 @@ function love.load(args, rawArgs)
 		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
 			vec4 color = Texel(tex, texPos) * loveColor;
 			return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
-			// return vec4(1, 0, 0, (color.r+color.g+color.b)/3*color.a); // One way of doing it.
 		}
 	]]
 	shaderApplyMask = LG.newShader[[//GLSL
 		uniform Image mask;
 
 		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
-			vec4 pixel  = Texel(tex, texPos);
-			pixel.rgba *= Texel(mask, texPos).r;
+			vec4 pixel      = Texel(tex , texPos);
+			vec4 maskPixel  = Texel(mask, texPos);
+			pixel.rgba     *= maskPixel.r;
 			return pixel;
 		}
 	]]
@@ -1013,6 +1029,8 @@ end
 
 
 function love.draw()
+	if not LG.isActive() then  return  end
+
 	local ww,wh = LG.getDimensions()
 
 	LG.reset()
@@ -1059,6 +1077,8 @@ function love.draw()
 		LG.setColor(1, 1, 1)
 		LG.print(text, x,y)
 	end
+
+	LG.present()
 end
 
 
@@ -1067,5 +1087,27 @@ function love.errorhandler(err)
 	print(debug.traceback(tostring(err), 2))
 end
 love.errhand = love.errorhandler
+
+
+
+function love.run()
+	love.load(love.arg.parseGameArguments(arg), arg)
+	love.timer.step()
+
+	return function()
+		love.event.pump()
+
+		for name, a,b,c,d,e,f in love.event.poll() do
+			if name == "quit" and not (love.quit and love.quit()) then
+				return a or 0
+			end
+			love.handlers[name](a,b,c,d,e,f)
+		end
+
+		love.update(love.timer.step())
+		love.draw()
+		love.timer.sleep(.001)
+	end
+end
 
 
