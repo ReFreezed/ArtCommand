@@ -31,7 +31,7 @@ fill.4 .4 .4 .5
 # Draw stuff.
 color 1 1 1 .1
 font 64  # Big boy!
-text 10 0 "TEST TEST TEST
+text 10 0 wrap550 "TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 10
@@ -101,3 +101,11 @@ do
 	set X 100
 end
 circle "line" thick4 X 250 10
+
+# Gradients.
+grad  0 1 1 1  0 0 1 1
+rect (320+0*40) 100 25 50
+grad  0 1 1 1  0 0 1 1  45deg scale3
+rect (320+1*40) 100 25 50
+grad  0 1 1 1  0 0 1 1  80deg
+rect (320+2*40) 100 25 50 "line" thick4

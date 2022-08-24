@@ -14,8 +14,62 @@
 local MAX_LOOPS = 10000
 local TAU       = 2*math.pi
 
+local COMMANDS = {
+	-- command = { {argName1,defaultValue}, ... },
+
+	-- Language.
+	["set" ] = { {"var",""}, {"value",nil} }, -- Set variable.
+	["setx"] = { {"var",""}, {"value",nil} }, -- Set existing variable.
+
+	["do" ] = { },
+	["for"] = { {"var","I"}, {"from",1},{"to",0},{"step",1} },
+	["end"] = { }, -- Dummy, for error message.
+
+	-- Special commands: "func", user defined functions.
+
+	-- Settings, app.
+	["backdrop"] = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- (Not part of the image.)
+	["zoom"    ] = { {"zoom",1} },
+
+	-- Settings, init.
+	["canvas"] = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
+
+	-- Settings, dynamic.
+	["round"] = { {"round",true} },
+
+	-- State.
+	["push"] = { },
+	["pop" ] = { },
+
+	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1} },
+	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"rr",1},{"gg",1},{"bb",1},{"aa",1}, {"angle",0}, {"scale",1} },
+	["font" ] = { {"size",12} },
+
+	["makemask"] = { {"clear",true} },
+	["mask"    ] = { {"mask",true} },
+
+	["origin"] = { },
+	["move"  ] = { {"x",0},{"y",0} },
+	["rotate"] = { {"a",0} },
+	["scale" ] = { {"x",1},{"y",1/0--[[=x]]} },
+
+	-- Drawing.
+	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
+
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
+	["text"  ] = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0}, {"wrap",1/0},{"align","left"} },
+}
+
+
+
 local LG = love.graphics
 local hotLoader
+
+local A = { -- Assets.
+	images = {},
+	quads  = {},
+}
 
 local thePathIn       = ""
 local thePathOut      = "" -- Empty means auto.
@@ -24,7 +78,48 @@ local theArt          = nil
 local shaderMain      = nil
 local shaderMakeMask  = nil
 local shaderApplyMask = nil
-local checkerImage, checkerQuad
+
+
+
+local function Art()return{
+	canvas   = nil,
+	backdrop = {0,0,0,0},
+	zoom     = 1.0,
+}end
+
+local function Context()return{
+	art = nil,
+
+	path  = "",
+	lines = {},
+
+	scopeStack = {--[[ scopeStackEntry1, ... ]]},
+	callStack  = {--[[ [funcInfo1]=true, ... ]]},
+
+	canvasToMask = nil,
+	maskCanvas   = nil,
+
+	-- Settings.
+	canvasW = 1,
+	canvasH = 1,
+	msaa    = 1,
+	round   = false,
+
+	-- State (in addition to love.graphics).  @Incomplete: Push/pop this stuff too.
+	colorImage = nil,
+}end
+
+local function FunctionInfo()return{
+	bodyLn1 = 0,
+	bodyLn2 = 0,
+
+	-- [1] = argName1, ...
+}end
+
+local function ScopeStackEntry()return{
+	functions = {--[[ [funcName1]=funcInfo, ... ]]},
+	variables = {--[[ [varName1 ]=value   , ... ]]},
+}end
 
 
 
@@ -55,63 +150,10 @@ end
 
 
 
-local COMMANDS = {
-	-- command = { {argName1,defaultValue}, ... },
-
-	-- Language.
-	set  = { {"var",""}, {"value",nil} }, -- Set variable.
-	setx = { {"var",""}, {"value",nil} }, -- Set existing variable.
-
-	["do" ] = { },
-	["for"] = { {"var","I"}, {"from",1},{"to",0},{"step",1} },
-	["end"] = { }, -- Dummy, for error message.
-
-	-- Special commands: "func", user defined functions.
-
-	-- Settings, app.
-	backdrop = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- (Not part of the image.)
-	zoom     = { {"zoom",1} },
-
-	-- Settings, init.
-	canvas = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
-
-	-- Settings, dynamic.
-	round = { {"round",true} },
-
-	-- State.
-	push = { },
-	pop  = { },
-
-	color = { {"r",1},{"g",1},{"b",1},{"a",1} },
-	font  = { {"size",12} },
-
-	makemask = { {"clear",true} },
-	mask     = { {"mask",true} },
-
-	origin = { },
-	move   = { {"x",0},{"y",0} },
-	rotate = { {"a",0} },
-	scale  = { {"x",1},{"y",1/0--[[=x]]} },
-
-	-- Drawing.
-	fill = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
-
-	rect   = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
-	circle = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
-	text   = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0} },
-}
-
-local function StackEntry()
-	return {
-		funcs = {--[[ [funcName1]=funcInfo, ... ]]},
-		vars  = {--[[ [varName1 ]=value   , ... ]]},
-	}
-end
-
 -- value|nil, stackIndex = findInStack( context, member, key )
 local function findInStack(context, member, k)
-	for i = #context.stack, 1, -1 do
-		local v = context.stack[i][member][k]
+	for i = #context.scopeStack, 1, -1 do
+		local v = context.scopeStack[i][member][k]
 		if v ~= nil then  return v, i  end
 	end
 	return nil -- Not found!
@@ -160,8 +202,24 @@ local function parseNumber(nStr)
 	end
 end
 
+local vec2 = {0,0}
+local vec3 = {0,0,0}
+local vec4 = {0,0,0,0}
+
 local function shaderSend(shader, var, ...)
 	pcall(shader.send, shader, var, ...)
+end
+local function shaderSendVec2(shader, var, x,y)
+	vec2[1], vec2[2] = x, y
+	pcall(shader.send, shader, var, vec2)
+end
+local function shaderSendVec3(shader, var, x,y,z)
+	vec3[1], vec3[2], vec3[3] = x, y, z
+	pcall(shader.send, shader, var, vec3)
+end
+local function shaderSendVec4(shader, var, x,y,z,w)
+	vec4[1], vec4[2], vec4[3], vec4[4] = x, y, z, w
+	pcall(shader.send, shader, var, vec4)
 end
 
 local function ensureCanvas(context)
@@ -183,20 +241,131 @@ local function ensureCanvas(context)
 	context.maskCanvas:setFilter("nearest") -- This fixes weird fuzziness when applying mask.
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 
-	shaderSend(shaderApplyMask, "mask", context.maskCanvas)
+	shaderSend(shaderMain     , "useColorTexture", false)
+	shaderSend(shaderApplyMask, "mask"           , context.maskCanvas)
 
 	LG.setCanvas(context.art.canvas)
 	LG.setShader(shaderMain)
 end
 
+local function round(v)
+	return math.floor(v+.5)
+end
+
+local function clamp(v, min,max)
+	return math.max(math.min(v, max), min)
+end
+
+local function lerp(v1,v2, t)
+	return v1 + t*(v2-v1)
+end
+local function lerp4(r1,g1,b1,a1, r2,g2,b2,a2, t)
+	return lerp(r1,r2, t)
+	     , lerp(g1,g2, t)
+	     , lerp(b1,b2, t)
+	     , lerp(a1,a2, t)
+end
+
+-- colorValue8    = toColor32( colorValue )
+-- r8, g8, b8, a8 = toColor32( r, g, b, a )
+local function toColor32(r, g, b, a)
+	if g then
+		return clamp(round(r*255), 0, 255)
+		     , clamp(round(g*255), 0, 255)
+		     , clamp(round(b*255), 0, 255)
+		     , clamp(round(a*255), 0, 255)
+	else
+		return clamp(round(r*255), 0, 255)
+	end
+end
+
 local function maybeRound(context, x)
-	return context.round and math.floor(x+.5) or x
+	return context.round and round(x) or x
 end
 
 local function validateVariableName(context, ln, term, var)
 	if not var:find"^%a+$" then  printFileError(context, ln, "Bad %s '%s'. Must only contain letters."          , term, var) ; return false  end
 	if not var:find"^%u"   then  printFileError(context, ln, "Bad %s '%s'. Must start with an uppercase letter.", term, var) ; return false  end
 	return true
+end
+
+local function newImageUsingPalette(pixelRows, palette)
+	local imageData = love.image.newImageData(#pixelRows[1], #pixelRows)
+
+	for row, pixelRow in ipairs(pixelRows) do
+		for col = 1, #pixelRow do
+			local k       = pixelRow:sub(col, col)
+			local pixel   = palette[k] or error("No color for '"..k.."'.")
+			local r,g,b,a = unpack(pixel)
+			imageData:setPixel(col-1,row-1, r,g,b,a) -- @Speed
+		end
+	end
+
+	return LG.newImage(imageData)
+end
+
+local function drawRectangleFill(x,y, w,h)
+	local iw,ih = A.images.rectangle:getDimensions()
+	LG.draw(A.images.rectangle, x,y, 0, w/iw,h/ih)
+end
+
+local mesh, vertices = nil, {
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+}
+
+local function drawRectangleLine(x,y, w,h, lw)
+	--
+	--   1 2 3 4
+	-- 1 2-----4  10=2
+	--   |\\  /|
+	-- 2 | 1-3/|  9=1
+	--   | | | |
+	-- 3 |/7-5 |
+	--   |/  \\|
+	-- 4 8-----6
+	--
+	if not mesh then
+		mesh = LG.newMesh(vertices, "strip", "stream")
+		mesh:setTexture(A.images.rectangle)
+	end
+
+	local x1 =   - lw*.5
+	local x2 =     lw*.5
+	local x3 = w - lw*.5
+	local x4 = w + lw*.5
+	local y1 =   - lw*.5
+	local y2 =     lw*.5
+	local y3 = h - lw*.5
+	local y4 = h + lw*.5
+
+	local lwx = lw / (x4-x1)
+	local lwy = lw / (y4-y1)
+
+	-- Outer.
+	vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4] = x1,y1, 0,0
+	vertices[4][1],vertices[4][2], vertices[4][3],vertices[4][4] = x4,y1, 1,0
+	vertices[6][1],vertices[6][2], vertices[6][3],vertices[6][4] = x4,y4, 1,1
+	vertices[8][1],vertices[8][2], vertices[8][3],vertices[8][4] = x1,y4, 0,1
+
+	-- Inner.
+	vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = x2,y2, lwx,lwy
+	vertices[3][1],vertices[3][2], vertices[3][3],vertices[3][4] = x3,y2, 1-lwx,lwy
+	vertices[5][1],vertices[5][2], vertices[5][3],vertices[5][4] = x3,y3, 1-lwx,1-lwy
+	vertices[7][1],vertices[7][2], vertices[7][3],vertices[7][4] = x2,y3, lwx,1-lwy
+
+	vertices[ 9][1],vertices[ 9][2], vertices[ 9][3],vertices[ 9][4] = vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4]
+	vertices[10][1],vertices[10][2], vertices[10][3],vertices[10][4] = vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4]
+	mesh:setVertices(vertices)
+	LG.draw(mesh, x,y)
 end
 
 local function maybeApplyMask(context)
@@ -238,10 +407,11 @@ local function processCommandLine(context, ln)
 		if not funcName then  return printFileError(context, ln, "Missing function name after 'func'.")  end
 		if not validateVariableName(context, ln, "function name", funcName) then  return nil  end -- @UX: Need to @Revisit.
 
-		if getLast(context.stack).funcs[funcName] then  printFileWarning(context, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
+		if getLast(context.scopeStack).functions[funcName] then  printFileWarning(context, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
 
-		local funcInfo                         = {bodyLn1=ln+1, bodyLn2=0, --[[argName1, ...]]}
-		getLast(context.stack).funcs[funcName] = funcInfo
+		local funcInfo                                  = FunctionInfo()
+		funcInfo.bodyLn1                                = ln + 1
+		getLast(context.scopeStack).functions[funcName] = funcInfo
 
 		for argName in funcArgsStr:gmatch"%S+" do
 			if argName:find"^#" then  break  end
@@ -278,14 +448,14 @@ local function processCommandLine(context, ln)
 	-- Function call.
 	--
 	elseif command:find"^%u" then
-		local funcInfo = findInStack(context, "funcs", command)
+		local funcInfo = findInStack(context, "functions", command)
 		if not funcInfo then  return printFileError(context, ln, "No function '%s'.", command)  end
 
-		if context.callstack[funcInfo] then
+		if context.callStack[funcInfo] then
 			return printFileError(context, ln, "Recursively calling '%s'. (%s:%d)", command, context.path, funcInfo.bodyLn1-1)
 		end
 
-		local entry = StackEntry()
+		local entry = ScopeStackEntry()
 
 		-- Arguments.
 		-- @Copypaste from below.
@@ -312,7 +482,7 @@ local function processCommandLine(context, ln)
 					local n = parseNumber(argStr)
 					if not n then  return printFileError(context, ln, "Failed parsing number: %s", argStr)  end
 
-					entry.vars[argName] = n
+					entry.variables[argName] = n
 
 				-- String: "S" OR "S OR 'S' OR 'S
 				-- @Incomplete: Newlines.
@@ -323,10 +493,10 @@ local function processCommandLine(context, ln)
 
 					if i then
 						if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s: %s", argsStr:sub(i1-1, i), argsStr:match("^%S+", i+1))  end
-						entry.vars[argName] = argsStr:sub(i1, i-1)
-						ignoreBefore        = i + 1
+						entry.variables[argName] = argsStr:sub(i1, i-1)
+						ignoreBefore             = i + 1
 					else
-						entry.vars[argName] = argsStr:sub(i1)
+						entry.variables[argName] = argsStr:sub(i1)
 						break
 					end
 
@@ -335,7 +505,7 @@ local function processCommandLine(context, ln)
 					local negate, var = argStr:match"^(%-?)(.+)"
 					if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
-					local v = findInStack(context, "vars", var) -- @Incomplete: Proper upvalues (which require lexical scope).
+					local v = findInStack(context, "variables", var) -- @Incomplete: Proper upvalues (which require lexical scope).
 					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
 					if negate == "-" then
@@ -343,7 +513,7 @@ local function processCommandLine(context, ln)
 						v = -v
 					end
 
-					entry.vars[argName] = v
+					entry.variables[argName] = v
 
 				-- Parenthesis: (expression)
 				elseif argStr:find"^%(" then
@@ -353,7 +523,7 @@ local function processCommandLine(context, ln)
 					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
 
 					local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-						__index = function(_, k, v)  return findInStack(context, "vars", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
+						__index = function(_, k, v)  return findInStack(context, "variables", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
 					}))
 					if not chunk then  return printFileError(context, ln, "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
 
@@ -361,8 +531,8 @@ local function processCommandLine(context, ln)
 					if not ok then  return printFileError(context, ln, "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
 					local v = vOrErr
 
-					entry.vars[argName] = v
-					ignoreBefore        = nextPos
+					entry.variables[argName] = v
+					ignoreBefore             = nextPos
 
 				else
 					return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
@@ -375,8 +545,8 @@ local function processCommandLine(context, ln)
 		end
 
 		-- Run function.
-		table.insert(context.stack, entry)
-		context.callstack[funcInfo] = true
+		table.insert(context.scopeStack, entry)
+		context.callStack[funcInfo] = true
 
 		local bodyLn = funcInfo.bodyLn1
 
@@ -385,8 +555,8 @@ local function processCommandLine(context, ln)
 			if not bodyLn then  return printFileMessage(context, ln, "in '%s' (%s:%d)", command, context.path, funcInfo.bodyLn1-1)  end
 		end
 
-		table.remove(context.stack)
-		context.callstack[funcInfo] = nil
+		table.remove(context.scopeStack)
+		context.callStack[funcInfo] = nil
 
 		return ln+1
 	end
@@ -509,7 +679,7 @@ local function processCommandLine(context, ln)
 				local k, negate, var = argStr:match"^(%l*)(%-?)(.+)"
 				if not validateVariableName(context, ln, "variable name", var) then  return nil  end
 
-				local v = findInStack(context, "vars", var) -- @Incomplete: Proper upvalues (which require lexical scope).
+				local v = findInStack(context, "variables", var) -- @Incomplete: Proper upvalues (which require lexical scope).
 				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
 
 				if negate == "-" then
@@ -546,7 +716,7 @@ local function processCommandLine(context, ln)
 				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
 
 				local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-					__index = function(_, k, v)  return findInStack(context, "vars", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
+					__index = function(_, k, v)  return findInStack(context, "variables", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
 				}))
 				if not chunk then  return printFileError(context, ln, "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
 
@@ -587,17 +757,17 @@ local function processCommandLine(context, ln)
 		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
 		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
 
-		getLast(context.stack).vars[args.var] = args.value
+		getLast(context.scopeStack).variables[args.var] = args.value
 
 	elseif command == "setx" then
 		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
 		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
 		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
 
-		local v, stackIndex = findInStack(context, "vars", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
+		local v, stackIndex = findInStack(context, "variables", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
 		if v == nil then  return printFileError(context, ln, "No existing variable '%s'.", args.var)  end
 
-		context.stack[stackIndex].vars[args.var] = args.value
+		context.scopeStack[stackIndex].variables[args.var] = args.value
 
 	elseif command == "do" then
 		-- Get block body.  @Cleanup: Define getEndOfBlock() or something.
@@ -627,8 +797,8 @@ local function processCommandLine(context, ln)
 		end
 
 		-- Run block.
-		local entry = StackEntry()
-		table.insert(context.stack, entry)
+		local entry = ScopeStackEntry()
+		table.insert(context.scopeStack, entry)
 
 		local bodyLn = bodyLn1
 
@@ -637,7 +807,7 @@ local function processCommandLine(context, ln)
 			if not bodyLn then  return nil  end
 		end
 
-		table.remove(context.stack)
+		table.remove(context.scopeStack)
 		ln = bodyLn2 + 1
 
 	elseif command == "for" then
@@ -671,8 +841,8 @@ local function processCommandLine(context, ln)
 		end
 
 		-- Run loop.
-		local entry = StackEntry()
-		table.insert(context.stack, entry)
+		local entry = ScopeStackEntry()
+		table.insert(context.scopeStack, entry)
 
 		local loops = 0
 
@@ -684,8 +854,8 @@ local function processCommandLine(context, ln)
 				break
 			end
 
-			entry.vars[args.var] = n
-			local bodyLn         = bodyLn1
+			entry.variables[args.var] = n
+			local bodyLn              = bodyLn1
 
 			while bodyLn <= bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
 				bodyLn = processCommandLine(context, bodyLn)
@@ -693,7 +863,7 @@ local function processCommandLine(context, ln)
 			end
 		end
 
-		table.remove(context.stack)
+		table.remove(context.scopeStack)
 		ln = bodyLn2 + 1
 
 	-- Setting, app.
@@ -727,6 +897,24 @@ local function processCommandLine(context, ln)
 
 	elseif command == "color" then
 		LG.setColor(args.r, args.g, args.b, args.a)
+		shaderSend(shaderMain, "useColorTexture", false)
+		if context.colorImage then
+			context.colorImage:release()
+			context.colorImage = nil
+		end
+
+	elseif command == "grad" then
+		if context.colorImage then
+			context.colorImage:release()
+		end
+		context.colorImage = newImageUsingPalette({"abc","abc"}, {
+			a = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 0/2)}, -- @Cleanup: Better argument names.
+			b = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 1/2)},
+			c = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 2/2)},
+		})
+		shaderSend    (shaderMain, "useColorTexture"   , true)
+		shaderSend    (shaderMain, "colorTexture"      , context.colorImage)
+		shaderSendVec4(shaderMain, "colorTextureLayout", math.cos(args.angle),math.sin(args.angle), args.scale,1)
 
 	elseif command == "font" then
 		LG.setNewFont(args.size)
@@ -769,22 +957,44 @@ local function processCommandLine(context, ln)
 		LG.pop()
 
 	elseif command == "rect" then
-		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
 		ensureCanvas(context)
-		LG.setLineWidth(args.thick)
-		LG.rectangle(args.mode, maybeRound(context,args.x-args.ax*args.w),maybeRound(context,args.y-args.ay*args.h), maybeRound(context,args.w),maybeRound(context,args.h))
+
+		local x = maybeRound(context, args.x-args.ax*args.w)
+		local y = maybeRound(context, args.y-args.ay*args.h)
+		local w = maybeRound(context, args.w)
+		local h = maybeRound(context, args.h)
+
+		if     args.mode == "fill" then  drawRectangleFill(x,y, w,h)
+		elseif args.mode == "line" then  drawRectangleLine(x,y, w,h, args.thick)
+		else
+			return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)
+		end
+
 	elseif command == "circle" then
-		if not (args.mode == "fill" or args.mode == "line") then  return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)  end
+		-- @Incomplete: Make gradients work for circles.
+		if not (args.mode == "fill" or args.mode == "line") then
+			return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)
+		end
+
 		ensureCanvas(context)
+
 		local segs = (args.segs >= 3) and args.segs or math.max(64, math.floor(args.r*TAU/10))
+
 		LG.setLineWidth(args.thick)
 		LG.circle(args.mode, maybeRound(context,args.x),maybeRound(context,args.y), args.r, segs)
+
 	elseif command == "text" then
+		if not (args.align == "left" or args.align == "center" or args.align == "right" or args.align == "justify") then
+			return printFileError(context, ln, "Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align)
+		end
+
 		ensureCanvas(context)
+
 		local font         = LG.getFont()
-		local w, textLines = font:getWrap(args.text, 1/0)
-		local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight()
-		LG.print(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h))
+		local w, textLines = font:getWrap(args.text, args.wrap)
+		local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight() -- @Incomplete: Line height argument.
+
+		LG.printf(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h), w, args.align)
 
 	elseif command == "end" then
 		return printFileError(context, ln, "Unexpected '%s'.", command)
@@ -799,39 +1009,25 @@ local function loadArtFile(path)
 	print("Loading "..path.."...")
 	LG.reset()
 
-	local context = {
-		art = {
-			canvas   = nil,
-			backdrop = {0,0,0,0},
-			zoom     = 1.0,
-		},
-
-		path         = path,
-		lines        = {},
-		stack        = {--[[ stackEntry1, ... ]]},
-		callstack    = {--[[ [funcInfo1]=true, ... ]]},
-		canvasToMask = nil,
-		maskCanvas   = nil,
-
-		canvasW = LG.getWidth(),
-		canvasH = LG.getHeight(),
-		msaa    = 1,
-		round   = false,
-	}
+	local context   = Context()
+	context.art     = Art()
+	context.path    = path
+	context.canvasW = LG.getWidth()
+	context.canvasH = LG.getHeight()
 
 	for line in io.lines(context.path) do
 		line = line:gsub("^%s+", "")
 		table.insert(context.lines, (line:find"^#" and "" or line))
 	end
 
-	local entry      = StackEntry()
-	entry.vars.True  = true
-	entry.vars.False = false
-	entry.vars.Huge  = 1/0
-	entry.vars.Pi    = math.pi
-	entry.vars.Tau   = TAU
+	local entry           = ScopeStackEntry()
+	entry.variables.True  = true
+	entry.variables.False = false
+	entry.variables.Huge  = 1/0
+	entry.variables.Pi    = math.pi
+	entry.variables.Tau   = TAU
 
-	table.insert(context.stack, entry)
+	table.insert(context.scopeStack, entry)
 
 	local ln = 1
 
@@ -845,7 +1041,7 @@ local function loadArtFile(path)
 			return nil
 		end
 	end
-	assert(#context.stack == 1)
+	assert(#context.scopeStack == 1)
 
 	if context.art.canvas then
 		maybeApplyMask(context)
@@ -923,12 +1119,39 @@ function love.load(args, rawArgs)
 	-- Load stuff.
 	hotLoader = require"hotLoader"
 
-	shaderMain = LG.newShader[[//GLSL  @Cleanup: Remove shader as it does nothing special.
+	shaderMain = LG.newShader[[//GLSL
+		uniform bool useColorTexture;
+		uniform Image colorTexture;
+		uniform vec4 colorTextureLayout; // {directionX,directionY, scaleX,scaleY}
+
+		// vec2 rotate(vec2 v, vec2 angle) {
+		// 	return vec2(v.x*angle.x-v.y*angle.y, v.x*angle.y+v.y*angle.x);
+		// }
+		vec2 rotateCcw(vec2 v, vec2 angle) {
+			return vec2(v.x*angle.x+v.y*angle.y, -v.x*angle.y+v.y*angle.x);
+		}
+
 		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
-			return Texel(tex, texPos) * loveColor;
+			vec4 color = Texel(tex, texPos);
+
+			if (useColorTexture) {
+				vec2 colorTexPos = texPos;
+
+				colorTexPos  = colorTexPos*2 - vec2(1, 1); // Center.
+				colorTexPos  = rotateCcw(colorTexPos, colorTextureLayout.xy); // Rotate.
+				colorTexPos /= colorTextureLayout.zw; // Scale.
+				colorTexPos  = (colorTexPos + vec2(1, 1)) * .5;
+
+				color *= Texel(colorTexture, colorTexPos);
+
+			} else {
+				color *= loveColor;
+			}
+
+			return color;
 		}
 	]]
-	shaderMakeMask = LG.newShader[[//GLSL
+	shaderMakeMask = LG.newShader[[//GLSL  @Cleanup: Merge with shaderMain so colorTexture etc. work in masks too.
 		vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
 			vec4 color = Texel(tex, texPos) * loveColor;
 			return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
@@ -945,19 +1168,34 @@ function love.load(args, rawArgs)
 		}
 	]]
 
-	local imageData = love.image.newImageData(8, 8, "rgba8", (([[
-		xxxx____
-		xxxx____
-		xxxx____
-		xxxx____
-		____xxxx
-		____xxxx
-		____xxxx
-		____xxxx
-	]]):gsub("%s+", ""):gsub(".", {x="\255\255\255\0", _="\255\255\255\255"})))
-	checkerImage = LG.newImage(imageData)
-	checkerImage:setWrap("repeat", "repeat")
-	checkerQuad = LG.newQuad(0,0, 8,8, checkerImage:getDimensions())
+	--[[ @Cleanup
+	shaderMain      = LG.newShader("src/shaders/main.gl")
+	shaderMakeMask  = LG.newShader("src/shaders/makeMask.gl")
+	shaderApplyMask = LG.newShader("src/shaders/applyMask.gl")
+	if DEV then
+		hotLoader.monitor("src/shaders/main.gl", function(path)  shaderMain      = LG.newShader("src/shaders/main.gl"     ) ; tryLoadingTheArtFile()  end)
+		hotLoader.monitor("src/shaders/main.gl", function(path)  shaderMakeMask  = LG.newShader("src/shaders/makeMask.gl" ) ; tryLoadingTheArtFile()  end)
+		hotLoader.monitor("src/shaders/main.gl", function(path)  shaderApplyMask = LG.newShader("src/shaders/applyMask.gl") ; tryLoadingTheArtFile()  end)
+	end
+	]]
+
+	A.images.rectangle = newImageUsingPalette({
+		"xx",
+		"xx",
+	}, {x={1,1,1,1}})
+
+	A.images.checker = newImageUsingPalette({
+		"xxxx____",
+		"xxxx____",
+		"xxxx____",
+		"xxxx____",
+		"____xxxx",
+		"____xxxx",
+		"____xxxx",
+		"____xxxx",
+	}, {x={1,1,1,0}, _={1,1,1,1}})
+	A.images.checker:setWrap("repeat", "repeat")
+	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
 	if love.system.getOS() == "Windows" then -- hotLoader works best on Windows.
 		hotLoader.allowExternalPaths(true)
@@ -1068,9 +1306,9 @@ function love.draw()
 	LG.reset()
 	LG.clear(.4, .4, .4, 1)
 
-	checkerQuad:setViewport(0,0, ww,wh)
+	A.quads.checker:setViewport(0,0, ww,wh)
 	LG.setColor(.6, .6, .6)
-	LG.draw(checkerImage, checkerQuad)
+	LG.draw(A.images.checker, A.quads.checker)
 
 	if theArt then
 		if theArt.backdrop[4] > 0 then
