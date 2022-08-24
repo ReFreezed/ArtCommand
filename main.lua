@@ -3,7 +3,11 @@
 --=  Art Command
 --=  by Marcus 'ReFreezed' Thunström
 --=
---=  $ love . pathToArtcmd
+--=  $ love ArtCommand.love pathToArt [options]
+--=
+--=  Options:
+--=      --out path
+--=          Where to save the output to. Default is in same folder as the input path.
 --=
 --============================================================]]
 
@@ -13,7 +17,8 @@ local TAU       = 2*math.pi
 local LG = love.graphics
 local hotLoader
 
-local thePath         = ""
+local thePathIn       = ""
+local thePathOut      = "" -- Empty means auto.
 local thePathIsTest   = false
 local theArt          = nil
 local shaderMain      = nil
@@ -855,7 +860,7 @@ local function loadArtFile(path)
 end
 
 local function tryLoadingTheArtFile()
-	local art = loadArtFile(thePath)
+	local art = loadArtFile(thePathIn)
 
 	for i = 1, LG.getStackDepth() do
 		LG.pop()
@@ -869,7 +874,7 @@ local function tryLoadingTheArtFile()
 
 	love.window.setTitle(string.format(
 		"%s (%dx%d) - Art Command",
-		thePath:gsub("^.*[/\\]", ""),
+		thePathIn:gsub("^.*[/\\]", ""),
 		theArt.canvas:getWidth(), theArt.canvas:getHeight()
 	))
 end
@@ -880,8 +885,42 @@ function love.load(args, rawArgs)
 	io.stdout:setvbuf("no")
 	io.stderr:setvbuf("no")
 
-	_G.arg = nil -- Aaarrrgh!!!
+	-- Parse arguments.
+	_G.arg             = nil -- Aaarrrgh!!!
+	local parseOptions = true
+	local i            = 1
 
+	while args[i] do
+		local arg = args[i]
+		print(i, arg)
+
+		if not (parseOptions and arg:find"^%-") then
+			if arg       == "" then  error("[Options] Path cannot be empty.", 0)  end
+			if thePathIn ~= "" then  error("[Options] Path already specified.", 0)  end
+			thePathIn = arg
+
+		elseif arg == "--" then
+			parseOptions = false
+
+		elseif arg == "--out" then
+			if thePathOut ~= "" then  error("[Options] Ouput path already specified.", 0)  end
+			thePathOut = args[i+1] or error("[Options] Missing path after "..arg..".", 0)
+			i          = i + 1
+
+		else
+			error("[Options] Unknown option "..arg..".", 0)
+		end
+
+		i = i + 1
+	end
+
+	if thePathIn == "" then
+		thePathIn     = "art/test.artcmd"
+		thePathOut    = ""
+		thePathIsTest = true
+	end
+
+	-- Load stuff.
 	hotLoader = require"hotLoader"
 
 	shaderMain = LG.newShader[[//GLSL  @Cleanup: Remove shader as it does nothing special.
@@ -920,16 +959,9 @@ function love.load(args, rawArgs)
 	checkerImage:setWrap("repeat", "repeat")
 	checkerQuad = LG.newQuad(0,0, 8,8, checkerImage:getDimensions())
 
-	thePath = args[1]
-
-	if not thePath then
-		thePath       = "art/test.artcmd"
-		thePathIsTest = true
-	end
-
 	if love.system.getOS() == "Windows" then -- hotLoader works best on Windows.
 		hotLoader.allowExternalPaths(true)
-		hotLoader.monitor(thePath, function(path)
+		hotLoader.monitor(thePathIn, function(path)
 			tryLoadingTheArtFile()
 		end)
 		tryLoadingTheArtFile()
@@ -979,8 +1011,8 @@ function love.keypressed(key)
 			print("Saving "..pathOut.."... done!")
 
 		else
-			local pathOut = thePath:gsub("%.[^.]+$", "")..".png"
-			if pathOut == thePath then
+			local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "")..".png"
+			if pathOut == thePathIn then
 				print("Error: Input and output paths are the same: "..pathOut)
 				return
 			end
@@ -1015,7 +1047,7 @@ function love.update(dt)
 		if modtimeCheckTime < 0 then
 			modtimeCheckTime = 0.20
 
-			local info    = love.filesystem.getInfo(thePath, "file")
+			local info    = love.filesystem.getInfo(thePathIn, "file")
 			local modtime = info and info.modtime
 
 			if modtime and modtime ~= theModtime then
