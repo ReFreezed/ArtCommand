@@ -30,8 +30,8 @@ fill.4 .4 .4 .5
 
 # Draw stuff.
 color 1 1 1 .1
-font 64  # Big boy!
-text 10 0 wrap550 "TEST TEST TEST TEST
+font 62  # Big boy!
+text 490 -5 ax1 wrap550 align"right" "TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 10
@@ -51,17 +51,28 @@ pop
 # Masks.
 makemask
 	rect w20 h20
-	rect w30 h30 y35
+	rect w30 h50 y35
 	circle 50 50 10
+
 	font 24
 	text text"Hello, world!" x12
-	TestBlobs 1 40 4
-	TestBlobs 1 70 4
+
+	TestBlobs 1 65 4
+	TestBlobs 1 90 4
+
+	grad  1 1 1 1  0 0 0 1
+	rect 22 (40+0*14) 18 10
+	grad  1 1 1 1  1 1 1 0
+	rect 22 (40+1*14) 18 10
+	grad  0 0 0 1  0 0 0 0
+	rect 22 (40+2*14) 18 10
+
 mask
 	color 1 50% 1
 	rect w1000 h1000 ax.5 ay.5
 	TestBlobs 1 1 4
 mask False
+
 TestBlobs -13 1 4
 
 # Line shapes.

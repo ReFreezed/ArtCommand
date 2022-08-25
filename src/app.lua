@@ -19,7 +19,6 @@ _G.A = { -- Assets.
 }
 
 _G.shaderMain      = nil
-_G.shaderMakeMask  = nil
 _G.shaderApplyMask = nil
 
 local hotLoader
@@ -99,12 +98,10 @@ function love.load(args, rawArgs)
 	require"draw"
 
 	_G.shaderMain      = LG.newShader("src/shaders/main.gl")
-	_G.shaderMakeMask  = LG.newShader("src/shaders/makeMask.gl")
 	_G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl")
 	if DEV then
-		hotLoader.monitor("src/shaders/main.gl", function(path)  _G.shaderMain      = LG.newShader("src/shaders/main.gl"     ) ; tryLoadingTheArtFile()  end)
-		hotLoader.monitor("src/shaders/main.gl", function(path)  _G.shaderMakeMask  = LG.newShader("src/shaders/makeMask.gl" ) ; tryLoadingTheArtFile()  end)
-		hotLoader.monitor("src/shaders/main.gl", function(path)  _G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl") ; tryLoadingTheArtFile()  end)
+		hotLoader.monitor("src/shaders/main.gl"     , function(path)  _G.shaderMain      = LG.newShader("src/shaders/main.gl"     ) ; tryLoadingTheArtFile()  end)
+		hotLoader.monitor("src/shaders/applyMask.gl", function(path)  _G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl") ; tryLoadingTheArtFile()  end)
 	end
 
 	A.images.rectangle = newImageUsingPalette({

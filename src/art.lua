@@ -191,6 +191,7 @@ local function ensureCanvas(context)
 	context.maskCanvas:setFilter("nearest") -- This fixes weird fuzziness when applying mask.
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 
+	shaderSend(shaderMain     , "maskMode"       , false)
 	shaderSend(shaderMain     , "useColorTexture", false)
 	shaderSend(shaderApplyMask, "mask"           , context.maskCanvas)
 
@@ -762,21 +763,24 @@ local function processCommandLine(context, ln)
 	elseif command == "makemask" then
 		ensureCanvas(context)
 		maybeApplyMask(context)
+
 		LG.setCanvas(context.maskCanvas)
-		LG.setShader(shaderMakeMask)
 		if args.clear then  LG.clear(0, 0, 0, 1)  end
+		shaderSend(shaderMain, "maskMode", false)
+
 		LG.setColor(1, 1, 1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't.
 
 	elseif command == "mask" then
 		ensureCanvas(context)
 		maybeApplyMask(context)
+
 		if args.mask then
 			LG.setCanvas(context.canvasToMask)
 			LG.clear(0, 0, 0, 0)
 		else
 			LG.setCanvas(context.art.canvas)
 		end
-		LG.setShader(shaderMain)
+		shaderSend(shaderMain, "maskMode", false)
 
 	elseif command == "origin" then
 		LG.origin()

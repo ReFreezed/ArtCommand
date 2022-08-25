@@ -9,6 +9,8 @@
 *
 ***************************************************************/
 
+uniform bool maskMode;
+
 uniform bool useColorTexture;
 uniform Image colorTexture;
 uniform vec4 colorTextureLayout; // {directionX,directionY, scaleX,scaleY}
@@ -37,5 +39,9 @@ vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
 		color *= loveColor;
 	}
 
-	return color;
+	if (maskMode) {
+		return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
+	} else {
+		return color;
+	}
 }
