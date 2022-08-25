@@ -1,0 +1,17 @@
+/***************************************************************
+*
+*  Make mask shader
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+// @Cleanup: Merge with main.gl so colorTexture etc. work in masks too.
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
+	vec4 color = Texel(tex, texPos) * loveColor;
+	return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
+}

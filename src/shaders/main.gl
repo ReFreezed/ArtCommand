@@ -1,0 +1,41 @@
+/***************************************************************
+*
+*  Main shader
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+uniform bool useColorTexture;
+uniform Image colorTexture;
+uniform vec4 colorTextureLayout; // {directionX,directionY, scaleX,scaleY}
+
+// vec2 rotate(vec2 v, vec2 angle) {
+// 	return vec2(v.x*angle.x-v.y*angle.y, v.x*angle.y+v.y*angle.x);
+// }
+vec2 rotateCcw(vec2 v, vec2 angle) {
+	return vec2(v.x*angle.x+v.y*angle.y, -v.x*angle.y+v.y*angle.x);
+}
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
+	vec4 color = Texel(tex, texPos);
+
+	if (useColorTexture) {
+		vec2 colorTexPos = texPos;
+
+		colorTexPos  = colorTexPos*2 - vec2(1, 1); // Center.
+		colorTexPos  = rotateCcw(colorTexPos, colorTextureLayout.xy); // Rotate.
+		colorTexPos /= colorTextureLayout.zw; // Scale.
+		colorTexPos  = (colorTexPos + vec2(1, 1)) * .5;
+
+		color *= Texel(colorTexture, colorTexPos);
+
+	} else {
+		color *= loveColor;
+	}
+
+	return color;
+}

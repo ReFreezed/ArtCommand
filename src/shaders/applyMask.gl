@@ -1,0 +1,19 @@
+/***************************************************************
+*
+*  Apply mask shader
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+uniform Image mask;
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
+	vec4 pixel      = Texel(tex , texPos);
+	vec4 maskPixel  = Texel(mask, texPos);
+	pixel.rgba     *= maskPixel.r;
+	return pixel;
+}
