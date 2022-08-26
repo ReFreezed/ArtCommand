@@ -974,6 +974,10 @@ function _G.loadArtFile(path, isLocal)
 	end
 	cleanup(context, true)
 
+	if not context.art.canvas then
+		print("Nothing was rendered!")
+	end
+
 	print("Loading "..context.path.."... done!")
 	return context.art.canvas and context.art
 end

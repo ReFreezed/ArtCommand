@@ -128,18 +128,99 @@ end
 
 
 
-local function fixFormatAndDemultiplyAlpha(imageData16)
-	local iw,ih      = imageData16:getDimensions()
-	local imageData8 = love.image.newImageData(iw,ih, "rgba8")
-	local pointer16  = require"ffi".cast("uint16_t*", imageData16:getFFIPointer())
-	local pointer8   = require"ffi".cast("uint8_t*" , imageData8 :getFFIPointer())
+local function fixImageDataForSaving(imageData16)
+	local iw,ih          = imageData16:getDimensions()
+	local imageData8     = love.image.newImageData(iw,ih, "rgba8")
+	local pointer16      = require"ffi".cast("uint16_t*", imageData16:getFFIPointer())
+	local pointer8       = require"ffi".cast("uint8_t*" , imageData8 :getFFIPointer())
+	local anyTransparent = false
 
+	-- Convert format and demultiply alpha.
 	for i = 0, 4*iw*ih-1, 4 do
-		pointer8[i  ] = (pointer16[i  ] * 255) / pointer16[i+3]
-		pointer8[i+1] = (pointer16[i+1] * 255) / pointer16[i+3]
-		pointer8[i+2] = (pointer16[i+2] * 255) / pointer16[i+3]
-		pointer8[i+3] = pointer16[i+3] / 257
+		if pointer16[i+3] == 0 then
+			anyTransparent = true
+		else
+			pointer8[i  ] = (pointer16[i  ] * 255) / pointer16[i+3]
+			pointer8[i+1] = (pointer16[i+1] * 255) / pointer16[i+3]
+			pointer8[i+2] = (pointer16[i+2] * 255) / pointer16[i+3]
+			pointer8[i+3] = pointer16[i+3] / 257
+		end
 	end
+
+	-- Fix colors of transparent pixels.
+	if anyTransparent then
+		for y = 0, ih-1 do
+			for x = 0, iw-1 do
+				local i = (y*iw+x)*4
+
+				if pointer8[i+3] == 0 then
+					local count = 0
+					local r     = 0
+					local g     = 0
+					local b     = 0
+
+					for radius = 1, math.max(iw, ih) do -- @Polish @Speed: The max limit could be lower.
+						for offset = 0, radius do
+							-- cw
+							do
+								do -- up
+									local x,y = x+offset,y-radius ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+								do -- down
+									local x,y = x-offset,y+radius ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+								do -- left
+									local x,y = x-radius,y-offset ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+								do -- right
+									local x,y = x+radius,y+offset ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+							end
+
+							-- ccw
+							if offset > 0 and offset < radius then -- Avoid cardinal directions and corners as they overlap with cw.
+								do -- up
+									local x,y = x-offset,y-radius ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+								do -- down
+									local x,y = x+offset,y+radius ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+								do -- left
+									local x,y = x-radius,y+offset ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+								do -- right
+									local x,y = x+radius,y-offset ; local i = (x>=0 and y>=0 and x<iw and y<ih) and (y*iw+x)*4 or nil ; local a = i and pointer8[i+3] or 0
+									if a > 0 then  count, r,g,b = count+1, r+pointer8[i],g+pointer8[i+1],b+pointer8[i+2]  end
+								end
+							end
+
+							if count > 0 then  break  end
+						end--for offset
+						if count > 0 then  break  end
+					end--for radius
+
+					if count > 0 then
+						pointer8[i  ] = r / count
+						pointer8[i+1] = g / count
+						pointer8[i+2] = b / count
+					end
+				end--if transparent
+			end--for x
+		end--for y
+	end--if anyTransparent
+
+	--[[ DEBUG
+	for i = 3, 4*iw*ih-1, 4 do
+		pointer8[i] = 255
+	end
+	--]]
 
 	return imageData8
 end
@@ -157,7 +238,7 @@ function love.keypressed(key)
 		if thePathIsTest then
 			local pathOut = "output.png"
 			print("Saving "..pathOut.."...")
-			fixFormatAndDemultiplyAlpha(theArt.canvas:newImageData()):encode("png", pathOut)
+			fixImageDataForSaving(theArt.canvas:newImageData()):encode("png", pathOut)
 			print("Saving "..pathOut.."... done!")
 
 		else
@@ -169,7 +250,7 @@ function love.keypressed(key)
 
 			print("Saving "..pathOut.."...")
 
-			local fileData = fixFormatAndDemultiplyAlpha(theArt.canvas:newImageData()):encode("png")
+			local fileData = fixImageDataForSaving(theArt.canvas:newImageData()):encode("png")
 			local ok, err  = writeFile(pathOut, fileData:getString(), thePathIsTest)
 
 			if not ok then
