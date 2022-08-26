@@ -268,10 +268,12 @@ end
 
 
 
-function love.errorhandler(err)
-	print(debug.traceback(tostring(err), 2))
+if DEV then
+	function love.errorhandler(err)
+		print(debug.traceback(tostring(err), 2))
+	end
+	love.errhand = love.errorhandler
 end
-love.errhand = love.errorhandler
 
 
 

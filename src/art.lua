@@ -18,7 +18,7 @@ local MAX_LOOPS = 10000
 
 
 local COMMANDS = {
-	-- command = { {argName1,defaultValue}, ... },
+	-- command = { {argName1,defaultValue}, ... }, -- defaultValue=nil means the value can be any type.
 
 	-- Language.
 	["set" ] = { {"var",""}, {"value",nil} }, -- Set variable.
@@ -75,8 +75,9 @@ local function Art()return{
 local function Context()return{
 	art = nil,
 
-	path  = "",
-	lines = {},
+	path   = "",
+	source = "",
+	lines  = {},
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
 	callStack  = {--[[ [funcInfo1]=true, ... ]]},
@@ -95,16 +96,35 @@ local function Context()return{
 }end
 
 local function FunctionInfo()return{
-	bodyLn1 = 0,
-	bodyLn2 = 0,
-
-	-- [1] = argName1, ...
+	token     = nil,
+	arguments = {},
+	tokens    = {},
 }end
 
 local function ScopeStackEntry()return{
 	functions = {--[[ [funcName1]=funcInfo, ... ]]},
 	variables = {--[[ [varName1 ]=value   , ... ]]},
 }end
+
+
+
+local function parseError(context, pos, s, ...)
+	printFileErrorAt(context.path, context.source, pos, s, ...)
+end
+local function parseWarning(context, pos, s, ...)
+	printFileWarningAt(context.path, context.source, pos, s, ...)
+end
+
+-- tokenError  ( context, token=atEnd, format, ... )
+-- tokenWarning( context, token=atEnd, format, ... )
+local function tokenError(context, tok, s, ...)
+	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
+	printFileErrorAt(context.path, context.source, pos, s, ...)
+end
+local function tokenWarning(context, tok, s, ...)
+	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
+	printFileWarningAt(context.path, context.source, pos, s, ...)
+end
 
 
 
@@ -115,59 +135,6 @@ local function findInStack(context, member, k)
 		if v ~= nil then  return v, i  end
 	end
 	return nil -- Not found!
-end
-
-
-
-local function findNextUnnamedArgument(argInfos, orderN, vType)
-	if not orderN[vType] then  return nil  end -- Unsupported type.
-
-	orderN[vType] = orderN[vType] + 1
-	local n       = 0
-
-	for _, argInfo in ipairs(argInfos) do
-		if type(argInfo[2]) == vType or argInfo[2] == nil then -- @Incomplete: Handle the "any" type (defaultValue=nil) better. (Should they update orderN for all types?)
-			n = n + 1
-			if n == orderN[vType] then  return argInfo  end
-		end
-	end
-
-	return nil
-end
-
-
-
-local function parseCommand(line)
-	if line:match"^%u" then
-		return line:match"^(%a+)(.*)" -- Function name for call.
-	else
-		return line:match"^(%l+)(.*)" -- Normal command.
-	end
-end
-
--- number|nil, kind = parseNumber( numberString )
-local function parseNumber(nStr)
-	if nStr:find"%%$" then
-		local n = tonumber(nStr:sub(1, -2))
-		return n and n/100, "percent"
-
-	elseif nStr:find"deg$" then
-		local n = tonumber(nStr:sub(1, -4))
-		return n and math.rad(n), "degrees"
-
-	elseif nStr:find"turns$" then
-		local n = tonumber(nStr:sub(1, -6))
-		return n and n*TAU, "degrees"
-
-	else
-		return tonumber(nStr), "number"
-	end
-end
-
-local function validateVariableName(context, ln, term, var)
-	if not var:find"^%a+$" then  printFileError(context, ln, "Bad %s '%s'. Must only contain letters."          , term, var) ; return false  end
-	if not var:find"^%u"   then  printFileError(context, ln, "Bad %s '%s'. Must start with an uppercase letter.", term, var) ; return false  end
-	return true
 end
 
 
@@ -232,454 +199,469 @@ end
 
 
 
--- nextLineNumber|nil = processCommandLine( context, lineNumber )
-local function processCommandLine(context, ln)
-	local line = context.lines[ln]
-	if line == "" then  return ln+1  end
+local function tokenize(context, s, path)
+	local pos     = 1
+	local ln      = 1
+	local tokens  = {}
+	local lastTok = nil
+	local gotName = false
 
-	local command, argsStr = parseCommand(line)
-	if not command then  return printFileError(context, ln, "Bad line format: %s", line)  end
+	while true do
+		pos = s:match("^[^%S\n]*()", pos)
+		if pos > #s then  break  end
 
-	--
-	-- Function declaration.
-	--
-	if command == "func" then
-		local funcName, funcArgsStr = argsStr:match"(%S+)(.*)"
-		if not funcName then  return printFileError(context, ln, "Missing function name after 'func'.")  end
-		if not validateVariableName(context, ln, "function name", funcName) then  return nil  end -- @UX: Need to @Revisit.
+		local startPos    = pos
+		local lastWasName = gotName
+		gotName           = false
 
-		if getLast(context.scopeStack).functions[funcName] then  printFileWarning(context, ln, "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
+		-- Line break.
+		if s:find("^\n", pos) then
+			pos = pos + 1
+			ln  = ln  + 1
 
-		local funcInfo                                  = FunctionInfo()
-		funcInfo.bodyLn1                                = ln + 1
-		getLast(context.scopeStack).functions[funcName] = funcInfo
+			if lastTok and lastTok.type ~= "linebreak" then
+				table.insert(tokens, {position=startPos, type="linebreak"})
+			end
 
-		for argName in funcArgsStr:gmatch"%S+" do
-			if argName:find"^#" then  break  end
-			if not validateVariableName(context, ln, "argument name", argName) then  return nil  end
-			table.insert(funcInfo, argName)
-		end
+		-- Name: name OR +name OR -name
+		elseif s:find("^[-+]?%l", pos) then
+			local mod,namePos,name; mod, namePos, name, pos = s:match("^([-+]?)()(%l+)()", pos)
+			table.insert(tokens, {position=namePos, type="name", value=name, hasAttachment=false})
 
-		-- @Cleanup: Define getEndOfBlock() or something.
-		local endLn = ln
-		local depth = 1
+			if mod == "" then
+				gotName = true
 
-		while true do
-			endLn = endLn + 1
-			line  = context.lines[endLn]
-			if not line then  return printFileError(context, ln, "Missing end of function '%s'.", funcName)  end
+			else
+				tokens[#tokens].hasAttachment = true
+				table.insert(tokens, {position=startPos, type="literal", value=(mod=="+")})
 
-			command = (line == "") and "" or parseCommand(line)
-			if not command then  return printFileError(context, endLn, "Bad line format: %s", line)  end
-
-			if command == "do" or command == "for" or command == "func" then -- @Volatile
-				depth = depth + 1
-
-			elseif command == "end" then
-				depth = depth - 1
-
-				if depth == 0 then
-					funcInfo.bodyLn2 = endLn - 1
-					return endLn+1
+				if s:find("^[^%s;#]", pos) then
+					parseWarning(context, pos, "Value right after '%s%s' does not belong to it.", mod, name)
 				end
 			end
+
+		-- Username: Name OR -Name
+		elseif s:find("^%-?%u", pos) then
+			local negate,namePos,name; negate, namePos, name, pos = s:match("^(%-?)()(%u[%w]*)()", pos)
+			table.insert(tokens, {position=namePos, type="username", value=name, negated=(negate=="-")})
+
+			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
+
+		-- Number: N
+		elseif s:find("^%-?%.?%d", pos) then
+			local nStr; nStr, pos = s:match("^(%-?%.?%d[-+%w%%]*)()", pos)
+			local n
+
+			if     nStr:find"%%$"    then  n = tonumber(nStr:sub(1, -2)) ; n = n and n/100
+			elseif nStr:find"deg$"   then  n = tonumber(nStr:sub(1, -4)) ; n = n and math.rad(n)
+			elseif nStr:find"turns$" then  n = tonumber(nStr:sub(1, -6)) ; n = n and n*TAU
+			else                           n = tonumber(nStr           )  end
+			if not n then  return (parseError(context, startPos, "Failed parsing number '%s'.", nStr))  end
+
+			table.insert(tokens, {position=startPos, type="literal", value=n})
+
+			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
+
+		-- String: "S" OR "S OR 'S' OR 'S
+		elseif s:find("^[\"']", pos) then
+			local q      = s:sub(pos, pos)
+			local buffer = {}
+			local pat    = "["..s:sub(pos, pos).."\\\n]"
+
+			while true do
+				local i1 = pos + 1
+				pos      = s:find(pat, i1) or #s+1
+
+				if pos > i1 then
+					table.insert(buffer, s:sub(i1, pos-1))
+				end
+
+				if s:find("^\\", pos) then
+					pos = pos + 1
+					if     s:find("^\\", pos) then  table.insert(buffer, "\\")
+					elseif s:find("^n" , pos) then  table.insert(buffer, "\n")
+					elseif s:find('^"' , pos) then  table.insert(buffer, '"')
+					elseif s:find("^'" , pos) then  table.insert(buffer, "'")
+					else
+						return (parseError(context, pos-1, "Invalid escape sequence in string."))
+					end
+				elseif s:find("^\n", pos) then
+					ln = ln + 1 -- '\n'
+					break
+				else
+					break
+				end
+			end
+
+			table.insert(tokens, {position=startPos, type="literal", value=table.concat(buffer)})
+
+			if not s:find("^\n", pos) then
+				pos = pos + 1 -- '"' OR "'"
+			end
+
+			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
+
+		-- Parenthesis: (lua_expression)
+		elseif s:find("^%(", pos) then
+			local i1    = pos
+			local depth = 1
+
+			while true do
+				-- Simplified Lua parsing, o'hoy!
+				pos          = s:find("[-\"'%[\n()]", pos+1)
+				local luaPos = pos
+
+				if not pos or s:find("^\n", pos) then
+					return (parseError(context, startPos, "Missing end parens."))
+
+				elseif s:find("^%(", pos) then
+					depth = depth + 1
+
+				elseif s:find("^%)", pos) then
+					depth = depth - 1
+					if depth == 0 then  break  end
+
+				elseif s:find("^[\"']", pos) then -- Quoted string.
+					local pat = "["..s:sub(pos, pos).."\\\n]"
+					while true do
+						pos = s:find(pat, pos+1)
+						if not pos or s:find("^\n", pos) then
+							return (parseError(context, luaPos, "Missing end of Lua string."))
+						elseif s:find("^\\", pos) then
+							pos = pos + 1 -- '\'
+						else
+							break
+						end
+					end
+
+				elseif s:find("^%[", pos) then -- Maybe a long-form string.
+					if s:find("^=*%[", pos+1) then -- String.
+						local _; _, pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+1)
+						if not pos then  return (parseError(context, luaPos, "Missing end of Lua string."))  end
+						pos = pos - 1
+					else
+						-- void
+					end
+
+				elseif s:find("^%-", pos) then -- Maybe a comment.
+					if not s:find("^%-", pos+1) then
+						-- void
+					elseif s:find("^%[=*%[", pos+2) then -- Long-form comment.
+						local _; _, pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+3)
+						if not pos then  return (parseError(context, startPos, "Missing end parens."))  end
+					else -- Line comment.
+						return (parseError(context, startPos, "Missing end parens."))
+					end
+
+				else
+					return (parseError(context, pos, "Internal error: Unhandled case in parenthesis."))
+				end
+			end
+
+			local i2 = pos -- Should be at ')'.
+			pos      = pos + 1 -- ')'
+
+			table.insert(tokens, {position=startPos, type="expression", value=s:sub(i1, i2)})
+
+			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
+
+		-- Command separator: ;
+		elseif s:find("^;", pos) then
+			table.insert(tokens, {position=startPos, type=";"})
+			pos = pos + 1
+
+		-- Comment: #comment
+		elseif s:find("^#", pos) then
+			pos = s:match("^[^\n]*\n?()", pos+1)
+			ln  = ln + 1
+
+			if lastTok and lastTok.type ~= "linebreak" then
+				table.insert(tokens, {position=startPos, type="linebreak"})
+			end
+
+		else
+			return (parseError(context, pos, "Unexpected character."))
 		end
+
+		lastTok = tokens[#tokens]
+	end
+
+	return tokens
+end
+
+
+
+-- bool = isToken( token|nil, tokenType [, tokenValue=any ] )
+local function isToken(tok, tokType, tokValue)
+	return tok ~= nil and tok.type == tokType and (tokValue == nil or tok.value == tokValue)
+end
+
+local function validateVariableName(context, tokForError, term, var)
+	if not var:find"^%w+$" then  tokenError(context, tokForError, "Bad %s '%s'. Must only contain alphanumeric characters.", term, var) ; return false  end
+	if not var:find"^%u"   then  tokenError(context, tokForError, "Bad %s '%s'. Must start with an uppercase letter."      , term, var) ; return false  end
+	return true
+end
+
+local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInfos, args, visited)
+	while true do
+		if not tokens[tokPos] or isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ";") then
+			return tokPos+1
+		end
+
+		local startTok = tokens[tokPos]
+		local argName  = ""
+		local v, argInfo
+
+		-- Explicit name.
+		if isToken(startTok, "name") then
+			argName = startTok.value
+
+			argInfo = itemWith1(argInfos, 1, argName)
+			if not argInfo then  return (tokenError(context, startTok, "No argument '%s' for '%s'.", argName, commandOrFuncName))  end
+
+			if visited[argName] then
+				return (tokenError(context, startTok, "Duplicate argument '%s'.", argName))
+			elseif not startTok.hasAttachment then
+				return (parseError(context, startTok.position+#argName, "Missing value for argument '%s'.", argName))
+			end
+
+			tokPos = tokPos + 1 -- the name
+		end
+
+		-- Value.
+		if isToken(tokens[tokPos], "literal") then
+			v = tokens[tokPos].value
+
+		elseif isToken(tokens[tokPos], "username") then
+			local var = tokens[tokPos].value
+			v         = findInStack(context, "variables", var) -- @Incomplete: Proper upvalues (which require lexical scope).
+			if v == nil then  return (tokenError(context, tokens[tokPos], "No variable '%s'.", var))  end
+
+			if tokens[tokPos].negated then
+				if type(v) ~= "number" then  return (parseError(context, tokens[tokPos].position-1, "Cannot negate value. ('%s' contains a %s)", var, type(v)))  end
+				v = -v
+			end
+
+		elseif isToken(tokens[tokPos], "expression") then
+			local expr = tokens[tokPos].value
+
+			local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
+				__index = function(_, k, v)  return findInStack(context, "variables", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
+			}))
+			if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", ""))))  end
+
+			local ok, vOrErr = pcall(chunk)
+			if not ok then  return (tokenError(context, tokens[tokPos], "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", ""))))  end
+			v = vOrErr
+
+		else
+			return (tokenError(context, tokens[tokPos], "Failed parsing argument value."))
+		end
+
+		-- Implicit name.
+		if argName == "" then
+			-- We use the value type to determine the argument (which might be a bit confusing).
+			for _, _argInfo in ipairs(argInfos) do
+				if not visited[_argInfo[1]] and (type(_argInfo[2]) == type(v) or _argInfo[2] == nil) then
+					argName = _argInfo[1]
+					argInfo = _argInfo
+					break
+				end
+			end
+
+			if argName == "" then  return (tokenError(context, startTok, "Unknown argument of type '%s' for '%s'.", type(v), commandOrFuncName))  end
+
+		-- Validate value.
+		elseif not (type(v) == type(argInfo[2]) or argInfo[2] == nil) then
+			return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName, type(argInfo[2]), type(v)))
+		end
+
+		args   [argName] = v
+		visited[argName] = true
+		tokPos           = tokPos + 1 -- the value
+	end
+end
+
+local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens)
+	local depth         = 1
+	local expectCommand = true
+
+	while true do
+		local tok = tokens[tokPos]
+		if not tok then  return (tokenError(context, tokForError, "Missing end of body."))  end
+
+		if isToken(tok, "linebreak") or isToken(tok, ";") then
+			expectCommand = true
+
+		elseif not expectCommand then
+			-- void
+
+		elseif isToken(tok, "name", "do") or isToken(tok, "name", "for") or isToken(tok, "name", "func") then -- @Volatile
+			depth = depth + 1
+
+		elseif isToken(tok, "name", "end") then
+			depth = depth - 1
+			if depth == 0 then  return tokPos+1  end
+
+		else
+			expectCommand = false
+		end
+
+		table.insert(outTokens, tok)
+		tokPos = tokPos + 1
+	end
+end
+
+local runBlock
+
+-- tokenPosition|nil = runCommand( context, tokens, tokenPosition )
+local function runCommand(context, tokens, tokPos)
+	local startTok = tokens[tokPos]
 
 	--
 	-- Function call.
 	--
-	elseif command:find"^%u" then
-		local funcInfo = findInStack(context, "functions", command)
-		if not funcInfo then  return printFileError(context, ln, "No function '%s'.", command)  end
+	if isToken(tokens[tokPos], "username") then
+		local funcName = tokens[tokPos].value
+		local funcInfo = findInStack(context, "functions", funcName)
+		if not funcInfo then  return tokenError(context, startTok, "No function '%s'.", funcName)  end
+		tokPos = tokPos + 1 -- username
 
 		if context.callStack[funcInfo] then
-			return printFileError(context, ln, "Recursively calling '%s'. (%s:%d)", command, context.path, funcInfo.bodyLn1-1)
+			return tokenError(context, startTok, "Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position))
 		end
 
-		local entry = ScopeStackEntry()
+		-- Parse arguments.
+		local argInfos = {}
+		local args     = {}
+		local visited  = {}
 
-		-- Arguments.
-		-- @Copypaste from below.
-		local argN         = 0
-		local ignoreBefore = 1
-
-		for pos, argStr in argsStr:gmatch"()(%S+)" do
-			if pos < ignoreBefore then
-				-- void
-
-			-- Comment
-			elseif argStr:find"^#" then
-				break
-
-			else
-				argN          = argN + 1
-				local argName = funcInfo[argN]
-
-				if not argName then
-					return printFileError(context, ln, "Too many arguments.")
-
-				-- Number: N
-				elseif argStr:find"^%-?%.?%d" then
-					local n = parseNumber(argStr)
-					if not n then  return printFileError(context, ln, "Failed parsing number: %s", argStr)  end
-
-					entry.variables[argName] = n
-
-				-- String: "S" OR "S OR 'S' OR 'S
-				-- @Incomplete: Newlines.
-				elseif argStr:find"^[\"']" then
-					local q  = argStr:sub(1, 1)
-					local i1 = pos + 1
-					local i  = argsStr:find(q, i1, true)
-
-					if i then
-						if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s: %s", argsStr:sub(i1-1, i), argsStr:match("^%S+", i+1))  end
-						entry.variables[argName] = argsStr:sub(i1, i-1)
-						ignoreBefore             = i + 1
-					else
-						entry.variables[argName] = argsStr:sub(i1)
-						break
-					end
-
-				-- Variable: Var
-				elseif argStr:find"^%-?%u" then
-					local negate, var = argStr:match"^(%-?)(.+)"
-					if not validateVariableName(context, ln, "variable name", var) then  return nil  end
-
-					local v = findInStack(context, "variables", var) -- @Incomplete: Proper upvalues (which require lexical scope).
-					if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
-
-					if negate == "-" then
-						if type(v) ~= "number" then  return printFileError(context, ln, "Cannot negate value. (%s is a %s.)", var, type(v))  end
-						v = -v
-					end
-
-					entry.variables[argName] = v
-
-				-- Parenthesis: (expression)
-				elseif argStr:find"^%(" then
-					local expr, nextPos = argsStr:match("^(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
-					if not expr then  return printFileError(context, ln, "Missing end parens: %s", argsStr:sub(pos))  end
-
-					if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
-
-					local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-						__index = function(_, k, v)  return findInStack(context, "variables", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
-					}))
-					if not chunk then  return printFileError(context, ln, "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
-
-					local ok, vOrErr = pcall(chunk)
-					if not ok then  return printFileError(context, ln, "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
-					local v = vOrErr
-
-					entry.variables[argName] = v
-					ignoreBefore             = nextPos
-
-				else
-					return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
-				end
-			end
+		for i, argName in ipairs(funcInfo.arguments) do
+			argInfos[i] = {(argName:gsub("^.", string.lower)), nil} -- Argument "FooBar" gets the name "fooBar".  @Speed @Memory
 		end
 
-		if funcInfo[argN+1] then
-			return printFileError(context, ln, "Too few arguments. (Expected %d, got %d)", #funcInfo, argN)
-		end
+		tokPos = parseArguments(context, tokens, tokPos, funcName, argInfos, args, visited)
+		if not tokPos then  return nil  end
 
 		-- Run function.
+		local entry = ScopeStackEntry()
+
+		for i, argInfo in ipairs(argInfos) do
+			if not visited[argInfo[1]] then  return tokenError(context, startTok, "Missing argument '%s' for '%s'.", argInfo[1], funcName)  end
+			entry.variables[funcInfo.arguments[i]] = args[argInfo[1]]
+		end
+
 		table.insert(context.scopeStack, entry)
 		context.callStack[funcInfo] = true
 
-		local bodyLn = funcInfo.bodyLn1
-
-		while bodyLn <= funcInfo.bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
-			bodyLn = processCommandLine(context, bodyLn)
-			if not bodyLn then  return printFileMessage(context, ln, "in '%s' (%s:%d)", command, context.path, funcInfo.bodyLn1-1)  end
-		end
+		local bodyTokPos = runBlock(context, funcInfo.tokens, 1)
+		if not bodyTokPos              then  return nil  end
+		if funcInfo.tokens[bodyTokPos] then  return (tokenError(context, funcInfo.tokens[bodyTokPos], "Unexpected token."))  end
 
 		table.remove(context.scopeStack)
 		context.callStack[funcInfo] = nil
 
-		return ln+1
+		return tokPos
+	end
+
+	if not isToken(tokens[tokPos], "name") then
+		return (tokenError(context, startTok, "Expected a command."))
+	end
+	local command = tokens[tokPos].value
+	tokPos        = tokPos + 1 -- name
+
+	--
+	-- Language.
+	--
+	if command == "func" then
+		if not isToken(tokens[tokPos], "username") then  return (tokenError(context, tokens[tokPos], "Expected a name for the function."))  end
+		local funcName = tokens[tokPos].value
+		local entry    = getLast(context.scopeStack)
+		if entry.functions[funcName] then  tokenWarning(context, tokens[tokPos], "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
+		tokPos = tokPos + 1 -- username
+
+		local funcInfo            = FunctionInfo()
+		funcInfo.token            = startTok
+		entry.functions[funcName] = funcInfo
+
+		while isToken(tokens[tokPos], "username") do
+			local argName = tokens[tokPos].value
+			table.insert(funcInfo.arguments, argName)
+			tokPos = tokPos + 1 -- username
+		end
+
+		if not (isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ";")) then
+			return (tokenError(context, tokens[tokPos], "Expected argument for function '%s'.", funcName))
+		end
+
+		return (collectBodyTokens(context, tokens, startTok, tokPos, funcInfo.tokens)) -- May return nil.
 	end
 
 	--
 	-- Normal command.
 	--
 	local commandInfo = COMMANDS[command]
-	if not commandInfo then  return printFileError(context, ln, "Bad command '%s'.", command)  end
+	if not commandInfo then  return (tokenError(context, startTok, "Unknown command '%s'.", command))  end
 
-	local args = {}
+	local args    = {}
+	local visited = {}
 
 	for _, argInfo in ipairs(commandInfo) do
-		args[argInfo[1]] = argInfo[2]
+		args[argInfo[1]] = argInfo[2] -- Fill with default values.  @Speed: This is not necessary.
 	end
 
-	local argN         = 0
-	local ignoreBefore = 1
-	local orderN       = {number=0, string=0, boolean=0}
-	local visited      = {--[[ [k1]=true, ... ]]}
-
-	for pos, argStr in argsStr:gmatch"()(%S+)" do
-		if pos < ignoreBefore then
-			-- void
-
-		-- Comment
-		elseif argStr:find"^#" then
-			break
-
-		else
-			argN = argN + 1
-
-			-- Set flag: X
-			if type(args[argStr]) == "boolean" then -- @Incomplete: Handle the "any" type.
-				local k = argStr
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				args[k] = true
-
-			-- Unset flag: !X
-			elseif argStr:find"^!%l" then
-				local k = argStr:sub(2)
-				if type(args[k]) ~= "boolean" then  return printFileError(context, ln, "Argument '%s' is not a boolean.", k)  end -- @Incomplete: Handle the "any" type.
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				args[k] = false
-
-			-- Number: nameN OR N
-			elseif argStr:find"^%l*%-?%.?%d" then
-				local k, nStr = argStr:match"^(%l*)(.+)"
-
-				-- Named.
-				if k ~= "" then
-					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
-
-				-- Ordered.
-				else
-					local argInfo = findNextUnnamedArgument(commandInfo, orderN, "number")
-					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type 'number'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
-					k = argInfo[1]
-				end
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				if not (type(args[k]) == "number" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-					return printFileError(context, ln, "Argument '%s' is not a number.", k)
-				end
-
-				local n, nKind = parseNumber(nStr)
-				if not n then  return printFileError(context, ln, "Failed parsing number: %s", nStr)  end
-
-				args[k] = n
-
-			-- String: name"S" OR name"S OR name'S' OR name'S OR "S" OR "S OR 'S' OR 'S
-			-- @Incomplete: Newlines.
-			elseif argStr:find"^%l*[\"']" then
-				local k, q = argStr:match"^(%l*)(.)"
-				local i1   = pos + #k + 1
-				local i    = argsStr:find(q, i1, true)
-
-				-- Named.
-				if k ~= "" then
-					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
-
-				-- Ordered.
-				else
-					local argInfo = findNextUnnamedArgument(commandInfo, orderN, "string")
-					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type 'string'. (At: %s)", argStr)  end -- @UX: Better message if the command take no arguments of the type.
-					k = argInfo[1]
-				end
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				if not (type(args[k]) == "string" or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-					return printFileError(context, ln, "Argument '%s' is not a string.", k)
-				end
-
-				if i then
-					if argsStr:find("^%S", i+1) then  return printFileError(context, ln, "Garbage after %s: %s", argsStr:sub(i1-1, i), argsStr:match("^%S+", i+1))  end
-					args[k]      = argsStr:sub(i1, i-1)
-					ignoreBefore = i + 1
-				else
-					args[k] = argsStr:sub(i1)
-					break
-				end
-
-			-- Special case: Treat `set X` as `set "X"` (and same with 'setx' and 'for').
-			elseif (command == "set" or command == "setx" or command == "for") and argN == 1 and argStr:find"^%u" then
-				orderN.string = 1
-				args.var      = argStr
-
-			-- Variable: nameVar OR Var
-			elseif argStr:find"^%l*%-?%u" then
-				local k, negate, var = argStr:match"^(%l*)(%-?)(.+)"
-				if not validateVariableName(context, ln, "variable name", var) then  return nil  end
-
-				local v = findInStack(context, "variables", var) -- @Incomplete: Proper upvalues (which require lexical scope).
-				if v == nil then  return printFileError(context, ln, "No variable '%s'.", var)  end
-
-				if negate == "-" then
-					if type(v) ~= "number" then  return printFileError(context, ln, "Cannot negate value. (%s is a %s.)", var, type(v))  end
-					v = -v
-				end
-
-				-- Named.
-				if k ~= "" then
-					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
-
-				-- Ordered.
-				else
-					-- This might be confusing! We're using the type of the variable's value to assign an argument number.
-					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
-					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type %s. (At: %s)", type(v), argStr)  end -- @UX: Better message if the command take no arguments of the type.
-					k = argInfo[1]
-				end
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
-				end
-
-				args[k] = v
-
-			-- Parenthesis: name(expression) OR (expression)
-			elseif argStr:find"^%l*%(" then
-				local k, expr, nextPos = argsStr:match("^(%l*)(%b())()", pos) -- @Incomplete: Handle ')' in strings and comments in the expression.
-				if not expr then  return printFileError(context, ln, "Missing end parens: %s", argsStr:sub(pos))  end
-
-				if argsStr:find("^%S", nextPos) then  return printFileError(context, ln, "Garbage after %s: %s", expr, argsStr:match("^%S+", nextPos))  end
-
-				local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-					__index = function(_, k, v)  return findInStack(context, "variables", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
-				}))
-				if not chunk then  return printFileError(context, ln, "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", "")))  end
-
-				local ok, vOrErr = pcall(chunk)
-				if not ok then  return printFileError(context, ln, "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", "")))  end
-				local v = vOrErr
-
-				-- Named.
-				if k ~= "" then
-					if not itemWith1(commandInfo, 1, k) then  return printFileError(context, ln, "Unknown argument '%s'.", k)  end
-
-				-- Ordered.
-				else
-					local argInfo = findNextUnnamedArgument(commandInfo, orderN, type(v))
-					if not argInfo then  return printFileError(context, ln, "Too many unnamed arguments of type '%s'. (At: %s)", type(v), expr)  end -- @UX: Better message if the command take no arguments of the type.
-					k = argInfo[1]
-				end
-
-				if visited[k] then  return printFileError(context, ln, "Duplicate argument '%s'. (At: %s)", k, argStr)  end
-				visited[k] = true
-
-				if not (type(args[k]) == type(v) or args[k] == nil) then -- @Incomplete: Handle the "any" type better.
-					return printFileError(context, ln, "Argument '%s' is not a %s.", k, type(args[k]))
-				end
-
-				args[k]      = v
-				ignoreBefore = nextPos
-
-			else
-				return printFileError(context, ln, "Failed parsing argument #%d: %s", argN, argStr)
-			end
-		end
+	if (command == "set" or command == "setx" or command == "for") and isToken(tokens[tokPos], "username") and not tokens[tokPos].negated then
+		-- Special case: Treat `set X` as `set "X"` (and same with 'setx' and 'for').
+		args   .var = tokens[tokPos].value
+		visited.var = true
+		tokPos      = tokPos + 1
 	end
 
-	-- Language.
+	tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
+	if not tokPos then  return nil  end
+
 	if command == "set" then
-		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
-		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
-		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
+		if args.var   == ""  then  return (tokenError(context, startTok, "Missing variable name."))  end
+		if args.value == nil then  return (tokenError(context, startTok, "Missing value to assign to '%s'.", args.var))  end
+		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
 
 		getLast(context.scopeStack).variables[args.var] = args.value
 
 	elseif command == "setx" then
-		if args.var   == ""  then  return printFileError(context, ln, "Missing variable name.")  end
-		if args.value == nil then  return printFileError(context, ln, "Missing value to assign to '%s'.", args.var)  end
-		if not validateVariableName(context, ln, "variable name", args.var) then  return nil  end
+		if args.var   == ""  then  return (tokenError(context, startTok, "Missing variable name."))  end
+		if args.value == nil then  return (tokenError(context, startTok, "Missing value to assign to '%s'.", args.var))  end
+		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
 
-		local v, stackIndex = findInStack(context, "variables", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
-		if v == nil then  return printFileError(context, ln, "No existing variable '%s'.", args.var)  end
+		local oldV, stackIndex = findInStack(context, "variables", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
+		if oldV == nil then  return (tokenError(context, startTok, "No existing variable '%s'.", args.var))  end
 
 		context.scopeStack[stackIndex].variables[args.var] = args.value
 
 	elseif command == "do" then
-		-- Get block body.  @Cleanup: Define getEndOfBlock() or something.
-		local bodyLn1 = ln + 1
-		local bodyLn2 = ln
-		local depth   = 1
-
-		while true do
-			bodyLn2 = bodyLn2 + 1
-			line    = context.lines[bodyLn2]
-			if not line then  return printFileError(context, ln, "Missing end of do-block.")  end
-
-			command = (line == "") and "" or parseCommand(line)
-			if not command then  return printFileError(context, bodyLn2, "Bad line format: %s", line)  end
-
-			if command == "do" or command == "for" or command == "func" then -- @Volatile
-				depth = depth + 1
-
-			elseif command == "end" then
-				depth = depth - 1
-
-				if depth == 0 then
-					bodyLn2 = bodyLn2 - 1
-					break
-				end
-			end
-		end
+		-- Get block body.
+		local bodyTokens = {}
+		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens)
+		if not tokPos then  return nil  end
 
 		-- Run block.
 		local entry = ScopeStackEntry()
 		table.insert(context.scopeStack, entry)
 
-		local bodyLn = bodyLn1
-
-		while bodyLn <= bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
-			bodyLn = processCommandLine(context, bodyLn)
-			if not bodyLn then  return nil  end
-		end
+		local bodyTokPos = runBlock(context, bodyTokens, 1)
+		if not bodyTokPos         then  return nil  end
+		if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
 
 		table.remove(context.scopeStack)
-		ln = bodyLn2 + 1
 
 	elseif command == "for" then
-		if args.var  == "" then  return printFileError(context, ln, "Missing variable name.")  end
-		if args.step == 0  then  return printFileError(context, ln, "Step is zero.")  end
+		if args.var  == "" then  return (tokenError(context, startTok, "Empty variable name."))  end
+		if args.step == 0  then  return (tokenError(context, startTok, "Step is zero."))  end
+		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
 
-		-- Get loop body.  @Cleanup: Define getEndOfBlock() or something.
-		local bodyLn1 = ln + 1
-		local bodyLn2 = ln
-		local depth   = 1
-
-		while true do
-			bodyLn2 = bodyLn2 + 1
-			line    = context.lines[bodyLn2]
-			if not line then  return printFileError(context, ln, "Missing end of for-loop.")  end
-
-			command = (line == "") and "" or parseCommand(line)
-			if not command then  return printFileError(context, bodyLn2, "Bad line format: %s", line)  end
-
-			if command == "do" or command == "for" or command == "func" then -- @Volatile
-				depth = depth + 1
-
-			elseif command == "end" then
-				depth = depth - 1
-
-				if depth == 0 then
-					bodyLn2 = bodyLn2 - 1
-					break
-				end
-			end
-		end
+		-- Get loop body.
+		local bodyTokens = {}
+		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens)
+		if not tokPos then  return nil  end
 
 		-- Run loop.
 		local entry = ScopeStackEntry()
@@ -691,23 +673,22 @@ local function processCommandLine(context, ln)
 			loops = loops + 1
 
 			if loops >= MAX_LOOPS then -- Maybe there should be a MAX_DRAW_OPERATIONS too? MAX_LOOPS could probably be higher then. @Incomplete
-				printFileError(context, bodyLn1, "Max loops exceeded. Breaking.")
+				tokenError(context, startTok, "Max loops exceeded. Breaking.")
 				break
 			end
 
 			entry.variables[args.var] = n
-			local bodyLn              = bodyLn1
 
-			while bodyLn <= bodyLn2 do -- @Robustness: Make sure we don't overshoot the body (which shouldn't happen unless there's a bug somewhere).
-				bodyLn = processCommandLine(context, bodyLn)
-				if not bodyLn then  return nil  end
-			end
+			local bodyTokPos = runBlock(context, bodyTokens, 1)
+			if not bodyTokPos         then  return nil  end
+			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
 		end
 
 		table.remove(context.scopeStack)
-		ln = bodyLn2 + 1
 
-	-- Setting, app.
+	--
+	-- Settings, app.
+	--
 	elseif command == "backdrop" then
 		context.art.backdrop[1] = args.r
 		context.art.backdrop[2] = args.g
@@ -717,23 +698,30 @@ local function processCommandLine(context, ln)
 	elseif command == "zoom" then
 		context.art.zoom = args.zoom
 
+	--
 	-- Settings, init.
+	--
 	elseif command == "canvas" then
-		if context.art.canvas then  return printFileError(context, ln, "Cannot use '%s' after drawing commands.", command)  end
+		if context.art.canvas then  return (tokenError(context, startTok, "Cannot use '%s' after drawing commands.", command))  end
 		context.canvasW = (args.w >= 1) and args.w or LG.getWidth()
 		context.canvasH = (args.h >= 1) and args.h or LG.getHeight()
 		context.msaa    = args.aa^2
 
+	--
 	-- Settings, dynamic.
+	--
 	elseif command == "round" then
 		context.round = args.round
 
+	--
 	-- State.
+	--
 	elseif command == "push" then
 		LG.push("all")
+
 	elseif command == "pop" then
 		if    LG.getStackDepth() == 0
-		then  printFileWarning(context, ln, "Too many 'pop' commands! Ignoring.")
+		then  tokenWarning(context, startTok, "Too many 'pop' commands! Ignoring.")
 		else  LG.pop()  end
 
 	elseif command == "color" then
@@ -791,7 +779,9 @@ local function processCommandLine(context, ln)
 	elseif command == "scale" then
 		LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
 
+	--
 	-- Drawing.
+	--
 	elseif command == "fill" then
 		ensureCanvas(context)
 		LG.push("all")
@@ -811,7 +801,7 @@ local function processCommandLine(context, ln)
 		if     args.mode == "fill" then  drawRectangleFill(x,y, w,h)
 		elseif args.mode == "line" then  drawRectangleLine(x,y, w,h, args.thick)
 		else
-			return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)
+			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
 
 	elseif command == "circle" then
@@ -825,12 +815,12 @@ local function processCommandLine(context, ln)
 		if     args.mode == "fill" then  drawCircleFill(x,y, args.r, segs)
 		elseif args.mode == "line" then  drawCircleLine(x,y, args.r, segs, args.thick)
 		else
-			return printFileError(context, ln, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode)
+			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
 
 	elseif command == "text" then
 		if not (args.align == "left" or args.align == "center" or args.align == "right" or args.align == "justify") then
-			return printFileError(context, ln, "Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align)
+			return (tokenError(context, startTok, "Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align))
 		end
 
 		ensureCanvas(context)
@@ -841,16 +831,35 @@ local function processCommandLine(context, ln)
 
 		LG.printf(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h), w, args.align)
 
-	elseif command == "end" then
-		return printFileError(context, ln, "Unexpected '%s'.", command)
 	else
-		printFileWarning(context, ln, "@Incomplete: Command '%s'. Ignoring.", command)
+		return (tokenError(context, startTok, "Unimplemented command '%s'.", command))
 	end
+	return tokPos
+end
 
-	return ln+1
+-- tokenPosition|nil = runBlock( context, tokens, tokenPosition )
+--[[local]] function runBlock(context, tokens, tokPos)
+	while true do
+		while isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ";") do
+			tokPos = tokPos + 1
+		end
+		if not tokens[tokPos] then  return tokPos  end
+
+		tokPos = runCommand(context, tokens, tokPos)
+		if not tokPos then  return nil  end
+	end
 end
 
 
+
+local function cleanup(context, success)
+	LG.setCanvas(nil)
+
+	if not success and context.art.canvas then  context.art.canvas:release()  end
+
+	if context.canvasToMask then  context.canvasToMask:release()  end
+	if context.maskCanvas   then  context.maskCanvas  :release()  end
+end
 
 function _G.loadArtFile(path)
 	print("Loading "..path.."...")
@@ -862,13 +871,19 @@ function _G.loadArtFile(path)
 	context.canvasW = LG.getWidth()
 	context.canvasH = LG.getHeight()
 
-	for line in io.lines(context.path) do -- @Incomplete: Use PhysFS.
-		line = line:gsub("^%s+", "")
-		table.insert(context.lines, (line:find"^#" and "" or line))
+	local file, err = io.open(context.path) -- @Incomplete: Use PhysFS.
+	if not file then
+		print("Error: "..err)
+		return nil
 	end
+	context.source = file:read"*a"
+	file:close()
+
+	local tokens = tokenize(context, context.source, context.path)
+	if not tokens then  return nil  end
 
 	local entry           = ScopeStackEntry()
-	entry.variables.True  = true
+	entry.variables.True  = true -- @Robustness: Make these constant.
 	entry.variables.False = false
 	entry.variables.Huge  = 1/0
 	entry.variables.Pi    = math.pi
@@ -876,29 +891,25 @@ function _G.loadArtFile(path)
 
 	table.insert(context.scopeStack, entry)
 
-	local ln = 1
-
-	while context.lines[ln] do
-		ln = processCommandLine(context, ln)
-		if not ln then
-			LG.setCanvas(nil)
-			if context.art.canvas   then  context.art.canvas  :release()  end
-			if context.canvasToMask then  context.canvasToMask:release()  end
-			if context.maskCanvas   then  context.maskCanvas  :release()  end
-			return nil
-		end
+	local tokPos = runBlock(context, tokens, 1) -- Now things will happen!
+	if not tokPos then
+		cleanup(context, false)
+		return nil
 	end
+	if tokens[tokPos] then
+		tokenError(context, tokens[tokPos], "Unexpected token.")
+		cleanup(context, false)
+		return nil
+	end
+
 	assert(#context.scopeStack == 1)
 
 	if context.art.canvas then
 		maybeApplyMask(context)
 	end
-	LG.setCanvas(nil)
+	cleanup(context, true)
 
 	print("Loading "..context.path.."... done!")
-
-	if context.canvasToMask then  context.canvasToMask:release()  end
-	if context.maskCanvas   then  context.maskCanvas  :release()  end
 	return context.art.canvas and context.art
 end
 

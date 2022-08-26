@@ -1,3 +1,10 @@
+# Parsing tests.
+setFoo value"a\'b\"c\nw\\e" ; setFoo'd
+setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)
+
+round +round ; round round True  ; round roundTrue  ; round round(true )
+round -round ; round round False ; round roundFalse ; round round(false)
+
 func TestBlobs X Y Size
 	set Col -1
 
@@ -22,6 +29,7 @@ end
 
 
 
+# Settings.
 canvas 500 500 aa4
 backdrop0 .3 0 .5
 # backdrop (40/255) (40/255) (40/255)

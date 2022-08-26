@@ -10,8 +10,9 @@
 --==============================================================
 
 	getLast, itemWith1
+	getLineNumber
 	lerp, lerp4
-	printFileMessage, printFileError, printFileWarning
+	printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
 	round, clamp
 	toColor32
 	writeFile
@@ -23,13 +24,36 @@
 function _G.printFileMessage(pathOrContext, ln, s, ...)
 	print(string.format("%s:%d: "..s, (pathOrContext.path or pathOrContext), ln, ...))
 end
-
 function _G.printFileError(pathOrContext, ln, s, ...)
 	print(string.format("%s:%d: Error: "..s, (pathOrContext.path or pathOrContext), ln, ...))
 end
-
 function _G.printFileWarning(pathOrContext, ln, s, ...)
 	print(string.format("%s:%d: Warning: "..s, (pathOrContext.path or pathOrContext), ln, ...))
+end
+
+local function printFileMessageAt(f, path, source, pos, s, ...)
+	local lineEndPos     = source:find("\n", pos) or #source+1
+	local startToCurrent = source:sub(1, lineEndPos-1)
+	local ln             = getLineNumber(startToCurrent, #startToCurrent)
+	local lastFewLines   = startToCurrent:reverse():match"^[^\n]*\n*[^\n]*":reverse() -- Last 2 lines.
+	local lastLine       = lastFewLines:match"[^\n]*$"
+	local lineStartPos   = lineEndPos - #lastLine
+	local arrowLength    = pos - lineStartPos
+	local text           = lastFewLines:gsub("\n\n+", "\n"):gsub("[^\n]+", "> %0"):gsub("\t", "    ")
+
+	local _, tabCount = lastLine:sub(1, arrowLength):gsub("\t", "\t")
+	arrowLength       = arrowLength + tabCount*3
+
+	f(path, ln, s, ...)
+	print(">")
+	print(text)
+	print(">-"..("-"):rep(arrowLength).."^")
+end
+function _G.printFileErrorAt(path, source, pos, s, ...)
+	printFileMessageAt(printFileError, path, source, pos, s, ...)
+end
+function _G.printFileWarningAt(path, source, pos, s, ...)
+	printFileMessageAt(printFileWarning, path, source, pos, s, ...)
 end
 
 
@@ -94,6 +118,13 @@ function _G.writeFile(path, data)
 	file:close()
 
 	return true
+end
+
+
+
+function _G.getLineNumber(s, i)
+	local _, nlCount = s:sub(1, i):gsub("\n", "\n")
+	return nlCount + 1
 end
 
 
