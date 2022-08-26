@@ -28,6 +28,8 @@ local thePathOut      = "" -- Empty means auto.
 local thePathIsTest   = false
 local theArt          = nil
 
+local autoZoom = false
+
 
 
 local function tryLoadingTheArtFile()
@@ -146,6 +148,9 @@ function love.keypressed(key)
 	if key == "escape" then
 		love.event.quit()
 
+	elseif key == "space" then
+		autoZoom = not autoZoom
+
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
 		if not theArt then  return  end
 
@@ -218,24 +223,30 @@ function love.draw()
 	LG.draw(A.images.checker, A.quads.checker)
 
 	if theArt then
+		local cw = theArt.canvas:getWidth()
+		local ch = theArt.canvas:getHeight()
+		local x  = math.floor((ww - cw) / 2)
+		local y  = math.floor((wh - ch) / 2)
+
+		if not autoZoom then
+			x = math.max(x, 0)
+			y = math.max(y, 0)
+		end
+
 		if theArt.backdrop[4] > 0 then
 			LG.setColor(theArt.backdrop)
 			LG.rectangle("fill", 0,0, ww,wh)
 		end
 
 		LG.translate(math.floor(ww/2),math.floor(wh/2))
-		LG.scale(theArt.zoom)
+		LG.scale(autoZoom and math.min(ww/cw, wh/ch) or theArt.zoom)
 		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
 
-		local w = theArt.canvas:getWidth()
-		local h = theArt.canvas:getHeight()
-		local x = math.max(math.floor((ww-w)/2), 0)
-		local y = math.max(math.floor((wh-h)/2), 0)
 		LG.setColor(0, 0, 0)
-		LG.rectangle("fill", x-1,y-1, w+2,1)
-		LG.rectangle("fill", x-1,y+h, w+2,1)
-		LG.rectangle("fill", x-1,y-1, 1,h+2)
-		LG.rectangle("fill", x+w,y-1, 1,h+2)
+		LG.rectangle("fill", x-1,y-1 , cw+2,1)
+		LG.rectangle("fill", x-1,y+ch, cw+2,1)
+		LG.rectangle("fill", x-1,y-1 , 1,ch+2)
+		LG.rectangle("fill", x+cw,y-1, 1,ch+2)
 
 		LG.setColor(1, 1, 1)
 		LG.setBlendMode("alpha", "premultiplied")

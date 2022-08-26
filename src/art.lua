@@ -33,7 +33,7 @@ local COMMANDS = {
 
 	-- Settings, app. (Doesn't affect the image.)
 	["backdrop"] = { {"r",0},{"g",0},{"b",0},{"a",1} },
-	["zoom"    ] = { {"zoom",1} },
+	["zoom"    ] = { {"zoom",1} }, -- There is also autoZoom!
 
 	-- Settings, init.
 	["canvas"] = { {"w",0--[[=DEFAULT_ART_SIZE]]},{"h",0--[[=w]]}, {"aa",1} },
