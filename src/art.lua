@@ -78,7 +78,6 @@ local function Context()return{
 
 	path   = "",
 	source = "",
-	lines  = {},
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
 	callStack  = {--[[ [funcInfo1]=true, ... ]]},
@@ -739,9 +738,13 @@ local function runCommand(context, tokens, tokPos)
 	--
 	elseif command == "canvas" then
 		if context.art.canvas then  return (tokenError(context, startTok, "Cannot use '%s' after drawing commands.", command))  end
+
 		context.canvasW = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
 		context.canvasH = (args.h >= 1) and args.h or context.canvasW
 		context.msaa    = args.aa^2
+
+		context.scopeStack[1].variables.CanvasWidth  = context.canvasW
+		context.scopeStack[1].variables.CanvasHeight = context.canvasH
 
 	--
 	-- Settings, dynamic.
@@ -948,6 +951,8 @@ function _G.loadArtFile(path, isLocal)
 
 	entry.variables.WindowWidth  = LG.getWidth()
 	entry.variables.WindowHeight = LG.getHeight()
+	entry.variables.CanvasWidth  = context.canvasW
+	entry.variables.CanvasHeight = context.canvasH
 
 	table.insert(context.scopeStack, entry)
 
