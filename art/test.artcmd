@@ -24,7 +24,7 @@ end
 
 
 # Settings.
-canvas 500 500 aa4
+canvas 500 aa4
 backdrop0 .3 0 .5
 # backdrop (40/255) (40/255) (40/255)
 fill.4 .4 .4 .5

@@ -13,7 +13,8 @@
 
 --============================================================]]
 
-local MAX_LOOPS = 10000
+local DEFAULT_ART_SIZE = 500
+local MAX_LOOPS        = 10000
 
 
 
@@ -35,7 +36,7 @@ local COMMANDS = {
 	["zoom"    ] = { {"zoom",1} },
 
 	-- Settings, init.
-	["canvas"] = { {"w",0--[[=auto]]},{"h",0--[[=auto]]}, {"aa",1} },
+	["canvas"] = { {"w",0--[[=DEFAULT_ART_SIZE]]},{"h",0--[[=w]]}, {"aa",1} },
 
 	-- Settings, dynamic.
 	["round"] = { {"round",true} },
@@ -89,8 +90,8 @@ local function Context()return{
 	maskCanvas   = nil,
 
 	-- Settings.
-	canvasW = 1,
-	canvasH = 1,
+	canvasW = DEFAULT_ART_SIZE,
+	canvasH = DEFAULT_ART_SIZE,
 	msaa    = 1,
 	round   = false,
 }end
@@ -738,8 +739,8 @@ local function runCommand(context, tokens, tokPos)
 	--
 	elseif command == "canvas" then
 		if context.art.canvas then  return (tokenError(context, startTok, "Cannot use '%s' after drawing commands.", command))  end
-		context.canvasW = (args.w >= 1) and args.w or LG.getWidth()
-		context.canvasH = (args.h >= 1) and args.h or LG.getHeight()
+		context.canvasW = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
+		context.canvasH = (args.h >= 1) and args.h or context.canvasW
 		context.msaa    = args.aa^2
 
 	--
@@ -921,8 +922,6 @@ function _G.loadArtFile(path, isLocal)
 	context.art      = Art()
 	context.gfxState = GfxState()
 	context.path     = path
-	context.canvasW  = LG.getWidth()
-	context.canvasH  = LG.getHeight()
 
 	if isLocal then
 		context.source = assert(love.filesystem.read(path))
@@ -939,12 +938,16 @@ function _G.loadArtFile(path, isLocal)
 	local tokens = tokenize(context, context.source, context.path)
 	if not tokens then  return nil  end
 
-	local entry           = ScopeStackEntry()
+	local entry = ScopeStackEntry()
+
 	entry.variables.True  = true -- @Robustness: Make these constant.
 	entry.variables.False = false
 	entry.variables.Huge  = 1/0
 	entry.variables.Pi    = math.pi
 	entry.variables.Tau   = TAU
+
+	entry.variables.WindowWidth  = LG.getWidth()
+	entry.variables.WindowHeight = LG.getHeight()
 
 	table.insert(context.scopeStack, entry)
 
