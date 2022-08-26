@@ -12,6 +12,7 @@
 	getLast, itemWith1
 	getLineNumber
 	lerp, lerp4
+	makePathAbsolute
 	printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
 	round, clamp
 	toColor32
@@ -141,6 +142,12 @@ function _G.updateVec4(vec4, x,y,z,w)
 	vec4[2] = y
 	vec4[3] = z
 	vec4[4] = w
+end
+
+
+
+function _G.makePathAbsolute(path, baseDirPrefix)
+	return (path:find"^~?[/\\]" or path:find"^%a:") and path or baseDirPrefix..path
 end
 
 

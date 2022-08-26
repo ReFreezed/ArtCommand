@@ -129,3 +129,15 @@ grad 1 0 0 1  0 1 0 1
 rect 20 (300+1*15) 30 10
 pop
 rect 20 (300+2*15) 30 10
+
+# Images.
+color 1 1 1
+image "face.png" 100 250 sx.5
+image "face.png" 155 270 sx.3 sy.2
+color 1 1 1 .15
+image "face.png" 0 (round(.4*CanvasHeight)) ax.5 sx3 syNan filter"nearest"
+
+color 1 1 1
+set Circles "circles.artcmd"
+imageCircles 200 250
+imageCircles 250 250

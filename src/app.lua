@@ -23,10 +23,10 @@ _G.shaderApplyMask = nil
 
 local hotLoader
 
-local thePathIn       = ""
-local thePathOut      = "" -- Empty means auto.
-local thePathIsTest   = false
-local theArt          = nil
+local thePathIn     = ""
+local thePathOut    = "" -- Empty means auto.
+local thePathIsTest = false -- @Cleanup: Make this into _G.isLocal or something.
+local theArt        = nil
 
 local autoZoom = false
 

@@ -16,6 +16,10 @@
 local DEFAULT_ART_SIZE = 500
 local MAX_LOOPS        = 10000
 
+local STOP_CONTINUE = nil
+local STOP_ONE      = 1
+local STOP_ALL      = 2
+
 
 
 local COMMANDS = {
@@ -28,6 +32,8 @@ local COMMANDS = {
 	["do" ] = { },
 	["for"] = { {"var","I"}, {"from",1},{"to",0},{"step",1} },
 	["end"] = { }, -- Dummy, for error message.
+
+	["stop"] = { {"all",false} },
 
 	-- Special commands: "func", user defined functions.
 
@@ -63,6 +69,7 @@ local COMMANDS = {
 	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
 	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
 	["text"  ] = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0}, {"wrap",1/0},{"align","left"} },
+	["image" ] = { {"x",0},{"y",0}, {"path",""}, {"ax",0},{"ay",0},{"sx",1},{"sy",1--[[nan=x]]}, {"filter","linear"} },
 }
 
 
@@ -76,8 +83,9 @@ local function Art()return{
 local function Context()return{
 	art = nil,
 
-	path   = "",
-	source = "",
+	path    = "",
+	isLocal = false,
+	source  = "",
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
 	callStack  = {--[[ [funcInfo1]=true, ... ]]},
@@ -87,6 +95,9 @@ local function Context()return{
 
 	canvasToMask = nil,
 	maskCanvas   = nil,
+
+	fonts  = {--[[ [size1]=font , ... ]]},
+	images = {--[[ [path1]=image, ... ]]},
 
 	-- Settings.
 	canvasW = DEFAULT_ART_SIZE,
@@ -107,11 +118,16 @@ local function ScopeStackEntry()return{
 }end
 
 local function GfxState()return{
+	maskMode = false,
+
 	useColorTexture    = false,
 	colorTexture       = nil,
 	colorTextureLayout = {0,0,0,0},
 }end
+
 local function copyGfxState(gxfState)return{
+	maskMode = gxfState.maskMode,
+
 	useColorTexture    = gxfState.useColorTexture,
 	colorTexture       = gxfState.colorTexture,
 	colorTextureLayout = {unpack(gxfState.colorTextureLayout)},
@@ -169,9 +185,8 @@ local function ensureCanvasAndInitted(context)
 	context.maskCanvas:setFilter("nearest") -- This fixes weird fuzziness when applying mask.
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 
-	shaderSend(shaderMain     , "maskMode"       , false)
-	shaderSend(shaderMain     , "useColorTexture", false)
-	shaderSend(shaderApplyMask, "mask"           , context.maskCanvas)
+	shaderSend(shaderMain, "maskMode"       , false)
+	shaderSend(shaderMain, "useColorTexture", false)
 
 	LG.setCanvas(context.art.canvas)
 	LG.setShader(shaderMain)
@@ -187,6 +202,8 @@ end
 
 local function maybeApplyMask(context)
 	if LG.getCanvas() ~= context.canvasToMask then  return  end
+
+	shaderSend(shaderApplyMask, "mask", context.maskCanvas)
 
 	LG.push("all")
 	LG.reset()
@@ -540,6 +557,9 @@ local function popGfxState(context)
 
 	LG.pop()
 	context.gfxState = gfxState
+
+	shaderSend(shaderMain, "maskMode", context.gfxState.maskMode)
+
 	shaderSend(shaderMain, "useColorTexture"   , gfxState.useColorTexture)
 	shaderSend(shaderMain, "colorTexture"      , gfxState.colorTexture or A.images.rectangle)
 	shaderSend(shaderMain, "colorTextureLayout", gfxState.colorTextureLayout)
@@ -549,7 +569,7 @@ end
 
 local runBlock
 
--- tokenPosition|nil = runCommand( context, tokens, tokenPosition )
+-- tokenPosition|nil, stop = runCommand( context, tokens, tokenPosition )
 local function runCommand(context, tokens, tokPos)
 	local startTok = tokens[tokPos]
 
@@ -559,11 +579,11 @@ local function runCommand(context, tokens, tokPos)
 	if isToken(tokens[tokPos], "username") then
 		local funcName = tokens[tokPos].value
 		local funcInfo = findInStack(context, "functions", funcName)
-		if not funcInfo then  return tokenError(context, startTok, "No function '%s'.", funcName)  end
+		if not funcInfo then  return (tokenError(context, startTok, "No function '%s'.", funcName))  end
 		tokPos = tokPos + 1 -- username
 
 		if context.callStack[funcInfo] then
-			return tokenError(context, startTok, "Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position))
+			return (tokenError(context, startTok, "Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position)))
 		end
 
 		-- Parse arguments.
@@ -582,21 +602,22 @@ local function runCommand(context, tokens, tokPos)
 		local entry = ScopeStackEntry()
 
 		for i, argInfo in ipairs(argInfos) do
-			if not visited[argInfo[1]] then  return tokenError(context, startTok, "Missing argument '%s' for '%s'.", argInfo[1], funcName)  end
+			if not visited[argInfo[1]] then  return (tokenError(context, startTok, "Missing argument '%s' for '%s'.", argInfo[1], funcName))  end
 			entry.variables[funcInfo.arguments[i]] = args[argInfo[1]]
 		end
 
 		table.insert(context.scopeStack, entry)
 		context.callStack[funcInfo] = true
 
-		local bodyTokPos = runBlock(context, funcInfo.tokens, 1)
+		local bodyTokPos, stop = runBlock(context, funcInfo.tokens, 1)
 		if not bodyTokPos              then  return nil  end
 		if funcInfo.tokens[bodyTokPos] then  return (tokenError(context, funcInfo.tokens[bodyTokPos], "Unexpected token."))  end
 
 		table.remove(context.scopeStack)
 		context.callStack[funcInfo] = nil
 
-		return tokPos
+		if stop == STOP_ALL then  return 1/0, STOP_ALL  end
+		return tokPos, STOP_CONTINUE
 	end
 
 	if not isToken(tokens[tokPos], "name") then
@@ -629,7 +650,7 @@ local function runCommand(context, tokens, tokPos)
 			return (tokenError(context, tokens[tokPos], "Expected argument for function '%s'.", funcName))
 		end
 
-		return (collectBodyTokens(context, tokens, startTok, tokPos, funcInfo.tokens)) -- May return nil.
+		return collectBodyTokens(context, tokens, startTok, tokPos, funcInfo.tokens), STOP_CONTINUE -- May return nil.
 	end
 
 	--
@@ -682,11 +703,13 @@ local function runCommand(context, tokens, tokPos)
 		local entry = ScopeStackEntry()
 		table.insert(context.scopeStack, entry)
 
-		local bodyTokPos = runBlock(context, bodyTokens, 1)
+		local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
 		if not bodyTokPos         then  return nil  end
 		if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
 
 		table.remove(context.scopeStack)
+
+		if stop == STOP_ALL then  return 1/0, STOP_ALL  end
 
 	elseif command == "for" then
 		if args.var  == "" then  return (tokenError(context, startTok, "Empty variable name."))  end
@@ -702,7 +725,8 @@ local function runCommand(context, tokens, tokPos)
 		local entry = ScopeStackEntry()
 		table.insert(context.scopeStack, entry)
 
-		local loops = 0
+		local loops   = 0
+		local stopAll = false
 
 		for n = args.from, args.to, args.step do
 			loops = loops + 1
@@ -714,12 +738,20 @@ local function runCommand(context, tokens, tokPos)
 
 			entry.variables[args.var] = n
 
-			local bodyTokPos = runBlock(context, bodyTokens, 1)
-			if not bodyTokPos         then  return nil  end
+			local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
+			if not bodyTokPos         then  return nil              end
+			if stop == STOP_ONE       then  break                   end
+			if stop == STOP_ALL       then  stopAll = true ; break  end
 			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
 		end
 
 		table.remove(context.scopeStack)
+
+		if stopAll then  return 1/0, STOP_ALL  end
+
+	elseif command == "stop" then
+		if args.all then  print("Stopping all!")  end
+		return 1/0, (args.all and STOP_ALL or STOP_ONE)
 
 	--
 	-- Settings, app.
@@ -795,7 +827,8 @@ local function runCommand(context, tokens, tokPos)
 		shaderSend(shaderMain, "colorTextureLayout", gfxState.colorTextureLayout)
 
 	elseif command == "font" then
-		LG.setNewFont(args.size)
+		context.fonts[args.size] = context.fonts[args.size] or LG.newFont(args.size)
+		LG.setFont(context.fonts[args.size])
 
 	elseif command == "makemask" then
 		ensureCanvasAndInitted(context) -- Canvas and shader.
@@ -803,7 +836,9 @@ local function runCommand(context, tokens, tokPos)
 
 		LG.setCanvas(context.maskCanvas)
 		if args.clear then  LG.clear(0, 0, 0, 1)  end
-		shaderSend(shaderMain, "maskMode", false)
+
+		context.gfxState.maskMode = true
+		shaderSend(shaderMain, "maskMode", context.gfxState.maskMode)
 
 		LG.setColor(1, 1, 1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't.
 
@@ -817,7 +852,9 @@ local function runCommand(context, tokens, tokPos)
 		else
 			LG.setCanvas(context.art.canvas)
 		end
-		shaderSend(shaderMain, "maskMode", false)
+
+		context.gfxState.maskMode = false
+		shaderSend(shaderMain, "maskMode", context.gfxState.maskMode)
 
 	elseif command == "origin" then
 		LG.origin()
@@ -884,22 +921,81 @@ local function runCommand(context, tokens, tokPos)
 
 		LG.printf(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h), w, args.align)
 
+	elseif command == "image" then
+		if args.path == ""                                           then  return (tokenError(context, startTok, "Missing path."))  end
+		if not (args.filter == "linear" or args.filter == "nearest") then  return (tokenError(context, startTok, "Bad filter '%s'. Must be 'linear' or 'nearest'.", args.filter))  end
+
+		ensureCanvasAndInitted(context) -- Canvas.
+
+		local image = context.images[args.path]
+
+		if not image then
+			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
+
+			if args.path:find"%.artcmd$" then
+				pushGfxState(context)
+				local art = loadArtFile(path, context.isLocal)
+				popGfxState(context)
+
+				if not art then  return (tokenError(context, startTok, "Could not load .artcmd image."))  end
+
+				image = art.canvas
+
+			else
+				local file, err = io.open(path, "rb") -- @Incomplete: Use PhysFS.
+				if not file then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
+				local s = file:read"*a"
+				file:close()
+
+				local fileData       = love.filesystem.newFileData(s, path)
+				local ok, imageOrErr = pcall(LG.newImage, fileData)
+				fileData:release()
+				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageOrErr))  end
+				image = imageOrErr
+			end
+
+			-- image:setFilter("nearest") -- Fixes weird fuzziness, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
+			context.images[args.path] = image
+		end
+
+		local sx = args.sx
+		local sy = (args.sy == args.sy) and args.sy or sx
+
+		local iw,ih = image:getDimensions()
+		local x     = maybeRound(context, args.x-args.ax*iw*sx)
+		local y     = maybeRound(context, args.y-args.ay*ih*sy)
+
+		image:setFilter(args.filter)
+
+		if image:typeOf("Canvas") then
+			LG.push("all")
+			LG.setBlendMode("alpha", "premultiplied")
+			LG.draw(image, x,y, 0, sx,sy)
+			LG.pop()
+		else
+			LG.draw(image, x,y, 0, sx,sy)
+		end
+
 	else
 		return (tokenError(context, startTok, "Unimplemented command '%s'.", command))
 	end
-	return tokPos
+	return tokPos, STOP_CONTINUE
 end
 
--- tokenPosition|nil = runBlock( context, tokens, tokenPosition )
+-- tokenPosition|nil, stop = runBlock( context, tokens, tokenPosition )
 --[[local]] function runBlock(context, tokens, tokPos)
+	local stop
+
 	while true do
 		while isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ";") do
 			tokPos = tokPos + 1
 		end
 		if not tokens[tokPos] then  return tokPos  end
 
-		tokPos = runCommand(context, tokens, tokPos)
-		if not tokPos then  return nil  end
+		tokPos, stop = runCommand(context, tokens, tokPos)
+		if not tokPos       then  return nil                 end
+		if stop == STOP_ONE then  return 1/0, STOP_CONTINUE  end
+		if stop == STOP_ALL then  return 1/0, STOP_ALL       end
 	end
 end
 
@@ -915,9 +1011,21 @@ local function cleanup(context, success)
 
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
+
+	for _, font  in pairs(context.fonts ) do  font :release()  end
+	for _, image in pairs(context.images) do  image:release()  end
 end
 
+local artFilesBeingLoaded = {}
+
+-- art|nil = loadArtFile( path, isLocal )
+-- Note: art.canvas has premultiplied alpha.
 function _G.loadArtFile(path, isLocal)
+	if artFilesBeingLoaded[path] then
+		print("Error: File is already being loaded: "..path)
+		return nil
+	end
+
 	print("Loading "..path.."...")
 	LG.reset()
 
@@ -925,11 +1033,12 @@ function _G.loadArtFile(path, isLocal)
 	context.art      = Art()
 	context.gfxState = GfxState()
 	context.path     = path
+	context.isLocal  = isLocal
 
 	if isLocal then
 		context.source = assert(love.filesystem.read(path))
 	else
-		local file, err = io.open(context.path) -- @Incomplete: Use PhysFS.
+		local file, err = io.open(path) -- @Incomplete: Use PhysFS.
 		if not file then
 			print("Error: "..err)
 			return nil
@@ -938,7 +1047,7 @@ function _G.loadArtFile(path, isLocal)
 		file:close()
 	end
 
-	local tokens = tokenize(context, context.source, context.path)
+	local tokens = tokenize(context, context.source, path)
 	if not tokens then  return nil  end
 
 	local entry = ScopeStackEntry()
@@ -946,6 +1055,7 @@ function _G.loadArtFile(path, isLocal)
 	entry.variables.True  = true -- @Robustness: Make these constant.
 	entry.variables.False = false
 	entry.variables.Huge  = 1/0
+	entry.variables.Nan   = 0/0
 	entry.variables.Pi    = math.pi
 	entry.variables.Tau   = TAU
 
@@ -954,9 +1064,60 @@ function _G.loadArtFile(path, isLocal)
 	entry.variables.CanvasWidth  = context.canvasW
 	entry.variables.CanvasHeight = context.canvasH
 
+	-- There are just for the Lua expressions.  @Robustness: Make these constant (although their names already make them).
+	entry.variables.num     = tonumber
+	entry.variables.str     = tostring
+	entry.variables.type    = type
+	entry.variables.abs     = math.abs
+	entry.variables.acos    = math.acos
+	entry.variables.asin    = math.asin
+	entry.variables.atan    = function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end -- atan( y [, x=1 ] )
+	entry.variables.ceil    = math.ceil
+	entry.variables.cos     = math.cos
+	entry.variables.cosh    = math.cosh
+	entry.variables.deg     = math.deg
+	entry.variables.exp     = math.exp
+	entry.variables.floor   = math.floor
+	entry.variables.fmod    = math.fmod
+	entry.variables.frac    = function(n)  local int, frac = math.modf(n) ; return frac  end
+	entry.variables.frexpe  = function(n)  local m, e = math.frexp(n) ; return e  end
+	entry.variables.frexpm  = function(n)  return (math.frexp(n))  end
+	entry.variables.int     = function(n)  return (math.modf(n))  end
+	entry.variables.ldexp   = math.ldexp
+	entry.variables.log     = math.log -- log( n [, base=e ] )
+	entry.variables.max     = math.max
+	entry.variables.min     = math.min
+	entry.variables.rad     = math.rad
+	entry.variables.rand    = love.math.random
+	entry.variables.randf   = function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or n1*love.math.random()  end -- randomf( [ n1=0, ] n2 )
+	entry.variables.round   = function(n)  return math.floor(n+.5)  end
+	entry.variables.sin     = math.sin
+	entry.variables.sinh    = math.sinh
+	entry.variables.sqrt    = math.sqrt
+	entry.variables.tan     = math.tan
+	entry.variables.tanh    = math.tanh
+	entry.variables.clock   = os.clock
+	entry.variables.date    = os.date
+	entry.variables.env     = os.getenv
+	entry.variables.time    = os.time
+	entry.variables.byte    = string.byte -- @Robustness: Handle the string metatable.
+	entry.variables.char    = string.char
+	entry.variables.find    = string.find
+	entry.variables.format  = string.format
+	entry.variables.gsub    = string.gsub
+	entry.variables.lower   = string.lower
+	entry.variables.match   = string.match
+	entry.variables.rep     = string.rep
+	entry.variables.reverse = string.reverse
+	entry.variables.sub     = string.sub
+	entry.variables.upper   = string.upper
+
 	table.insert(context.scopeStack, entry)
 
-	local tokPos = runBlock(context, tokens, 1) -- Now things will happen!
+	artFilesBeingLoaded[path] = true
+	local tokPos              = runBlock(context, tokens, 1) -- Now things will happen!
+	artFilesBeingLoaded[path] = nil
+
 	if not tokPos then
 		cleanup(context, false)
 		return nil
@@ -975,10 +1136,10 @@ function _G.loadArtFile(path, isLocal)
 	cleanup(context, true)
 
 	if not context.art.canvas then
-		print("Nothing was rendered!")
+		print("Nothing was rendered!") -- Should we call ensureCanvasAndInitted()? Especially if an art file loads another.
 	end
 
-	print("Loading "..context.path.."... done!")
+	print("Loading "..path.."... done!")
 	return context.art.canvas and context.art
 end
 
