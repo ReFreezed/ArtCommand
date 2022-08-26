@@ -31,7 +31,7 @@ local theArt          = nil
 
 
 local function tryLoadingTheArtFile()
-	local art = loadArtFile(thePathIn)
+	local art = loadArtFile(thePathIn, thePathIsTest)
 	if not art then  return  end
 
 	if theArt then  theArt.canvas:release()  end
@@ -49,29 +49,27 @@ function love.load(args, rawArgs)
 	io.stderr:setvbuf("no")
 
 	-- Parse arguments.
-	_G.arg             = nil -- Aaarrrgh!!!
 	local parseOptions = true
 	local i            = 1
 
 	while args[i] do
 		local arg = args[i]
-		print(i, arg)
 
 		if not (parseOptions and arg:find"^%-") then
-			if arg       == "" then  error("[Options] Path cannot be empty.", 0)  end
-			if thePathIn ~= "" then  error("[Options] Path already specified.", 0)  end
+			if arg       == "" then  error("[ProgramArguments] Path cannot be empty.", 0)  end
+			if thePathIn ~= "" then  error("[ProgramArguments] Multiple paths specified.", 0)  end
 			thePathIn = arg
 
 		elseif arg == "--" then
 			parseOptions = false
 
 		elseif arg == "--out" then
-			if thePathOut ~= "" then  error("[Options] Ouput path already specified.", 0)  end
-			thePathOut = args[i+1] or error("[Options] Missing path after "..arg..".", 0)
+			if thePathOut ~= "" then  error("[ProgramArguments] Multiple output paths specified.", 0)  end
+			thePathOut = args[i+1] or error("[ProgramArguments] Missing path after "..arg..".", 0)
 			i          = i + 1
 
 		else
-			error("[Options] Unknown option "..arg..".", 0)
+			error("[ProgramArguments] Unknown option "..arg..".", 0)
 		end
 
 		i = i + 1
@@ -167,7 +165,7 @@ function love.keypressed(key)
 			print("Saving "..pathOut.."...")
 
 			local fileData = fixFormatAndDemultiplyAlpha(theArt.canvas:newImageData()):encode("png")
-			local ok, err  = writeFile(pathOut, fileData:getString())
+			local ok, err  = writeFile(pathOut, fileData:getString(), thePathIsTest)
 
 			if not ok then
 				print("Error: "..err)
@@ -272,7 +270,10 @@ end
 
 
 function love.run()
-	love.load(love.arg.parseGameArguments(arg), arg)
+	local rawArgs = arg
+	_G.arg        = nil -- Aaarrrgh!!!
+
+	love.load(love.arg.parseGameArguments(rawArgs), rawArgs)
 	love.timer.step()
 
 	return function()

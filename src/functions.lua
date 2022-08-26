@@ -110,13 +110,19 @@ end
 
 
 
--- success, error = writeFile( path, dataString )
-function _G.writeFile(path, data)
-	local file, err = io.open(path, "wb") -- @Incomplete: Use PhysFS.
-	if not file then  return false, err  end
+-- success, error = writeFile( path, dataString, isLocal )
+function _G.writeFile(path, data, isLocal)
+	if isLocal then
+		local ok, err = love.filesyste.write(path)
+		if not ok then  return false, err  end
 
-	file:write(data)
-	file:close()
+	else
+		local file, err = io.open(path, "wb") -- @Incomplete: Use PhysFS.
+		if not file then  return false, err  end
+
+		file:write(data)
+		file:close()
+	end
 
 	return true
 end

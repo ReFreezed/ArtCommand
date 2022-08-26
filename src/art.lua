@@ -456,9 +456,15 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 		elseif isToken(tokens[tokPos], "expression") then
 			local expr = tokens[tokPos].value
 
-			local chunk, err = loadstring("return"..expr, "@", "t", setmetatable({}, { -- @Robustness: Don't use loadstring()!
-				__index = function(_, k, v)  return findInStack(context, "variables", k)  end, -- @Incomplete: Proper upvalues (which require lexical scope).
-			}))
+			local env = setmetatable({}, {
+				__index = function(_, k, v)
+					local v = findInStack(context, "variables", k) -- @Incomplete: Proper upvalues (which require lexical scope).
+					if v ~= nil then  return v  end
+					error("No variable '"..tostring(k).."'.", 0)
+				end,
+			})
+
+			local chunk, err = loadstring("return"..expr, "@", "t", env) -- @Robustness: Don't use loadstring()!
 			if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", ""))))  end
 
 			local ok, vOrErr = pcall(chunk)
@@ -907,7 +913,7 @@ local function cleanup(context, success)
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 end
 
-function _G.loadArtFile(path)
+function _G.loadArtFile(path, isLocal)
 	print("Loading "..path.."...")
 	LG.reset()
 
@@ -918,13 +924,17 @@ function _G.loadArtFile(path)
 	context.canvasW  = LG.getWidth()
 	context.canvasH  = LG.getHeight()
 
-	local file, err = io.open(context.path) -- @Incomplete: Use PhysFS.
-	if not file then
-		print("Error: "..err)
-		return nil
+	if isLocal then
+		context.source = assert(love.filesystem.read(path))
+	else
+		local file, err = io.open(context.path) -- @Incomplete: Use PhysFS.
+		if not file then
+			print("Error: "..err)
+			return nil
+		end
+		context.source = file:read"*a"
+		file:close()
 	end
-	context.source = file:read"*a"
-	file:close()
 
 	local tokens = tokenize(context, context.source, context.path)
 	if not tokens then  return nil  end
