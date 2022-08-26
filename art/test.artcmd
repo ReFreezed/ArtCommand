@@ -1,5 +1,5 @@
 # Parsing tests.
-setFoo value"a\'b\"c\nw\\e" ; setFoo'd
+setFoo value"a\'b\"c\nw\\e" ; setFoo+5 ; setFoo'd
 setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)
 
 round +round ; round round True  ; round roundTrue  ; round round(true )
@@ -10,21 +10,15 @@ func TestBlobs X Y Size
 
 	func TestBlobColumn R G B
 		setx Col (Col+1)
-		color R G B 1
-		circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) (Size/2)
-		color R G B .75
-		circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) (Size/2)
-		color R G B .50
-		circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) (Size/2)
-		color R G B .25
-		circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) (Size/2)
+		color R G B 1   ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) (Size/2)
+		color R G B .75 ; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) (Size/2)
+		color R G B .50 ; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) (Size/2)
+		color R G B .25 ; circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) (Size/2)
 	end
 
-	push
-		TestBlobColumn 1 1 1
-		TestBlobColumn 0 0 0
-		TestBlobColumn 1 0 0
-	pop
+	TestBlobColumn 1 1 1
+	TestBlobColumn 0 0 0
+	TestBlobColumn 1 0 0
 end
 
 
@@ -68,12 +62,9 @@ makemask
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
 
-	grad  1 1 1 1  0 0 0 1
-	rect 22 (40+0*14) 18 10
-	grad  1 1 1 1  1 1 1 0
-	rect 22 (40+1*14) 18 10
-	grad  0 0 0 1  0 0 0 0
-	rect 22 (40+2*14) 18 10
+	grad 1 1 1 1  0 0 0 1 ; rect 22 (40+0*14) 18 10
+	grad 1 1 1 1  1 1 1 0 ; rect 22 (40+1*14) 18 10
+	grad 0 0 0 1  0 0 0 0 ; rect 22 (40+2*14) 18 10
 
 mask
 	color 1 50% 1
@@ -104,7 +95,7 @@ set "RG" .7
 color RG RG 1
 set  Tens "foo"
 setx Tens (2*15)
-DrawCircle 80 150
+DrawCircle y150 x80
 DrawCircle(50+25) (200 - Tens)
 
 # Loops.
@@ -122,16 +113,19 @@ end
 circle "line" thick4 X 250 10
 
 # Gradients.
-grad  0 1 1 1  0 0 1 1
-rect (320+0*40) 90 30 60
-grad  0 1 1 1  0 0 1 1  45deg scale3
-rect (320+1*40) 90 30 60
-grad  0 1 1 1  0 0 1 1  -75deg
-rect (320+2*40) 90 30 60 "line" thick4
+grad 0 1 1 1  0 0 1 1               ; rect (320+0*40) 90 30 60
+grad 0 1 1 1  0 0 1 1  45deg scale3 ; rect (320+1*40) 90 30 60
+grad 0 1 1 1  0 0 1 1  -75deg       ; rect (320+2*40) 90 30 60 "line" thick4
 
-grad  0 1 1 1  0 0 1 1
-circle (335+0*40) 175 15
-grad  0 1 1 1  0 0 1 1  45deg scale3
-circle (335+1*40) 175 15
-grad  0 1 1 1  0 0 1 1  -75deg
-circle (335+2*40) 175 15 "line" thick4
+grad 0 1 1 1  0 0 1 1               ; circle (335+0*40) 175 15
+grad 0 1 1 1  0 0 1 1  45deg scale3 ; circle (335+1*40) 175 15
+grad 0 1 1 1  0 0 1 1  -75deg       ; circle (335+2*40) 175 15 "line" thick4
+
+# State.
+color 0 0 1
+rect 20 (300+0*15) 30 10
+push
+grad 1 0 0 1  0 1 0 1
+rect 20 (300+1*15) 30 10
+pop
+rect 20 (300+2*15) 30 10

@@ -15,6 +15,7 @@
 	printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
 	round, clamp
 	toColor32
+	updateVec4
 	writeFile
 
 --============================================================]]
@@ -125,6 +126,15 @@ end
 function _G.getLineNumber(s, i)
 	local _, nlCount = s:sub(1, i):gsub("\n", "\n")
 	return nlCount + 1
+end
+
+
+
+function _G.updateVec4(vec4, x,y,z,w)
+	vec4[1] = x
+	vec4[2] = y
+	vec4[3] = z
+	vec4[4] = w
 end
 
 

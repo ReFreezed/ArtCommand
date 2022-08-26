@@ -32,12 +32,6 @@ local theArt          = nil
 
 local function tryLoadingTheArtFile()
 	local art = loadArtFile(thePathIn)
-
-	for i = 1, LG.getStackDepth() do
-		LG.pop()
-	end
-	LG.reset()
-
 	if not art then  return  end
 
 	if theArt then  theArt.canvas:release()  end

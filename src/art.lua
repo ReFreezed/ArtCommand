@@ -30,8 +30,8 @@ local COMMANDS = {
 
 	-- Special commands: "func", user defined functions.
 
-	-- Settings, app.
-	["backdrop"] = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- (Not part of the image.)
+	-- Settings, app. (Doesn't affect the image.)
+	["backdrop"] = { {"r",0},{"g",0},{"b",0},{"a",1} },
 	["zoom"    ] = { {"zoom",1} },
 
 	-- Settings, init.
@@ -48,13 +48,13 @@ local COMMANDS = {
 	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"rr",1},{"gg",1},{"bb",1},{"aa",1}, {"angle",0}, {"scale",1} },
 	["font" ] = { {"size",12} },
 
-	["makemask"] = { {"clear",true} },
-	["mask"    ] = { {"mask",true} },
+	["makemask"] = { {"clear",true} }, -- Not part of gfxState!
+	["mask"    ] = { {"mask",true} },  -- Not part of gfxState!
 
 	["origin"] = { },
 	["move"  ] = { {"x",0},{"y",0} },
 	["rotate"] = { {"a",0} },
-	["scale" ] = { {"x",1},{"y",1/0--[[=x]]} },
+	["scale" ] = { {"x",1},{"y",0/0--[[=x]]} },
 
 	-- Drawing.
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
@@ -81,6 +81,9 @@ local function Context()return{
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
 	callStack  = {--[[ [funcInfo1]=true, ... ]]},
+	gfxStack   = {--[[ gfxState1, ... ]]},
+
+	gfxState = nil, -- (including love.graphics)
 
 	canvasToMask = nil,
 	maskCanvas   = nil,
@@ -90,9 +93,6 @@ local function Context()return{
 	canvasH = 1,
 	msaa    = 1,
 	round   = false,
-
-	-- State (in addition to love.graphics).  @Incomplete: Push/pop this stuff too.
-	colorImage = nil,
 }end
 
 local function FunctionInfo()return{
@@ -104,6 +104,17 @@ local function FunctionInfo()return{
 local function ScopeStackEntry()return{
 	functions = {--[[ [funcName1]=funcInfo, ... ]]},
 	variables = {--[[ [varName1 ]=value   , ... ]]},
+}end
+
+local function GfxState()return{
+	useColorTexture    = false,
+	colorTexture       = nil,
+	colorTextureLayout = {0,0,0,0},
+}end
+local function copyGfxState(gxfState)return{
+	useColorTexture    = gxfState.useColorTexture,
+	colorTexture       = gxfState.colorTexture,
+	colorTextureLayout = {unpack(gxfState.colorTextureLayout)},
 }end
 
 
@@ -139,7 +150,7 @@ end
 
 
 
-local function ensureCanvas(context)
+local function ensureCanvasAndInitted(context)
 	if context.art.canvas then  return  end
 
 	local settingsCanvas = {
@@ -247,9 +258,9 @@ local function tokenize(context, s, path)
 
 			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
-		-- Number: N
-		elseif s:find("^%-?%.?%d", pos) then
-			local nStr; nStr, pos = s:match("^(%-?%.?%d[-+%w%%]*)()", pos)
+		-- Number: N OR +N OR -N
+		elseif s:find("^[-+]?%.?%d", pos) then
+			local nStr; nStr, pos = s:match("^%+?(%-?%.?%d[-+%w%%]*)()", pos)
 			local n
 
 			if     nStr:find"%%$"    then  n = tonumber(nStr:sub(1, -2)) ; n = n and n/100
@@ -512,6 +523,24 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 	end
 end
 
+local function pushGfxState(context)
+	LG.push("all")
+	table.insert(context.gfxStack, copyGfxState(context.gfxState))
+end
+
+local function popGfxState(context)
+	local gfxState = table.remove(context.gfxStack)
+	if not gfxState then  return false  end
+
+	LG.pop()
+	context.gfxState = gfxState
+	shaderSend(shaderMain, "useColorTexture"   , gfxState.useColorTexture)
+	shaderSend(shaderMain, "colorTexture"      , gfxState.colorTexture or A.images.rectangle)
+	shaderSend(shaderMain, "colorTextureLayout", gfxState.colorTextureLayout)
+
+	return true
+end
+
 local runBlock
 
 -- tokenPosition|nil = runCommand( context, tokens, tokenPosition )
@@ -711,45 +740,55 @@ local function runCommand(context, tokens, tokPos)
 	-- Settings, dynamic.
 	--
 	elseif command == "round" then
-		context.round = args.round
+		context.round = args.round -- Should this be included in gfxStack? Probably, to keep things simple (don't have dynamic settings), but not sure.
 
 	--
 	-- State.
 	--
 	elseif command == "push" then
-		LG.push("all")
+		ensureCanvasAndInitted(context) -- gfxState.
+		pushGfxState(context)
 
 	elseif command == "pop" then
-		if    LG.getStackDepth() == 0
-		then  tokenWarning(context, startTok, "Too many 'pop' commands! Ignoring.")
-		else  LG.pop()  end
+		if not popGfxState(context) then -- Will fail if there was no push - otherwise ensureCanvasAndInitted() will have been called.
+			tokenWarning(context, startTok, "Too many 'pop' commands! Ignoring.")
+		end
 
 	elseif command == "color" then
+		ensureCanvasAndInitted(context) -- gfxState.
 		LG.setColor(args.r, args.g, args.b, args.a)
-		shaderSend(shaderMain, "useColorTexture", false)
-		if context.colorImage then
-			context.colorImage:release()
-			context.colorImage = nil
-		end
+
+		local gfxState           = context.gfxState
+		gfxState.useColorTexture = false
+		gfxState.colorTexture    = nil -- @Memory: Release image. (Consider gfxStack!)
+
+		shaderSend(shaderMain, "useColorTexture", gfxState.useColorTexture)
 
 	elseif command == "grad" then
-		if context.colorImage then
-			context.colorImage:release()
+		ensureCanvasAndInitted(context) -- gfxState.
+
+		local gfxState = context.gfxState
+		if gfxState.colorTexture then
+			-- @Memory: Release image. (Consider gfxStack!)
 		end
-		context.colorImage = newImageUsingPalette({"abc","abc"}, {
+
+		gfxState.useColorTexture = true
+		gfxState.colorTexture    = newImageUsingPalette({"abc","abc"}, {
 			a = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 0/2)}, -- @Cleanup: Better argument names.
 			b = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 1/2)},
 			c = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 2/2)},
 		})
-		shaderSend    (shaderMain, "useColorTexture"   , true)
-		shaderSend    (shaderMain, "colorTexture"      , context.colorImage)
-		shaderSendVec4(shaderMain, "colorTextureLayout", math.cos(args.angle),math.sin(args.angle), args.scale,1)
+		updateVec4(gfxState.colorTextureLayout, math.cos(args.angle),math.sin(args.angle), args.scale,1)
+
+		shaderSend(shaderMain, "useColorTexture"   , gfxState.useColorTexture)
+		shaderSend(shaderMain, "colorTexture"      , gfxState.colorTexture)
+		shaderSend(shaderMain, "colorTextureLayout", gfxState.colorTextureLayout)
 
 	elseif command == "font" then
 		LG.setNewFont(args.size)
 
 	elseif command == "makemask" then
-		ensureCanvas(context)
+		ensureCanvasAndInitted(context) -- Canvas and shader.
 		maybeApplyMask(context)
 
 		LG.setCanvas(context.maskCanvas)
@@ -759,7 +798,7 @@ local function runCommand(context, tokens, tokPos)
 		LG.setColor(1, 1, 1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't.
 
 	elseif command == "mask" then
-		ensureCanvas(context)
+		ensureCanvasAndInitted(context) -- Canvas and shader.
 		maybeApplyMask(context)
 
 		if args.mask then
@@ -772,18 +811,22 @@ local function runCommand(context, tokens, tokPos)
 
 	elseif command == "origin" then
 		LG.origin()
+
 	elseif command == "move" then
 		LG.translate(maybeRound(context,args.x), maybeRound(context,args.y))
+
 	elseif command == "rotate" then
 		LG.rotate(args.a)
+
 	elseif command == "scale" then
-		LG.scale(args.x, (args.y == 1/0 and args.x or args.y))
+		LG.scale(args.x, (args.y ~= args.y and args.x or args.y))
 
 	--
 	-- Drawing.
 	--
 	elseif command == "fill" then
-		ensureCanvas(context)
+		ensureCanvasAndInitted(context) -- Canvas.
+
 		LG.push("all")
 		LG.origin()
 		LG.setColor(args.r, args.g, args.b, args.a)
@@ -791,7 +834,7 @@ local function runCommand(context, tokens, tokPos)
 		LG.pop()
 
 	elseif command == "rect" then
-		ensureCanvas(context)
+		ensureCanvasAndInitted(context) -- Canvas.
 
 		local x = maybeRound(context, args.x-args.ax*args.w)
 		local y = maybeRound(context, args.y-args.ay*args.h)
@@ -806,7 +849,7 @@ local function runCommand(context, tokens, tokPos)
 
 	elseif command == "circle" then
 		-- @Incomplete: Ellipses.
-		ensureCanvas(context)
+		ensureCanvasAndInitted(context) -- Canvas.
 
 		local x    = maybeRound(context, args.x)
 		local y    = maybeRound(context, args.y)
@@ -823,7 +866,7 @@ local function runCommand(context, tokens, tokPos)
 			return (tokenError(context, startTok, "Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align))
 		end
 
-		ensureCanvas(context)
+		ensureCanvasAndInitted(context) -- Canvas.
 
 		local font         = LG.getFont()
 		local w, textLines = font:getWrap(args.text, args.wrap)
@@ -853,7 +896,10 @@ end
 
 
 local function cleanup(context, success)
-	LG.setCanvas(nil)
+	for i = 1, #context.gfxStack do
+		LG.pop() -- We probably don't have to call popGfxState(), but we could if needed.
+	end
+	LG.reset()
 
 	if not success and context.art.canvas then  context.art.canvas:release()  end
 
@@ -865,11 +911,12 @@ function _G.loadArtFile(path)
 	print("Loading "..path.."...")
 	LG.reset()
 
-	local context   = Context()
-	context.art     = Art()
-	context.path    = path
-	context.canvasW = LG.getWidth()
-	context.canvasH = LG.getHeight()
+	local context    = Context()
+	context.art      = Art()
+	context.gfxState = GfxState()
+	context.path     = path
+	context.canvasW  = LG.getWidth()
+	context.canvasH  = LG.getHeight()
 
 	local file, err = io.open(context.path) -- @Incomplete: Use PhysFS.
 	if not file then
