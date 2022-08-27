@@ -52,7 +52,7 @@ local COMMANDS = {
 	["pop" ] = { },
 
 	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
-	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, rgb={"r","g","b"} },
+	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
 	["font" ] = { {"size",12} },
 
 	["makemask"] = { {"clear",true} },
@@ -123,6 +123,8 @@ local function GfxState()return{
 	colorMode          = "color", -- "color" | "gradient"
 	gradient           = {--[[ r1,g1,b1,a1, ... ]]},
 	colorTexture       = nil,
+	colorTextureRadial = false,
+	colorTextureFit    = true, -- Used with colorTextureRadial.
 	colorTextureScaleX = 1.0,
 	colorTextureScaleY = 1.0,
 	colorTextureAngle  = 0.0,
@@ -134,6 +136,8 @@ local function copyGfxState(gxfState)return{
 	colorMode          = gxfState.colorMode,
 	gradient           = {unpack(gxfState.gradient)},
 	colorTexture       = gxfState.colorTexture,
+	colorTextureRadial = gxfState.colorTextureRadial,
+	colorTextureFit    = gxfState.colorTextureFit,
 	colorTextureScaleX = gxfState.colorTextureScaleX,
 	colorTextureScaleY = gxfState.colorTextureScaleY,
 	colorTextureAngle  = gxfState.colorTextureAngle,
@@ -586,10 +590,10 @@ local function applyColorMode(context, shape, w,h)
 		return
 	end
 
-	local dirX = 1
-	local dirY = 0
-	local sx   = 1
-	local sy   = 1
+	local sx           = 1
+	local sy           = 1
+	local dirOrOffsetX = 1
+	local dirY         = 0
 
 	if gfxState.colorMode == "gradient" then
 		if not gfxState.colorTexture then
@@ -607,28 +611,36 @@ local function applyColorMode(context, shape, w,h)
 			gfxState.colorTexture = newImageUsingPalette(pixelRows, palette)
 		end
 
-		-- When shape="rectangle" and the gradient scale is 1, one edge of the
-		-- gradient should touch one corner, and the other edge should touch
-		-- the opposite, no matter the gradient's angle.
-		local scaledAngle = math.atan2(
-			math.sin(gfxState.colorTextureAngle) * h/w,
-			math.cos(gfxState.colorTextureAngle)
-		)
-		local angleCompensationScale = (shape == "rectangle" and math.abs(math.sin(scaledAngle))+math.abs(math.cos(scaledAngle))) or 1
+		if gfxState.colorTextureRadial then
+			local iw     = gfxState.colorTexture:getWidth()
+			local scale  = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
+			sx           = gfxState.colorTextureScaleX * iw/(iw-1) * scale -- colorTextureScaleY isn't used.
+			sy           = sx * w/h
+			dirOrOffsetX = .5/iw
 
-		dirX = math.cos(scaledAngle)
-		dirY = math.sin(scaledAngle)
+		else
+			-- When shape="rectangle" and the gradient scale is 1, one edge of the
+			-- gradient should touch one corner, and the other edge should touch
+			-- the opposite, no matter the gradient's angle.
+			local angle                  = gfxState.colorTextureAngle
+			local scaledAngle            = math.atan2(math.sin(angle)*h/w, math.cos(angle))
+			local angleCompensationScale = (shape == "rectangle") and math.abs(math.sin(scaledAngle))+math.abs(math.cos(scaledAngle)) or 1
 
-		local iw = gfxState.colorTexture:getWidth()
-		sx       = gfxState.colorTextureScaleX * iw/(iw-1) * angleCompensationScale -- colorTextureScaleY isn't used.
+			local iw = gfxState.colorTexture:getWidth()
+			sx       = gfxState.colorTextureScaleX * iw/(iw-1) * angleCompensationScale -- colorTextureScaleY isn't used.
+
+			dirOrOffsetX = math.cos(scaledAngle)
+			dirY         = math.sin(scaledAngle)
+		end
 
 	else
 		error(gfxState.colorMode)
 	end
 
 	shaderSend    (shaderMain, "useColorTexture"   , true)
+	shaderSend    (shaderMain, "colorTextureRadial", gfxState.colorTextureRadial)
 	shaderSend    (shaderMain, "colorTexture"      , gfxState.colorTexture)
-	shaderSendVec4(shaderMain, "colorTextureLayout", dirX,dirY, sx,sy)
+	shaderSendVec4(shaderMain, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
 end
 
 local function pushGfxState(context)
@@ -906,7 +918,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		gfxState.colorMode          = "gradient"
-		gfxState.colorTextureScaleX = args.scale -- colorTextureScaleY isn't used.
+		gfxState.colorTextureRadial = args.radial
+		gfxState.colorTextureFit    = args.fit
+		gfxState.colorTextureScaleX = args.scale -- colorTextureScaleY isn't used.  @Incomplete: For radial gradients it makes sense to scale y!
 		gfxState.colorTextureAngle  = args.angle
 
 		if not isSequence then
