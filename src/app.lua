@@ -88,6 +88,8 @@ function love.load(args, rawArgs)
 	end
 
 	-- Load stuff.
+	require"table.clear"
+
 	_G.LG     = love.graphics
 	hotLoader = require"hotLoader"
 
