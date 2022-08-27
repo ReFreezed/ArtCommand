@@ -134,7 +134,7 @@ for i = 2, MAX_CIRCLE_SEGMENTS+2 do
 	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
 end
 
-function _G.drawCircleFill(x,y, radius, segs)
+function _G.drawCircleFill(x,y, rx,ry, segs)
 	if not mesh then
 		mesh = LG.newMesh(vertices, "fan", "stream")
 		mesh:setTexture(A.images.rectangle)
@@ -147,7 +147,7 @@ function _G.drawCircleFill(x,y, radius, segs)
 		local angle = i * deltaAngle
 		local c     = math.cos(angle)
 		local s     = math.sin(angle)
-		vertices[i][1],vertices[i][2], vertices[i][3],vertices[i][4] = radius*c,radius*s, .5+.5*c,.5+.5*s
+		vertices[i][1],vertices[i][2], vertices[i][3],vertices[i][4] = rx*c,ry*s, .5+.5*c,.5+.5*s
 	end
 
 	mesh:setVertices(vertices, 1, segs+2)
@@ -164,24 +164,29 @@ for i = 1, 2*MAX_CIRCLE_SEGMENTS+2 do
 	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
 end
 
-function _G.drawCircleLine(x,y, radius, segs, lw)
+function _G.drawCircleLine(x,y, rx,ry, segs, lw)
 	if not mesh then
 		mesh = LG.newMesh(vertices, "strip", "stream")
 		mesh:setTexture(A.images.rectangle)
 	end
 
+	-- @Polish: Calculate final line thickness better for low segment counts (and sharper angles)
+	-- as the resulting lines get thinner the way we do things here.
 	segs             = clamp(segs, 3, MAX_CIRCLE_SEGMENTS)
-	local radius1    = radius - lw*.5
-	local radius2    = radius + lw*.5
+	local rxInner    = rx - lw*.5
+	local ryInner    = ry - lw*.5
+	local rxOuter    = rx + lw*.5
+	local ryOuter    = ry + lw*.5
 	local deltaAngle = TAU / segs
-	local radiusUv   = (1 - lw/radius2) / 2
+	local ruInner    = (1 - lw/rxOuter) / 2
+	local rvInner    = (1 - lw/ryOuter) / 2
 
 	for i = 1, segs do
 		local angle = i * deltaAngle
 		local c     = math.cos(angle)
 		local s     = math.sin(angle)
-		vertices[2*i-1][1],vertices[2*i-1][2], vertices[2*i-1][3],vertices[2*i-1][4] = radius1*c,radius1*s, .5+.5*c,.5+.5*s
-		vertices[2*i  ][1],vertices[2*i  ][2], vertices[2*i  ][3],vertices[2*i  ][4] = radius2*c,radius2*s, .5+radiusUv*c,.5+radiusUv*s
+		vertices[2*i-1][1],vertices[2*i-1][2], vertices[2*i-1][3],vertices[2*i-1][4] = rxInner*c,ryInner*s, .5+.5*c,.5+.5*s
+		vertices[2*i  ][1],vertices[2*i  ][2], vertices[2*i  ][3],vertices[2*i  ][4] = rxOuter*c,ryOuter*s, .5+ruInner*c,.5+rvInner*s
 	end
 
 	vertices[2*segs+1][1],vertices[2*segs+1][2], vertices[2*segs+1][3],vertices[2*segs+1][4] = vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4]

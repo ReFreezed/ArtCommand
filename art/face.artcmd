@@ -1,18 +1,18 @@
-canvas 100 aa4
+canvas size100 aa4
 
 # Head.
 color 1 1 0
-circle 50 50 48
+circle 50 50 r48
 
 # Eyes.
-color 0 0 0
-circle 20 48 6
-circle 80 48 6
+color rgb0
+circle 20 48 r6
+circle 80 48 r6
 
 # Mouth.
 makemask
 	rect 0 60 100 100
 mask
-	color 0 0 0
-	circle 50 55 30
+	color rgb0
+	circle 50 55 r30
 mask False

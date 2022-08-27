@@ -38,11 +38,11 @@ local COMMANDS = {
 	-- Special commands: "func", user defined functions.
 
 	-- Settings, app. (Doesn't affect the image.)
-	["backdrop"] = { {"r",0},{"g",0},{"b",0},{"a",1} },
+	["backdrop"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
 	["zoom"    ] = { {"zoom",1} }, -- There is also autoZoom!
 
 	-- Settings, init.
-	["canvas"] = { {"w",0--[[=DEFAULT_ART_SIZE]]},{"h",0--[[=w]]}, {"aa",1} },
+	["canvas"] = { {"w",0--[[=DEFAULT_ART_SIZE]]},{"h",0--[[=DEFAULT_ART_SIZE]]}, {"aa",1}, size={"w","h"} },
 
 	-- Settings, dynamic.
 	["round"] = { {"round",true} },
@@ -51,25 +51,25 @@ local COMMANDS = {
 	["push"] = { },
 	["pop" ] = { },
 
-	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1} },
-	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"rr",1},{"gg",1},{"bb",1},{"aa",1}, {"angle",0}, {"scale",1} },
+	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
+	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"tor",1},{"tog",1},{"tob",1},{"toa",1}, {"angle",0}, {"scale",1}, rgb={"r","g","b"}, torgb={"tor","tog","tob"} },
 	["font" ] = { {"size",12} },
 
-	["makemask"] = { {"clear",true} }, -- Not part of gfxState!
-	["mask"    ] = { {"mask",true} },  -- Not part of gfxState!
+	["makemask"] = { {"clear",true} },
+	["mask"    ] = { {"mask",true} },
 
 	["origin"] = { },
 	["move"  ] = { {"x",0},{"y",0} },
 	["rotate"] = { {"a",0} },
-	["scale" ] = { {"x",1},{"y",0/0--[[=x]]} },
+	["scale" ] = { {"x",1},{"y",1}, scale={"x","y"} },
 
 	-- Drawing.
-	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1} }, -- A rectangle that covers the whole screen.
+	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1} },
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"r",5}, {"segs",0--[[=auto]]},       {"thick",1} },
-	["text"  ] = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0}, {"wrap",1/0},{"align","left"} },
-	["image" ] = { {"x",0},{"y",0}, {"path",""}, {"ax",0},{"ay",0},{"sx",1},{"sy",1--[[nan=x]]}, {"filter","linear"} },
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1}, anchor={"ax","ay"} },
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"segs",0--[[=auto]]}, {"thick",1}, r={"rx","ry"} },
+	["text"  ] = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0}, {"wrap",1/0},{"align","left"}, anchor={"ax","ay"} },
+	["image" ] = { {"x",0},{"y",0}, {"path",""}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"} },
 }
 
 
@@ -437,20 +437,36 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 		end
 
 		local startTok = tokens[tokPos]
+		local argName0 = ""
 		local argName  = ""
+		local argNames = nil
 		local v, argInfo
 
 		-- Explicit name.
 		if isToken(startTok, "name") then
-			argName = startTok.value
+			argName0 = startTok.value
+			argName  = argName0
 
-			argInfo = itemWith1(argInfos, 1, argName)
-			if not argInfo then  return (tokenError(context, startTok, "No argument '%s' for '%s'.", argName, commandOrFuncName))  end
+			if argInfos[argName] then -- One-to-multiple argument mapping.
+				argNames = argInfos[argName]
+				argName  = argNames[1]
+				argInfo  = itemWith1(argInfos, 1, argName) or error(argName)
 
-			if visited[argName] then
-				return (tokenError(context, startTok, "Duplicate argument '%s'.", argName))
-			elseif not startTok.hasAttachment then
-				return (parseError(context, startTok.position+#argName, "Missing value for argument '%s'.", argName))
+				for _, _argName in ipairs(argNames) do
+					if visited[_argName] then
+						return (tokenError(context, startTok, "Duplicate argument '%s' (as part of '%s').", _argName, argName0))
+					end
+				end
+
+			else
+				argInfo = itemWith1(argInfos, 1, argName)
+				if not argInfo then  return (tokenError(context, startTok, "No argument '%s' for '%s'.", argName, commandOrFuncName))  end
+
+				if visited[argName] then  return (tokenError(context, startTok, "Duplicate argument '%s'.", argName))  end
+			end
+
+			if not startTok.hasAttachment then
+				return (parseError(context, startTok.position+#argName0, "Missing value for argument '%s'.", argName0))
 			end
 
 			tokPos = tokPos + 1 -- the name
@@ -498,7 +514,6 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			for _, _argInfo in ipairs(argInfos) do
 				if not visited[_argInfo[1]] and (type(_argInfo[2]) == type(v) or _argInfo[2] == nil) then
 					argName = _argInfo[1]
-					argInfo = _argInfo
 					break
 				end
 			end
@@ -507,12 +522,20 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 
 		-- Validate value.
 		elseif not (type(v) == type(argInfo[2]) or argInfo[2] == nil) then
-			return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName, type(argInfo[2]), type(v)))
+			return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName0, type(argInfo[2]), type(v)))
 		end
 
-		args   [argName] = v
-		visited[argName] = true
-		tokPos           = tokPos + 1 -- the value
+		-- Finalize argument.
+		if argNames then
+			for _, _argName in ipairs(argNames) do
+				args   [_argName] = v
+				visited[_argName] = true
+			end
+		else
+			args   [argName] = v
+			visited[argName] = true
+		end
+		tokPos = tokPos + 1 -- the value
 	end
 end
 
@@ -772,7 +795,7 @@ local function runCommand(context, tokens, tokPos)
 		if context.art.canvas then  return (tokenError(context, startTok, "Cannot use '%s' after drawing commands.", command))  end
 
 		context.canvasW = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
-		context.canvasH = (args.h >= 1) and args.h or context.canvasW
+		context.canvasH = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
 		context.msaa    = args.aa^2
 
 		context.scopeStack[1].variables.CanvasWidth  = context.canvasW
@@ -816,9 +839,9 @@ local function runCommand(context, tokens, tokPos)
 
 		gfxState.useColorTexture = true
 		gfxState.colorTexture    = newImageUsingPalette({"abc","abc"}, {
-			a = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 0/2)}, -- @Cleanup: Better argument names.
-			b = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 1/2)},
-			c = {lerp4(args.r,args.g,args.b,args.a, args.rr,args.gg,args.bb,args.aa, 2/2)},
+			a = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 0/2)},
+			b = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 1/2)},
+			c = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 2/2)},
 		})
 		updateVec4(gfxState.colorTextureLayout, math.cos(args.angle),math.sin(args.angle), args.scale,1)
 
@@ -895,15 +918,14 @@ local function runCommand(context, tokens, tokPos)
 		end
 
 	elseif command == "circle" then
-		-- @Incomplete: Ellipses.
 		ensureCanvasAndInitted(context) -- Canvas.
 
 		local x    = maybeRound(context, args.x)
 		local y    = maybeRound(context, args.y)
-		local segs = (args.segs >= 3) and args.segs or math.max(math.floor(args.r*TAU/10), 64)
+		local segs = (args.segs >= 3) and args.segs or math.max(math.floor(math.max(args.rx,args.ry)*TAU/10), 64)
 
-		if     args.mode == "fill" then  drawCircleFill(x,y, args.r, segs)
-		elseif args.mode == "line" then  drawCircleLine(x,y, args.r, segs, args.thick)
+		if     args.mode == "fill" then  drawCircleFill(x,y, args.rx,args.ry, segs)
+		elseif args.mode == "line" then  drawCircleLine(x,y, args.rx,args.ry, segs, args.thick)
 		else
 			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
@@ -927,19 +949,19 @@ local function runCommand(context, tokens, tokPos)
 
 		ensureCanvasAndInitted(context) -- Canvas.
 
-		local image = context.images[args.path]
+		local imageOrCanvas = context.images[args.path]
 
-		if not image then
+		if not imageOrCanvas then
 			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
 
 			if args.path:find"%.artcmd$" then
 				pushGfxState(context)
-				local art = loadArtFile(path, context.isLocal)
-				popGfxState(context)
 
+				local art = loadArtFile(path, context.isLocal)
 				if not art then  return (tokenError(context, startTok, "Could not load .artcmd image."))  end
 
-				image = art.canvas
+				popGfxState(context)
+				imageOrCanvas = art.canvas
 
 			else
 				local file, err = io.open(path, "rb") -- @Incomplete: Use PhysFS.
@@ -951,29 +973,26 @@ local function runCommand(context, tokens, tokPos)
 				local ok, imageOrErr = pcall(LG.newImage, fileData)
 				fileData:release()
 				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageOrErr))  end
-				image = imageOrErr
+				imageOrCanvas = imageOrErr
 			end
 
-			-- image:setFilter("nearest") -- Fixes weird fuzziness, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
-			context.images[args.path] = image
+			-- imageOrCanvas:setFilter("nearest") -- Fixes weird fuzziness, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
+			context.images[args.path] = imageOrCanvas
 		end
 
-		local sx = args.sx
-		local sy = (args.sy == args.sy) and args.sy or sx
+		local iw,ih = imageOrCanvas:getDimensions()
+		local x     = maybeRound(context, args.x-args.ax*iw*args.sx)
+		local y     = maybeRound(context, args.y-args.ay*ih*args.sy)
 
-		local iw,ih = image:getDimensions()
-		local x     = maybeRound(context, args.x-args.ax*iw*sx)
-		local y     = maybeRound(context, args.y-args.ay*ih*sy)
+		imageOrCanvas:setFilter(args.filter)
 
-		image:setFilter(args.filter)
-
-		if image:typeOf("Canvas") then
+		if imageOrCanvas:typeOf("Canvas") then
 			LG.push("all")
 			LG.setBlendMode("alpha", "premultiplied")
-			LG.draw(image, x,y, 0, sx,sy)
+			LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
 			LG.pop()
 		else
-			LG.draw(image, x,y, 0, sx,sy)
+			LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
 		end
 
 	else

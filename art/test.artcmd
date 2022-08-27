@@ -10,10 +10,10 @@ func TestBlobs X Y Size
 
 	func TestBlobColumn R G B
 		setx Col (Col+1)
-		color R G B 1   ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) (Size/2)
-		color R G B .75 ; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) (Size/2)
-		color R G B .50 ; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) (Size/2)
-		color R G B .25 ; circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) (Size/2)
+		color R G B 1   ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) r(Size/2)
+		color R G B .75 ; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) r(Size/2)
+		color R G B .50 ; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) r(Size/2)
+		color R G B .25 ; circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) r(Size/2)
 	end
 
 	TestBlobColumn 1 1 1
@@ -36,7 +36,14 @@ font 62  # Big boy!
 text 490 -5 ax1 wrap550 align"right" "TEST TEST TEST TEST
 
 color 0 0 0
-circle 50 50 10
+circle 50 50 r10
+
+color 1 0 .5 .7
+circle 190 110 30 10
+circle 190 110 12 25
+color 1 0 .5
+circle 260 110 30 10 "line" thick2
+circle 260 110 12 25 "line" thick2
 
 # Transform.
 move 50 50
@@ -54,7 +61,7 @@ pop
 makemask
 	rect w20 h20
 	rect w30 h50 y35
-	circle 50 50 10
+	circle 50 50 r10
 
 	font 24
 	text text"Hello, world!" x12
@@ -62,13 +69,13 @@ makemask
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
 
-	grad 1 1 1 1  0 0 0 1 ; rect 22 (40+0*14) 18 10
-	grad 1 1 1 1  1 1 1 0 ; rect 22 (40+1*14) 18 10
-	grad 0 0 0 1  0 0 0 0 ; rect 22 (40+2*14) 18 10
+	grad rgb1 1 torgb0 1 ; rect 22 (40+0*14) 18 10
+	grad rgb1 1 torgb1 0 ; rect 22 (40+1*14) 18 10
+	grad rgb0 1 torgb0 0 ; rect 22 (40+2*14) 18 10
 
 mask
 	color 1 50% 1
-	rect w1000 h1000 ax.5 ay.5
+	rect w1000 h1000 anchor.5
 	TestBlobs 1 1 4
 mask False
 
@@ -86,7 +93,7 @@ circle r20
 # Functions.
 func DrawCircle X Y
 	func DrawCircle X Y #inner
-		circle X Y 10
+		circle X Y r10
 	end
 	DrawCircle (2*X) Y #inner
 end
@@ -110,34 +117,34 @@ set X 0
 do
 	set X 100
 end
-circle "line" thick4 X 250 10
+circle "line" thick4 X 250 r10
 
 # Gradients.
 grad 0 1 1 1  0 0 1 1               ; rect (320+0*40) 90 30 60
 grad 0 1 1 1  0 0 1 1  45deg scale3 ; rect (320+1*40) 90 30 60
 grad 0 1 1 1  0 0 1 1  -75deg       ; rect (320+2*40) 90 30 60 "line" thick4
 
-grad 0 1 1 1  0 0 1 1               ; circle (335+0*40) 175 15
-grad 0 1 1 1  0 0 1 1  45deg scale3 ; circle (335+1*40) 175 15
-grad 0 1 1 1  0 0 1 1  -75deg       ; circle (335+2*40) 175 15 "line" thick4
+grad 0 1 1 1  0 0 1 1               ; circle (335+0*40) 175 r15
+grad 0 1 1 1  0 0 1 1  45deg scale3 ; circle (335+1*40) 175 r15
+grad 0 1 1 1  0 0 1 1  -75deg       ; circle (335+2*40) 175 r15 "line" thick4
 
 # State.
 color 0 0 1
 rect 20 (300+0*15) 30 10
 push
-grad 1 0 0 1  0 1 0 1
+grad .5 0 0 1  0 1 0 1
 rect 20 (300+1*15) 30 10
 pop
 rect 20 (300+2*15) 30 10
 
 # Images.
-color 1 1 1
+color rgb1
 image "face.png" 100 250 sx.5
 image "face.png" 155 270 sx.3 sy.2
-color 1 1 1 .15
-image "face.png" 0 (round(.4*CanvasHeight)) ax.5 sx3 syNan filter"nearest"
+color rgb1 .15
+image "face.png" 0 (round(.4*CanvasHeight)) ax.5 scale3 filter"nearest"
 
-color 1 1 1
+color rgb1
 set Circles "circles.artcmd"
 imageCircles 200 250
 imageCircles 250 250
