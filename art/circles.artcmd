@@ -1,3 +1,3 @@
 canvas size100 aa4
-color 1 .55 0 ; circle 35 35 r30
-color .6 .9 0 ; circle 65 65 r30
+color 1 .55 0; circle 35 35 r30
+color .6 .9 0; circle 65 65 r30

@@ -1,24 +1,20 @@
 # Parsing tests.
-setFoo value"a\'b\"c\nw\\e" ; setFoo+5 ; setFoo'd
+setFoo value"a\'b\"c\nw\\e"; setFoo+5,Foo'd
 setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)
 
-round +round ; round round True  ; round roundTrue  ; round round(true )
-round -round ; round round False ; round roundFalse ; round round(false)
+round +round; round round True ; round roundTrue ; round round(true )
+round -round; round round False; round roundFalse; round round(false)
 
 func TestBlobs X Y Size
 	set Col -1
-
 	func TestBlobColumn R G B
 		setx Col (Col+1)
-		color R G B 1   ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) r(Size/2)
-		color R G B .75 ; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) r(Size/2)
-		color R G B .50 ; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) r(Size/2)
-		color R G B .25 ; circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) r(Size/2)
+		color R G B 1  ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) r(Size/2)
+		color R G B .75; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) r(Size/2)
+		color R G B .50; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) r(Size/2)
+		color R G B .25; circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) r(Size/2)
 	end
-
-	TestBlobColumn 1 1 1
-	TestBlobColumn 0 0 0
-	TestBlobColumn 1 0 0
+	TestBlobColumn 1 1 1, 0 0 0, 1 0 0
 end
 
 
@@ -69,9 +65,9 @@ makemask
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
 
-	color rgb1 1 ; grad rgb0 1 ; rect 24 (40+0*14) 12 10
-	color rgb1 1 ; grad rgb1 0 ; rect 24 (40+1*14) 12 10
-	color rgb0 1 ; grad rgb0 0 ; rect 24 (40+2*14) 12 10
+	grad rgb1 1, rgb0 1; rect 24 (40+0*14) 12 10
+	grad rgb1 1, rgb1 0; rect 24 (40+1*14) 12 10
+	grad rgb0 1, rgb0 0; rect 24 (40+2*14) 12 10
 
 mask
 	color 1 50% 1
@@ -83,7 +79,7 @@ TestBlobs -13 1 4
 
 # Line shapes.
 color 1 1 0
-circle "line" r24
+circle "line" r24, "line" x22 y-15 r10
 
 # Reset transform.
 origin
@@ -122,70 +118,56 @@ circle "line" thick4 X 250 r10
 # Gradients.
 push
 	move 320 90
-	color 0 1 1 ; grad 0 0 1 1                 ; rect (0*40) 0 30 60
-	color 0 1 1 ; grad 0 0 1 1  45deg scale2.5 ; rect (1*40) 0 30 60
-	color 0 1 1 ; grad 0 0 1 1  -75deg         ; rect (2*40) 0 30 60 "line" thick4
+	grad 0 1 1, 0 0 1 1               ; rect (0*40) 0 30 60
+	grad 0 1 1, 0 0 1 1 45deg scale2.5; rect (1*40) 0 30 60
+	grad 0 1 1, 0 0 1 1 -75deg        ; rect (2*40) 0 30 60 "line" thick4
 
 	move 0 85
-	color 0 1 1 ; grad 0 0 1 1                 ; circle x(15+0*40) r15
-	color 0 1 1 ; grad 0 0 1 1  45deg scale2.5 ; circle x(15+1*40) r15
-	color 0 1 1 ; grad 0 0 1 1  -75deg         ; circle x(15+2*40) r15 "line" thick4
+	grad 0 1 1, 0 0 1 1               ; circle x(15+0*40) r15
+	grad 0 1 1, 0 0 1 1 45deg scale2.5; circle x(15+1*40) r15
+	grad 0 1 1, 0 0 1 1 -75deg        ; circle x(15+2*40) r15 "line" thick4
 pop
 
 push
-	setR1 .5 ; setG1 .2 ; setB1 .2
-	setR2 .7 ; setG2 .7 ; setB2 1
+	setR1 .5; setG1 .2; setB1 .2
+	setR2 .7; setG2 .7; setB2 1
 
 	move 360 210
-	color R1 G1 B1 ; rect 0 0 120 160
+	color R1 G1 B1; rect 0 0 120 160
 
 	move 10 10
-	color R2 G2 B2 ; rect 0 0 100 110
+	color R2 G2 B2; rect 0 0 100 110
 
 	move 30 0
-	color R1 G1 B1 ; grad R2 G2 B2 1  45deg   ; rect 0  0  30 30
-	color R1 G1 B1 ; grad R2 G2 B2 1  135deg  ; rect 40 0  30 30
-	color R1 G1 B1 ; grad R2 G2 B2 1  -135deg ; rect 40 40 30 70
-	color R1 G1 B1 ; grad R2 G2 B2 1  -45deg  ; rect 0  40 30 70
+	grad R1 G1 B1, R2 G2 B2 1 45deg  ; rect 0  0  30 30
+	grad R1 G1 B1, R2 G2 B2 1 135deg ; rect 40 0  30 30
+	grad R1 G1 B1, R2 G2 B2 1 -135deg; rect 40 40 30 70
+	grad R1 G1 B1, R2 G2 B2 1 -45deg ; rect 0  40 30 70
 	move -30 0
 
-	color R1 G1 B1 ; grad R2 G2 B2 1  180deg ; rect 0  0  10 50
-	color R1 G1 B1 ; grad R2 G2 B2 1  0deg   ; rect 10 0  10 50
+	grad R1 G1 B1, R2 G2 B2 1 180deg; rect 0  0  10 50
+	grad R1 G1 B1, R2 G2 B2 1 0deg  ; rect 10 0  10 50
 
 	move 0 60
-	color R1 G1 B1 ; grad R2 G2 B2 1  -90deg ; rect 0  0  20 25
-	color R1 G1 B1 ; grad R2 G2 B2 1  90deg  ; rect 0  25 20 25
+	grad R1 G1 B1, R2 G2 B2 1 -90deg; rect 0  0  20 25
+	grad R1 G1 B1, R2 G2 B2 1 90deg ; rect 0  25 20 25
 	move 0 -60
 
 	move 0 120
-	color R2 G2 B2 ; rect 0 0 100 20
-	color R1 G1 B1 ; grad R2 G2 B2 1  0deg  ; circle 10 10 r10
-	color R1 G1 B1 ; grad R2 G2 B2 1  90deg ; circle 30 10 r10
-	color R1 G1 B1 ; grad R2 G2 B2 1  45deg ; circle 50 10 r10
-	color R1 G1 B1 ; grad R2 G2 B2 1  45deg ; circle 80 10 20 10
+	color R2 G2 B2; rect 0 0 100 20
+	grad R1 G1 B1, R2 G2 B2 1 0deg ; circle 10 10 r10
+	grad R1 G1 B1, R2 G2 B2 1 90deg; circle 30 10 r10
+	grad R1 G1 B1, R2 G2 B2 1 45deg; circle 50 10 r10
+	grad R1 G1 B1, R2 G2 B2 1 45deg; circle 80 10 20 10
 pop
 
 push
 	move 170 330
 
-	color rgb0
-	grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad
-	grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad
-	grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad
-	grad rgb0
-	grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad
-	grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad
-	grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad;grad
-	grad rgb0 scale.5
+	grad rgb0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,rgb0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,rgb0 scale.5
 	rect 0 0 60 10
 
-	color 1 0 0
-	grad 1 1 0
-	grad 0 1 0
-	grad 0 1 1
-	grad 0 0 1
-	grad 1 0 1
-	grad 1 0 0 1 45deg
+	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 45deg
 	rect 0 20 60 20
 pop
 
@@ -193,18 +175,18 @@ pop
 color 0 0 1
 rect 20 (300+0*15) 30 10
 push
-color .5 0 0 ; grad 0 1 0
+grad .5 0 0, 0 1 0
 rect 20 (300+1*15) 30 10
 pop
 rect 20 (300+2*15) 30 10
 
 # Images.
-color rgb1                   ; image "face.png" 100 250 sx.5
-color 1 .4 .4 ; grad .4 1 .4 ; image "face.png" 155 270 sx.3 sy.2
+color rgb1           ; image "face.png" 100 250 sx.5
+grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 sx.3 sy.2
 
 color rgb1 .13
 image "face.png" 150 (round(.7*CanvasHeight)) ax1 ay.5 scale3.5 filter"nearest"
 
 set Circles "circles.artcmd"
-color rgb1  1 ; imageCircles 200 230
-color rgb1 .5 ; imageCircles 250 230
+color rgb1  1; imageCircles 200 230
+color rgb1 .5; imageCircles 250 230

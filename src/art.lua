@@ -269,7 +269,7 @@ local function tokenize(context, s, path)
 				tokens[#tokens].hasAttachment = true
 				table.insert(tokens, {position=startPos, type="literal", value=(mod=="+")})
 
-				if s:find("^[^%s;#]", pos) then
+				if s:find("^[^%s,;#]", pos) then
 					parseWarning(context, pos, "Value right after '%s%s' does not belong to it.", mod, name)
 				end
 			end
@@ -400,9 +400,9 @@ local function tokenize(context, s, path)
 
 			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
-		-- Command separator: ;
-		elseif s:find("^;", pos) then
-			table.insert(tokens, {position=startPos, type=";"})
+		-- Command separators: , OR ;
+		elseif s:find("^[,;]", pos) then
+			table.insert(tokens, {position=startPos, type=s:sub(pos, pos)})
 			pos = pos + 1
 
 		-- Comment: #comment
@@ -439,8 +439,8 @@ end
 
 local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInfos, args, visited)
 	while true do
-		if not tokens[tokPos] or isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ";") then
-			return tokPos+1
+		if not tokens[tokPos] or isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ",") or isToken(tokens[tokPos], ";") then
+			return tokPos
 		end
 
 		local startTok = tokens[tokPos]
@@ -593,31 +593,17 @@ local function applyColorMode(context, shape, w,h)
 
 	if gfxState.colorMode == "gradient" then
 		if not gfxState.colorTexture then
-			local grad = gfxState.gradient
-			local pixelRows, palette
+			local grad          = gfxState.gradient
+			local pixelRowChars = {}
+			local palette       = {}
 
-			if grad[9] then
-				local pixelRowChars = {}
-				palette             = {}
-
-				for i = 1, #grad/4 do
-					local c    = string.char(i-1)
-					palette[c] = {grad[i*4-3], grad[i*4-2], grad[i*4-1], grad[i*4]}
-					table.insert(pixelRowChars, c)
-				end
-
-				local pixelRow = table.concat(pixelRowChars)
-				pixelRows      = {pixelRow,pixelRow}
-
-			else
-				pixelRows = {"abc","abc"}
-				palette   = {
-					a = {      grad[1],grad[2],grad[3],grad[4]                                      },
-					b = {lerp4(grad[1],grad[2],grad[3],grad[4], grad[5],grad[6],grad[7],grad[8], .5)},
-					c = {                                       grad[5],grad[6],grad[7],grad[8]     },
-				}
+			for i = 1, #grad/4 do
+				local c    = string.char(i-1)
+				palette[c] = {grad[i*4-3], grad[i*4-2], grad[i*4-1], grad[i*4]}
+				table.insert(pixelRowChars, c)
 			end
 
+			local pixelRows       = {table.concat(pixelRowChars)}
 			gfxState.colorTexture = newImageUsingPalette(pixelRows, palette)
 		end
 
@@ -664,18 +650,21 @@ end
 
 local runBlock
 
--- tokenPosition|nil, stop = runCommand( context, tokens, tokenPosition )
-local function runCommand(context, tokens, tokPos)
-	local startTok = tokens[tokPos]
+-- tokenPosition|nil, stop = runCommand( context, tokens, tokenPosition, commandToken|nil ) -- commandToken must be set for sequences.
+local function runCommand(context, tokens, tokPos, commandTok)
+	local startTok   = tokens[tokPos]
+	local isSequence = commandTok ~= nil
 
 	--
 	-- Function call.
 	--
-	if isToken(tokens[tokPos], "username") then
-		local funcName = tokens[tokPos].value
+	if isToken((commandTok or tokens[tokPos]), "username") then
+		local funcName = (commandTok or tokens[tokPos]).value
 		local funcInfo = findInStack(context, "functions", funcName)
 		if not funcInfo then  return (tokenError(context, startTok, "No function '%s'.", funcName))  end
-		tokPos = tokPos + 1 -- username
+		if not commandTok then
+			tokPos = tokPos + 1 -- username
+		end
 
 		if context.callStack[funcInfo] then
 			return (tokenError(context, startTok, "Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position)))
@@ -715,11 +704,11 @@ local function runCommand(context, tokens, tokPos)
 		return tokPos, STOP_CONTINUE
 	end
 
-	if not isToken(tokens[tokPos], "name") then
+	if not isToken((commandTok or tokens[tokPos]), "name") then
 		return (tokenError(context, startTok, "Expected a command."))
 	end
-	local command = tokens[tokPos].value
-	tokPos        = tokPos + 1 -- name
+	local command = (commandTok or tokens[tokPos]).value
+	if not commandTok then  tokPos = tokPos + 1  end -- name
 
 	--
 	-- Language.
@@ -789,6 +778,8 @@ local function runCommand(context, tokens, tokPos)
 		context.scopeStack[stackIndex].variables[args.var] = args.value
 
 	elseif command == "do" then
+		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "Invalid ','."))  end
+
 		-- Get block body.
 		local bodyTokens = {}
 		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens)
@@ -810,6 +801,8 @@ local function runCommand(context, tokens, tokPos)
 		if args.var  == "" then  return (tokenError(context, startTok, "Empty variable name."))  end
 		if args.step == 0  then  return (tokenError(context, startTok, "Step is zero."))  end
 		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
+
+		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "Invalid ','."))  end
 
 		-- Get loop body.
 		local bodyTokens = {}
@@ -916,13 +909,10 @@ local function runCommand(context, tokens, tokPos)
 		gfxState.colorTextureScaleX = args.scale -- colorTextureScaleY isn't used.
 		gfxState.colorTextureAngle  = args.angle
 
-		if not gfxState.gradient[1] then
-			local r, g, b, a = LG.getColor()
-			table.insert(gfxState.gradient, r)
-			table.insert(gfxState.gradient, g)
-			table.insert(gfxState.gradient, b)
-			table.insert(gfxState.gradient, a)
+		if not isSequence then
+			table.clear(gfxState.gradient)
 		end
+
 		table.insert(gfxState.gradient, args.r)
 		table.insert(gfxState.gradient, args.g)
 		table.insert(gfxState.gradient, args.b)
@@ -1082,6 +1072,8 @@ local function runCommand(context, tokens, tokPos)
 			LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
 		-- end
 
+	elseif command == "end" then
+		return (tokenError(context, startTok, "Unexpected 'end'."))
 	else
 		return (tokenError(context, startTok, "Unimplemented command '%s'.", command))
 	end
@@ -1098,10 +1090,24 @@ end
 		end
 		if not tokens[tokPos] then  return tokPos  end
 
-		tokPos, stop = runCommand(context, tokens, tokPos)
+		local commandTok = tokens[tokPos]
+
+		tokPos, stop = runCommand(context, tokens, tokPos, nil)
 		if not tokPos       then  return nil                 end
 		if stop == STOP_ONE then  return 1/0, STOP_CONTINUE  end
 		if stop == STOP_ALL then  return 1/0, STOP_ALL       end
+
+		if not (isToken(commandTok, "name", "do") or isToken(commandTok, "name", "for") or isToken(commandTok, "name", "func")) then -- @Volatile
+			while isToken(tokens[tokPos], ",") do
+				tokPos       = tokPos + 1 -- ','
+				tokPos, stop = runCommand(context, tokens, tokPos, commandTok)
+				if not tokPos       then  return nil                 end
+				if stop == STOP_ONE then  return 1/0, STOP_CONTINUE  end
+				if stop == STOP_ALL then  return 1/0, STOP_ALL       end
+			end
+		elseif isToken(tokens[tokPos], ",") then -- Comma after 'end'.
+			return (tokenError(context, tokens[tokPos], "Invalid ','."))
+		end
 	end
 end
 
