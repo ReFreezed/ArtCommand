@@ -32,7 +32,8 @@ local thePathOut    = "" -- Empty means auto.
 local thePathIsTest = false -- @Cleanup: Make this into _G.isLocal or something.
 local theArt        = nil
 
-local autoZoom = false
+local autoZoom  = false
+local pixelated = false
 
 
 
@@ -240,6 +241,8 @@ function love.keypressed(key)
 
 	elseif key == "space" then
 		autoZoom = not autoZoom
+	elseif key == "f" then
+		pixelated = not pixelated
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
 		if not theArt then  return  end
@@ -345,6 +348,7 @@ function love.draw()
 
 		LG.setColor(1, 1, 1)
 		LG.setBlendMode("alpha", "premultiplied")
+		theArt.canvas:setFilter(pixelated and "nearest" or "linear")
 		LG.draw(theArt.canvas, x,y)
 
 	else
