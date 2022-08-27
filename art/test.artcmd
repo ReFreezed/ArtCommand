@@ -120,13 +120,50 @@ end
 circle "line" thick4 X 250 r10
 
 # Gradients.
-grad 0 1 1 1  0 0 1 1                 ; rect (320+0*40) 90 30 60
-grad 0 1 1 1  0 0 1 1  45deg scale2.5 ; rect (320+1*40) 90 30 60
-grad 0 1 1 1  0 0 1 1  -75deg         ; rect (320+2*40) 90 30 60 "line" thick4
+push
+	move 320 90
+	grad 0 1 1 1  0 0 1 1                 ; rect (0*40) 0 30 60
+	grad 0 1 1 1  0 0 1 1  45deg scale2.5 ; rect (1*40) 0 30 60
+	grad 0 1 1 1  0 0 1 1  -75deg         ; rect (2*40) 0 30 60 "line" thick4
 
-grad 0 1 1 1  0 0 1 1                 ; circle (335+0*40) 175 r15
-grad 0 1 1 1  0 0 1 1  45deg scale2.5 ; circle (335+1*40) 175 r15
-grad 0 1 1 1  0 0 1 1  -75deg         ; circle (335+2*40) 175 r15 "line" thick4
+	move 0 85
+	grad 0 1 1 1  0 0 1 1                 ; circle x(15+0*40) r15
+	grad 0 1 1 1  0 0 1 1  45deg scale2.5 ; circle x(15+1*40) r15
+	grad 0 1 1 1  0 0 1 1  -75deg         ; circle x(15+2*40) r15 "line" thick4
+pop
+
+push
+	setR1 .5 ; setG1 .2 ; setB1 .2
+	setR2 .7 ; setG2 .7 ; setB2 1
+
+	move 360 210
+	color R1 G1 B1 ; rect 0 0 120 160
+
+	move 10 10
+	color R2 G2 B2 ; rect 0 0 100 110
+
+	move 30 0
+	grad R1 G1 B1 1  R2 G2 B2 1  45deg   ; rect 0  0  30 30
+	grad R1 G1 B1 1  R2 G2 B2 1  135deg  ; rect 40 0  30 30
+	grad R1 G1 B1 1  R2 G2 B2 1  -135deg ; rect 40 40 30 70
+	grad R1 G1 B1 1  R2 G2 B2 1  -45deg  ; rect 0  40 30 70
+	move -30 0
+
+	grad R1 G1 B1 1  R2 G2 B2 1  180deg ; rect 0  0  10 50
+	grad R1 G1 B1 1  R2 G2 B2 1  0deg   ; rect 10 0  10 50
+
+	move 0 60
+	grad R1 G1 B1 1  R2 G2 B2 1  -90deg ; rect 0  0  20 25
+	grad R1 G1 B1 1  R2 G2 B2 1  90deg  ; rect 0  25 20 25
+	move 0 -60
+
+	move 0 120
+	color R2 G2 B2 ; rect 0 0 100 20
+	grad R1 G1 B1 1  R2 G2 B2 1  0deg  ; circle 10 10 r10
+	grad R1 G1 B1 1  R2 G2 B2 1  90deg ; circle 30 10 r10
+	grad R1 G1 B1 1  R2 G2 B2 1  45deg ; circle 50 10 r10
+	grad R1 G1 B1 1  R2 G2 B2 1  45deg ; circle 80 10 20 10
+pop
 
 # State.
 color 0 0 1
@@ -138,14 +175,12 @@ pop
 rect 20 (300+2*15) 30 10
 
 # Images.
-color rgb1
-image "face.png" 100 250 sx.5
-image "face.png" 155 270 sx.3 sy.2
-color rgb1 .15
+color rgb1                ; image "face.png" 100 250 sx.5
+grad 1 .4 .4 1  .4 1 .4 1 ; image "face.png" 155 270 sx.3 sy.2
+
+color rgb1 .13
 image "face.png" 150 (round(.7*CanvasHeight)) ax1 ay.5 scale3.5 filter"nearest"
 
 set Circles "circles.artcmd"
-color rgb1
-imageCircles 200 230
-color rgb1 .5
-imageCircles 250 230
+color rgb1  1 ; imageCircles 200 230
+color rgb1 .5 ; imageCircles 250 230

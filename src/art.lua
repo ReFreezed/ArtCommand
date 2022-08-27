@@ -66,7 +66,7 @@ local COMMANDS = {
 	-- Drawing.
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1}, anchor={"ax","ay"} },
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1}, anchor={"ax","ay"}, size={"w","h"} },
 	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"segs",0--[[=auto]]}, {"thick",1}, r={"rx","ry"} },
 	["text"  ] = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0}, {"wrap",1/0},{"align","left"}, anchor={"ax","ay"} },
 	["image" ] = { {"x",0},{"y",0}, {"path",""}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"} },
@@ -120,17 +120,21 @@ local function ScopeStackEntry()return{
 local function GfxState()return{
 	maskMode = false,
 
-	useColorTexture    = false,
+	colorTextureMode   = "", -- "" | "gradient"
 	colorTexture       = nil,
-	colorTextureLayout = {0,0,0,0},
+	colorTextureScaleX = 1.0,
+	colorTextureScaleY = 1.0,
+	colorTextureAngle  = 0.0,
 }end
 
 local function copyGfxState(gxfState)return{
 	maskMode = gxfState.maskMode,
 
-	useColorTexture    = gxfState.useColorTexture,
+	colorTextureMode   = gxfState.colorTextureMode,
 	colorTexture       = gxfState.colorTexture,
-	colorTextureLayout = {unpack(gxfState.colorTextureLayout)},
+	colorTextureScaleX = gxfState.colorTextureScaleX,
+	colorTextureScaleY = gxfState.colorTextureScaleY,
+	colorTextureAngle  = gxfState.colorTextureAngle,
 }end
 
 
@@ -570,6 +574,44 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 	end
 end
 
+-- updateColorTexture( context, shape, width,height )
+-- shape = "rectangle" | "circle"
+local function updateColorTexture(context, shape, w,h)
+	local gfxState = context.gfxState
+
+	if gfxState.colorTextureMode == "" then
+		shaderSend(shaderMain, "useColorTexture", false)
+		return
+	end
+
+	local dirX = 1
+	local dirY = 0
+	local sx   = 1
+	local sy   = 1
+
+	if gfxState.colorTextureMode == "gradient" then
+		-- When shape="rectangle" and the gradient scale is 1, one edge of the
+		-- gradient should touch one corner, and the other edge should touch
+		-- the opposite, no matter the gradient's angle.
+		local scaledAngle = math.atan2(
+			math.sin(gfxState.colorTextureAngle) * h/w,
+			math.cos(gfxState.colorTextureAngle)
+		)
+		local angleCompensationScale = (shape == "rectangle" and math.abs(math.sin(scaledAngle))+math.abs(math.cos(scaledAngle))) or 1
+
+		dirX = math.cos(scaledAngle)
+		dirY = math.sin(scaledAngle)
+		sx   = gfxState.colorTextureScaleX * angleCompensationScale -- colorTextureScaleY isn't used.
+
+	else
+		error(gfxState.colorTextureMode)
+	end
+
+	shaderSend    (shaderMain, "useColorTexture"   , true)
+	shaderSend    (shaderMain, "colorTexture"      , gfxState.colorTexture)
+	shaderSendVec4(shaderMain, "colorTextureLayout", dirX,dirY, sx,sy)
+end
+
 local function pushGfxState(context)
 	LG.push("all")
 	table.insert(context.gfxStack, copyGfxState(context.gfxState))
@@ -582,11 +624,7 @@ local function popGfxState(context)
 	LG.pop()
 	context.gfxState = gfxState
 
-	shaderSend(shaderMain, "maskMode", context.gfxState.maskMode)
-
-	shaderSend(shaderMain, "useColorTexture"   , gfxState.useColorTexture)
-	shaderSend(shaderMain, "colorTexture"      , gfxState.colorTexture or A.images.rectangle)
-	shaderSend(shaderMain, "colorTextureLayout", gfxState.colorTextureLayout)
+	shaderSend(shaderMain, "maskMode", gfxState.maskMode)
 
 	return true
 end
@@ -824,11 +862,9 @@ local function runCommand(context, tokens, tokPos)
 		ensureCanvasAndInitted(context) -- gfxState.
 		LG.setColor(args.r, args.g, args.b, args.a)
 
-		local gfxState           = context.gfxState
-		gfxState.useColorTexture = false
-		gfxState.colorTexture    = nil -- @Memory: Release image. (Consider gfxStack!)
-
-		shaderSend(shaderMain, "useColorTexture", gfxState.useColorTexture)
+		local gfxState            = context.gfxState
+		gfxState.colorTextureMode = ""
+		gfxState.colorTexture     = nil -- @Memory: Release image. (Consider gfxStack!)
 
 	elseif command == "grad" then
 		ensureCanvasAndInitted(context) -- gfxState.
@@ -838,18 +874,16 @@ local function runCommand(context, tokens, tokPos)
 			-- @Memory: Release image. (Consider gfxStack!)
 		end
 
-		gfxState.useColorTexture = true
-		gfxState.colorTexture    = newImageUsingPalette({"abc","abc"}, {
+		gfxState.colorTexture = newImageUsingPalette({"abc","abc"}, {
 			a = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 0/2)},
 			b = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 1/2)},
 			c = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 2/2)},
 		})
-		local iw = gfxState.colorTexture:getWidth()
-		updateVec4(gfxState.colorTextureLayout, math.cos(args.angle),math.sin(args.angle), args.scale*iw/(iw-1),1)
 
-		shaderSend(shaderMain, "useColorTexture"   , gfxState.useColorTexture)
-		shaderSend(shaderMain, "colorTexture"      , gfxState.colorTexture)
-		shaderSend(shaderMain, "colorTextureLayout", gfxState.colorTextureLayout)
+		local iw                    = gfxState.colorTexture:getWidth()
+		gfxState.colorTextureMode   = "gradient"
+		gfxState.colorTextureScaleX = args.scale * iw/(iw-1) -- colorTextureScaleY isn't used.
+		gfxState.colorTextureAngle  = args.angle
 
 	elseif command == "font" then
 		context.fonts[args.size] = context.fonts[args.size] or LG.newFont(args.size)
@@ -913,6 +947,8 @@ local function runCommand(context, tokens, tokPos)
 		local w = maybeRound(context, args.w)
 		local h = maybeRound(context, args.h)
 
+		updateColorTexture(context, "rectangle", w,h)
+
 		if     args.mode == "fill" then  drawRectangleFill(x,y, w,h)
 		elseif args.mode == "line" then  drawRectangleLine(x,y, w,h, args.thick)
 		else
@@ -925,6 +961,8 @@ local function runCommand(context, tokens, tokPos)
 		local x    = maybeRound(context, args.x)
 		local y    = maybeRound(context, args.y)
 		local segs = (args.segs >= 3) and args.segs or math.max(math.floor(math.max(args.rx,args.ry)*TAU/10), 64)
+
+		updateColorTexture(context, "circle", args.rx,args.ry)
 
 		if     args.mode == "fill" then  drawCircleFill(x,y, args.rx,args.ry, segs)
 		elseif args.mode == "line" then  drawCircleLine(x,y, args.rx,args.ry, segs, args.thick)
@@ -942,6 +980,8 @@ local function runCommand(context, tokens, tokPos)
 		local font         = LG.getFont()
 		local w, textLines = font:getWrap(args.text, args.wrap)
 		local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight() -- @Incomplete: Line height argument.
+
+		updateColorTexture(context, "rectangle", 1,1) -- @Incomplete: Handle gradients for text like the other "shapes".
 
 		LG.printf(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h), w, args.align)
 
@@ -988,6 +1028,7 @@ local function runCommand(context, tokens, tokPos)
 		local y     = maybeRound(context, args.y-args.ay*ih*args.sy)
 
 		imageOrCanvas:setFilter(args.filter)
+		updateColorTexture(context, "rectangle", iw*args.sx,ih*args.sy)
 
 		-- if imageOrCanvas:typeOf("Canvas") then
 		-- 	LG.push("all")
