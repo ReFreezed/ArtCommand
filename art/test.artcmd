@@ -69,9 +69,9 @@ makemask
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
 
-	grad rgb1 1 torgb0 1 ; rect 22 (40+0*14) 18 10
-	grad rgb1 1 torgb1 0 ; rect 22 (40+1*14) 18 10
-	grad rgb0 1 torgb0 0 ; rect 22 (40+2*14) 18 10
+	grad rgb1 1 torgb0 1 ; rect 24 (40+0*14) 12 10
+	grad rgb1 1 torgb1 0 ; rect 24 (40+1*14) 12 10
+	grad rgb0 1 torgb0 0 ; rect 24 (40+2*14) 12 10
 
 mask
 	color 1 50% 1
@@ -102,13 +102,13 @@ set "RG" .7
 color RG RG 1
 set  Tens "foo"
 setx Tens (2*15)
-DrawCircle y150 x80
-DrawCircle(50+25) (200 - Tens)
+DrawCircle y170 x80
+DrawCircle(50+25) (220 - Tens)
 
 # Loops.
 color .5 0 0 .5
 for 1 7 2
-	rect (200+I*10) 150 10 50
+	rect (200+I*10) 160 10 50
 end
 
 # Blocks.
@@ -120,13 +120,13 @@ end
 circle "line" thick4 X 250 r10
 
 # Gradients.
-grad 0 1 1 1  0 0 1 1               ; rect (320+0*40) 90 30 60
-grad 0 1 1 1  0 0 1 1  45deg scale3 ; rect (320+1*40) 90 30 60
-grad 0 1 1 1  0 0 1 1  -75deg       ; rect (320+2*40) 90 30 60 "line" thick4
+grad 0 1 1 1  0 0 1 1                 ; rect (320+0*40) 90 30 60
+grad 0 1 1 1  0 0 1 1  45deg scale2.5 ; rect (320+1*40) 90 30 60
+grad 0 1 1 1  0 0 1 1  -75deg         ; rect (320+2*40) 90 30 60 "line" thick4
 
-grad 0 1 1 1  0 0 1 1               ; circle (335+0*40) 175 r15
-grad 0 1 1 1  0 0 1 1  45deg scale3 ; circle (335+1*40) 175 r15
-grad 0 1 1 1  0 0 1 1  -75deg       ; circle (335+2*40) 175 r15 "line" thick4
+grad 0 1 1 1  0 0 1 1                 ; circle (335+0*40) 175 r15
+grad 0 1 1 1  0 0 1 1  45deg scale2.5 ; circle (335+1*40) 175 r15
+grad 0 1 1 1  0 0 1 1  -75deg         ; circle (335+2*40) 175 r15 "line" thick4
 
 # State.
 color 0 0 1
@@ -142,9 +142,10 @@ color rgb1
 image "face.png" 100 250 sx.5
 image "face.png" 155 270 sx.3 sy.2
 color rgb1 .15
-image "face.png" 0 (round(.4*CanvasHeight)) ax.5 scale3 filter"nearest"
+image "face.png" 150 (round(.7*CanvasHeight)) ax1 ay.5 scale3.5 filter"nearest"
 
-color rgb1
 set Circles "circles.artcmd"
-imageCircles 200 250
-imageCircles 250 250
+color rgb1
+imageCircles 200 230
+color rgb1 .5
+imageCircles 250 230

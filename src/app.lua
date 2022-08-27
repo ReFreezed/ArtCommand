@@ -7,6 +7,10 @@
 --=  Art Command
 --=  by Marcus 'ReFreezed' Thunström
 --=
+--==============================================================
+
+	fixImageDataForSaving
+
 --============================================================]]
 
 _G.TAU = 2*math.pi
@@ -128,7 +132,9 @@ end
 
 
 
-local function fixImageDataForSaving(imageData16)
+-- imageData8 = fixImageDataForSaving( imageData16 )
+-- Note: imageData16 is released.
+function _G.fixImageDataForSaving(imageData16)
 	local iw,ih          = imageData16:getDimensions()
 	local imageData8     = love.image.newImageData(iw,ih, "rgba8")
 	local pointer16      = require"ffi".cast("uint16_t*", imageData16:getFFIPointer())
@@ -222,6 +228,7 @@ local function fixImageDataForSaving(imageData16)
 	end
 	--]]
 
+	imageData16:release()
 	return imageData8
 end
 
@@ -238,7 +245,10 @@ function love.keypressed(key)
 		if thePathIsTest then
 			local pathOut = "output.png"
 			print("Saving "..pathOut.."...")
-			fixImageDataForSaving(theArt.canvas:newImageData()):encode("png", pathOut)
+
+			local imageData = fixImageDataForSaving(theArt.canvas:newImageData())
+			imageData:encode("png", pathOut):release() ; imageData:release()
+
 			print("Saving "..pathOut.."... done!")
 
 		else
@@ -250,8 +260,10 @@ function love.keypressed(key)
 
 			print("Saving "..pathOut.."...")
 
-			local fileData = fixImageDataForSaving(theArt.canvas:newImageData()):encode("png")
-			local ok, err  = writeFile(pathOut, fileData:getString(), thePathIsTest)
+			local imageData = fixImageDataForSaving(theArt.canvas:newImageData())
+			local fileData  = imageData:encode("png") ; imageData:release()
+			local s         = fileData:getString()    ; fileData :release()
+			local ok, err   = writeFile(pathOut, s, thePathIsTest)
 
 			if not ok then
 				print("Error: "..err)

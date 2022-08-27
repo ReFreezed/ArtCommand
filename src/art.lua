@@ -269,6 +269,7 @@ local function tokenize(context, s, path)
 			end
 
 		-- Username: Name OR -Name
+		-- @Incomplete: +Name
 		elseif s:find("^%-?%u", pos) then
 			local negate,namePos,name; negate, namePos, name, pos = s:match("^(%-?)()(%u[%w]*)()", pos)
 			table.insert(tokens, {position=namePos, type="username", value=name, negated=(negate=="-")})
@@ -277,7 +278,7 @@ local function tokenize(context, s, path)
 
 		-- Number: N OR +N OR -N
 		elseif s:find("^[-+]?%.?%d", pos) then
-			local nStr; nStr, pos = s:match("^%+?(%-?%.?%d[-+%w%%]*)()", pos)
+			local nStr; nStr, pos = s:match("^%+?([-+.%w]*%%?)()", pos)
 			local n
 
 			if     nStr:find"%%$"    then  n = tonumber(nStr:sub(1, -2)) ; n = n and n/100
@@ -686,7 +687,7 @@ local function runCommand(context, tokens, tokPos)
 	local visited = {}
 
 	for _, argInfo in ipairs(commandInfo) do
-		args[argInfo[1]] = argInfo[2] -- Fill with default values.  @Speed: This is not necessary.
+		args[argInfo[1]] = argInfo[2] -- Fill with default values.  @Speed: This is not necessary, just convenient.
 	end
 
 	if (command == "set" or command == "setx" or command == "for") and isToken(tokens[tokPos], "username") and not tokens[tokPos].negated then
@@ -843,7 +844,8 @@ local function runCommand(context, tokens, tokPos)
 			b = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 1/2)},
 			c = {lerp4(args.r,args.g,args.b,args.a, args.tor,args.tog,args.tob,args.toa, 2/2)},
 		})
-		updateVec4(gfxState.colorTextureLayout, math.cos(args.angle),math.sin(args.angle), args.scale,1)
+		local iw = gfxState.colorTexture:getWidth()
+		updateVec4(gfxState.colorTextureLayout, math.cos(args.angle),math.sin(args.angle), args.scale*iw/(iw-1),1)
 
 		shaderSend(shaderMain, "useColorTexture"   , gfxState.useColorTexture)
 		shaderSend(shaderMain, "colorTexture"      , gfxState.colorTexture)
@@ -961,7 +963,9 @@ local function runCommand(context, tokens, tokPos)
 				if not art then  return (tokenError(context, startTok, "Could not load .artcmd image."))  end
 
 				popGfxState(context)
-				imageOrCanvas = art.canvas
+
+				local imageData = fixImageDataForSaving(art.canvas:newImageData()) ; art.canvas:release() -- @Speed: Is there a way to use art.canvas directly? (See :PremultipliedArtCanvas)
+				imageOrCanvas   = LG.newImage(imageData)                           ; imageData :release()
 
 			else
 				local file, err = io.open(path, "rb") -- @Incomplete: Use PhysFS.
@@ -970,8 +974,7 @@ local function runCommand(context, tokens, tokPos)
 				file:close()
 
 				local fileData       = love.filesystem.newFileData(s, path)
-				local ok, imageOrErr = pcall(LG.newImage, fileData)
-				fileData:release()
+				local ok, imageOrErr = pcall(LG.newImage, fileData) ; fileData:release()
 				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageOrErr))  end
 				imageOrCanvas = imageOrErr
 			end
@@ -986,14 +989,14 @@ local function runCommand(context, tokens, tokPos)
 
 		imageOrCanvas:setFilter(args.filter)
 
-		if imageOrCanvas:typeOf("Canvas") then
-			LG.push("all")
-			LG.setBlendMode("alpha", "premultiplied")
+		-- if imageOrCanvas:typeOf("Canvas") then
+		-- 	LG.push("all")
+		-- 	LG.setBlendMode("alpha", "premultiplied") -- This doesn't work well with loveColor.a<1! Can the shader do something to fix it? :PremultipliedArtCanvas
+		-- 	LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
+		-- 	LG.pop()
+		-- else
 			LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
-			LG.pop()
-		else
-			LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
-		end
+		-- end
 
 	else
 		return (tokenError(context, startTok, "Unimplemented command '%s'.", command))
