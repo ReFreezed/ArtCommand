@@ -59,7 +59,7 @@ local COMMANDS = {
 	["mask"    ] = { {"mask",true} },
 
 	["origin"] = { },
-	["move"  ] = { {"x",0},{"y",0} },
+	["move"  ] = { {"x",0},{"y",0}, xy={"x","y"} },
 	["rotate"] = { {"a",0} },
 	["scale" ] = { {"x",1},{"y",1}, scale={"x","y"} },
 
@@ -1053,7 +1053,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				local s, err = readFile(false, path)
 				if not s then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
 
-				local fileData       = love.filesystem.newFileData(s, path)
+				local fileData       = LF.newFileData(s, path)
 				local ok, imageOrErr = pcall(LG.newImage, fileData) ; fileData:release()
 				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageOrErr))  end
 				imageOrCanvas = imageOrErr

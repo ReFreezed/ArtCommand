@@ -25,8 +25,6 @@ _G.A = { -- Assets.
 _G.shaderMain      = nil
 _G.shaderApplyMask = nil
 
-local hotLoader
-
 local thePathIn     = ""
 local thePathOut    = "" -- Empty means auto.
 local thePathIsTest = false -- @Cleanup: Make this into _G.isLocal or something.
@@ -91,18 +89,21 @@ function love.load(args, rawArgs)
 	-- Load stuff.
 	require"table.clear"
 
-	_G.LG     = love.graphics
-	hotLoader = require"hotLoader"
+	_G.LF = love.filesystem
+	_G.LG = love.graphics
+
+	_G.ffi = require"ffi"
 
 	require"functions" -- First!
 	require"art"
 	require"draw"
+	require"filesystem"
 
 	_G.shaderMain      = LG.newShader("src/shaders/main.gl")
 	_G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl")
 	if DEV then
-		hotLoader.monitor("src/shaders/main.gl"     , function(path)  _G.shaderMain      = LG.newShader("src/shaders/main.gl"     ) ; tryLoadingTheArtFile()  end)
-		hotLoader.monitor("src/shaders/applyMask.gl", function(path)  _G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl") ; tryLoadingTheArtFile()  end)
+		require"hotLoader".monitor("src/shaders/main.gl"     , function(path)  _G.shaderMain      = LG.newShader("src/shaders/main.gl"     ) ; tryLoadingTheArtFile()  end)
+		require"hotLoader".monitor("src/shaders/applyMask.gl", function(path)  _G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl") ; tryLoadingTheArtFile()  end)
 	end
 
 	A.images.rectangle = newImageUsingPalette({
@@ -123,14 +124,7 @@ function love.load(args, rawArgs)
 	A.images.checker:setWrap("repeat", "repeat")
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
-	-- Start app.
-	if love.system.getOS() == "Windows" then -- hotLoader works best on Windows.
-		hotLoader.allowExternalPaths(true)
-		hotLoader.monitor(thePathIn, function(path)
-			tryLoadingTheArtFile()
-		end)
-		tryLoadingTheArtFile()
-	end
+	initFilesystem()
 end
 
 
@@ -140,8 +134,8 @@ end
 function _G.fixImageDataForSaving(imageData16)
 	local iw,ih          = imageData16:getDimensions()
 	local imageData8     = love.image.newImageData(iw,ih, "rgba8")
-	local pointer16      = require"ffi".cast("uint16_t*", imageData16:getFFIPointer())
-	local pointer8       = require"ffi".cast("uint8_t*" , imageData8 :getFFIPointer())
+	local pointer16      = ffi.cast("uint16_t*", imageData16:getFFIPointer())
+	local pointer8       = ffi.cast("uint8_t*" , imageData8 :getFFIPointer())
 	local anyTransparent = false
 
 	-- Convert format and demultiply alpha.
@@ -282,26 +276,23 @@ end
 
 
 
-local theModtime       = -1/0
-local modtimeCheckTime = 0
+local theModtime = -1/0
+local lastOsTime = -1/0
 
 function love.update(dt)
-	if love.system.getOS() == "Windows" then -- hotLoader works best on Windows.
-		hotLoader.update(dt)
+	if DEV then
+		require"hotLoader".update(dt)
+	end
 
-	else
-		modtimeCheckTime = modtimeCheckTime - dt
+	local osTime = os.time()
 
-		if modtimeCheckTime < 0 then
-			modtimeCheckTime = 0.20
+	if osTime ~= lastOsTime then
+		lastOsTime    = osTime
+		local modtime = getFileModificationTime(thePathIsTest, thePathIn)
 
-			local info    = love.filesystem.getInfo(thePathIn, "file")
-			local modtime = info and info.modtime
-
-			if modtime and modtime ~= theModtime then
-				theModtime = modtime
-				tryLoadingTheArtFile()
-			end
+		if modtime and modtime ~= theModtime then
+			theModtime = modtime
+			tryLoadingTheArtFile()
 		end
 	end
 end
