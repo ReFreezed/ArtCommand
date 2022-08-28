@@ -14,10 +14,10 @@
 	lerp, lerp4
 	makePathAbsolute
 	printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
+	readFile, readTextFile, writeFile, writeTextFile
 	round, clamp
 	toColor32
 	updateVec4
-	writeFile
 
 --============================================================]]
 
@@ -111,21 +111,55 @@ end
 
 
 
--- success, error = writeFile( path, dataString, isLocal )
-function _G.writeFile(path, data, isLocal)
+local function _readFile(isText, isLocal, path)
 	if isLocal then
-		local ok, err = love.filesyste.write(path)
-		if not ok then  return false, err  end
-
-	else
-		local file, err = io.open(path, "wb") -- @Incomplete: Use PhysFS.
-		if not file then  return false, err  end
-
-		file:write(data)
-		file:close()
+		local s, err = love.filesyste.read(path)
+		if not s then  return nil, err  end
+		return isText and s:gsub("\r\n", "\n") or s
 	end
 
+	local file, err = io.open(path, (isText and "r" or "rb")) -- @Incomplete: Use PhysFS.
+	if not file then  return nil, err  end
+
+	local s = file:read"*a"
+	file:close()
+
+	return s
+end
+
+local function _writeFile(isText, isLocal, path, s)
+	if isLocal then
+		if love.system.getOS() == "Windows" then
+			s = s:gsub("\r?\n", "\r\n")
+		end
+		return love.filesyste.write(path, s)
+	end
+
+	local file, err = io.open(path, (isText and "w" or "wb")) -- @Incomplete: Use PhysFS.
+	if not file then  return false, err  end
+
+	file:write(s)
+	file:close()
+
 	return true
+end
+
+-- contents|nil, error = readFile    ( isLocal, path )
+-- contents|nil, error = readTextFile( isLocal, path )
+function _G.readFile(isLocal, path)
+	return _readFile(false, isLocal, path)
+end
+function _G.readTextFile(isLocal, path)
+	return _readFile(true, isLocal, path)
+end
+
+-- success, error = writeFile    ( isLocal, path, contents )
+-- success, error = writeTextFile( isLocal, path, contents )
+function _G.writeFile(isLocal, path, s)
+	return _writeFile(false, isLocal, path, s)
+end
+function _G.writeTextFile(isLocal, path, s)
+	return _writeFile(true, isLocal, path, s)
 end
 
 

@@ -268,7 +268,7 @@ function love.keypressed(key)
 			local imageData = fixImageDataForSaving(theArt.canvas:newImageData())
 			local fileData  = imageData:encode("png") ; imageData:release()
 			local s         = fileData:getString()    ; fileData :release()
-			local ok, err   = writeFile(pathOut, s, thePathIsTest)
+			local ok, err   = writeFile(thePathIsTest, pathOut, s)
 
 			if not ok then
 				print("Error: "..err)

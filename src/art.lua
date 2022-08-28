@@ -237,9 +237,9 @@ end
 
 
 
-local function tokenize(context, s, path)
+local function tokenize(context, path)
+	local s       = context.source
 	local pos     = 1
-	local ln      = 1
 	local tokens  = {}
 	local lastTok = nil
 	local gotName = false
@@ -255,7 +255,6 @@ local function tokenize(context, s, path)
 		-- Line break.
 		if s:find("^\n", pos) then
 			pos = pos + 1
-			ln  = ln  + 1
 
 			if lastTok and lastTok.type ~= "linebreak" then
 				table.insert(tokens, {position=startPos, type="linebreak"})
@@ -324,9 +323,6 @@ local function tokenize(context, s, path)
 					else
 						return (parseError(context, pos-1, "Invalid escape sequence in string."))
 					end
-				elseif s:find("^\n", pos) then
-					ln = ln + 1 -- '\n'
-					break
 				else
 					break
 				end
@@ -412,7 +408,6 @@ local function tokenize(context, s, path)
 		-- Comment: #comment
 		elseif s:find("^#", pos) then
 			pos = s:match("^[^\n]*\n?()", pos+1)
-			ln  = ln + 1
 
 			if lastTok and lastTok.type ~= "linebreak" then
 				table.insert(tokens, {position=startPos, type="linebreak"})
@@ -1055,10 +1050,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				imageOrCanvas   = LG.newImage(imageData)                           ; imageData :release()
 
 			else
-				local file, err = io.open(path, "rb") -- @Incomplete: Use PhysFS.
-				if not file then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
-				local s = file:read"*a"
-				file:close()
+				local s, err = readFile(false, path)
+				if not s then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
 
 				local fileData       = love.filesystem.newFileData(s, path)
 				local ok, imageOrErr = pcall(LG.newImage, fileData) ; fileData:release()
@@ -1161,19 +1154,11 @@ function _G.loadArtFile(path, isLocal)
 	context.path     = path
 	context.isLocal  = isLocal
 
-	if isLocal then
-		context.source = assert(love.filesystem.read(path))
-	else
-		local file, err = io.open(path) -- @Incomplete: Use PhysFS.
-		if not file then
-			print("Error: "..err)
-			return nil
-		end
-		context.source = file:read"*a"
-		file:close()
-	end
+	local s, err = readTextFile(isLocal, path)
+	if not s then  print("Error: "..err) ; return nil  end
+	context.source = s
 
-	local tokens = tokenize(context, context.source, path)
+	local tokens = tokenize(context, path)
 	if not tokens then  return nil  end
 
 	local entry = ScopeStackEntry()
