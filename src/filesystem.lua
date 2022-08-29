@@ -232,7 +232,11 @@ local function _writeFile(isText, isLocal, path, s)
 		s = s:gsub("\r?\n", "\r\n")
 	end
 
-	return LF.write(piPath, s)
+	if not isLocal and love.system.getOS() == "Windows" then
+		return LF.write(piPath:gsub("^%a/", ""), s) -- We cannot include the drive letter in the path as there's no concept of a mountPoint like when reading.
+	else
+		return LF.write(piPath, s)
+	end
 end
 
 -- contents|nil, error = readFile    ( isLocal, path )
