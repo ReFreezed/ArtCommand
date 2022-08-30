@@ -2,8 +2,8 @@
 setFoo value"a\'b\"c\nw\\e"; setFoo+5,Foo'd
 setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)
 
-round +round; round round True ; round roundTrue ; round round(true )
-round -round; round round False; round roundFalse; round round(false)
+setFoo +value; setFoo value True ; setFoo valueTrue ; setFoo value(true )
+setFoo -value; setFoo value False; setFoo valueFalse; setFoo value(false)
 
 func TestBlobs X Y Size
 	set Col -1
@@ -20,7 +20,7 @@ end
 
 
 # Settings.
-canvas 500 aa4
+canvas 500 600 aa4
 backdrop0 .3 0 .5
 # backdrop (40/255) (40/255) (40/255)
 fill.4 .4 .4 .5
@@ -155,10 +155,10 @@ push
 
 	move 0 120
 	color R2 G2 B2; rect 0 0 100 20
-	grad R1 G1 B1, R2 G2 B2 1 0deg ; circle 10 10 r10
-	grad R1 G1 B1, R2 G2 B2 1 90deg; circle 30 10 r10
-	grad R1 G1 B1, R2 G2 B2 1 45deg; circle 50 10 r10
-	grad R1 G1 B1, R2 G2 B2 1 45deg; circle 80 10 20 10
+	grad R1 G1 B1, R2 G2 B2 1 0deg ; circle 0  0 r10   anchor0
+	grad R1 G1 B1, R2 G2 B2 1 90deg; circle 20 0 r10   anchor0
+	grad R1 G1 B1, R2 G2 B2 1 45deg; circle 40 0 r10   anchor0
+	grad R1 G1 B1, R2 G2 B2 1 45deg; circle 60 0 20 10 anchor0
 pop
 
 push
@@ -167,14 +167,14 @@ push
 	rect 0 0 60 10
 	grad rgb0,,,,,,,,,,,,,1 .3 .3,1 .3 .3,1 .3 .3,1 .3 .3,,,,,,,,,,,,,rgb0 +radial
 	rect 0 20 60 10, 0 40 60 30, 70 0 30 70
-	circle 120 35 10 30, 160 35 20 10
+	circle 110 35 10 30 ax0, 140 35 20 10 ax0
 
 	move 0 80
 	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 45deg
 	rect 0 0 60 20
 	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 +radial -fit
 	rect 0 30 60 50
-	circle 110 40 r40
+	circle 70 0 r40 anchor0
 pop
 
 # State.
@@ -196,3 +196,10 @@ image "face.png" 150 (round(.7*CanvasHeight)) ax1 ay.5 scale3.5 filter"nearest"
 set Circles "circles.artcmd"
 color rgb1  1; imageCircles 200 230
 color rgb1 .5; imageCircles 250 230
+
+# Layers.
+setlayer "foo" 40 40
+	color rgb.9
+	rect 15 0 10 40
+	rect 0 15 40 10
+layer "foo" 40 190 anchor.5 rot45deg

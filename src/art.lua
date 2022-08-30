@@ -44,9 +44,6 @@ local COMMANDS = {
 	-- Settings, init.
 	["canvas"] = { {"w",0--[[=DEFAULT_ART_SIZE]]},{"h",0--[[=DEFAULT_ART_SIZE]]}, {"aa",1}, size={"w","h"} },
 
-	-- Settings, dynamic.
-	["round"] = { {"round",true} },
-
 	-- State.
 	["push"] = { },
 	["pop" ] = { },
@@ -60,16 +57,19 @@ local COMMANDS = {
 
 	["origin"] = { },
 	["move"  ] = { {"x",0},{"y",0}, xy={"x","y"} },
-	["rotate"] = { {"a",0} },
+	["rotate"] = { {"rot",0} },
 	["scale" ] = { {"x",1},{"y",1}, scale={"x","y"} },
+
+	["setlayer"] = { {"name",""}, {"w",0--[[=context.canvasW]]},{"h",0--[[=context.canvasH]]}, {"aa",0--[[=context.msaa]]}, size={"w","h"} },
 
 	-- Drawing.
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"thick",1}, anchor={"ax","ay"}, size={"w","h"} },
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"segs",0--[[=auto]]}, {"thick",1}, r={"rx","ry"} },
-	["text"  ] = { {"x",0},{"y",0}, {"text",""}, {"ax",0},{"ay",0}, {"wrap",1/0},{"align","left"}, anchor={"ax","ay"} },
-	["image" ] = { {"x",0},{"y",0}, {"path",""}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"} },
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"rot",0}, {"thick",1}, anchor={"ax","ay"}, size={"w","h"} },
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"rot",0}, {"segs",0--[[=auto]]}, {"thick",1}, r={"rx","ry"}, anchor={"ax","ay"} },
+	["text"  ] = { {"text",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"rot",0}, {"wrap",1/0},{"align","left"}, anchor={"ax","ay"} },
+	["image" ] = { {"path",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"} },
+	["layer" ] = { {"name",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"} },
 }
 
 
@@ -96,14 +96,14 @@ local function Context()return{
 	canvasToMask = nil,
 	maskCanvas   = nil,
 
-	fonts  = {--[[ [size1]=font , ... ]]},
-	images = {--[[ [path1]=image, ... ]]},
+	fonts  = {--[[ [size1]=font        , ... ]]},
+	images = {--[[ [path1]=image       , ... ]]},
+	layers = {--[[ [name1]=image|canvas, ... ]]},
 
 	-- Settings.
 	canvasW = DEFAULT_ART_SIZE,
 	canvasH = DEFAULT_ART_SIZE,
 	msaa    = 1,
-	round   = false,
 }end
 
 local function FunctionInfo()return{
@@ -118,7 +118,7 @@ local function ScopeStackEntry()return{
 }end
 
 local function GfxState()return{
-	maskMode = false,
+	makeMaskMode = false,
 
 	colorMode          = "color", -- "color" | "gradient"
 	gradient           = {--[[ r1,g1,b1,a1, ... ]]},
@@ -131,7 +131,7 @@ local function GfxState()return{
 }end
 
 local function copyGfxState(gxfState)return{
-	maskMode = gxfState.maskMode,
+	makeMaskMode = gxfState.makeMaskMode,
 
 	colorMode          = gxfState.colorMode,
 	gradient           = {unpack(gxfState.gradient)},
@@ -200,12 +200,6 @@ local function ensureCanvasAndInitted(context)
 
 	LG.setCanvas(context.art.canvas)
 	LG.setShader(shaderMain)
-end
-
-
-
-local function maybeRound(context, x)
-	return context.round and round(x) or x
 end
 
 
@@ -650,7 +644,7 @@ local function popGfxState(context)
 	LG.pop()
 	context.gfxState = gfxState
 
-	shaderSend(shaderMain, "maskMode", gfxState.maskMode)
+	shaderSend(shaderMain, "maskMode", gfxState.makeMaskMode)
 
 	return true
 end
@@ -757,13 +751,23 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		args[argInfo[1]] = argInfo[2] -- Fill with default values.  @Speed: This is not necessary, just convenient.
 	end
 
+	-- Initialize arguments (dynamic values only).
+	if command == "setlayer" then
+		ensureCanvasAndInitted(context) -- Canvas.
+		args.w  = context.canvasW
+		args.h  = context.canvasH
+		args.aa = context.msaa
+	end
+
+	-- Special cases.
 	if (command == "set" or command == "setx" or command == "for") and isToken(tokens[tokPos], "username") and not tokens[tokPos].negated then
-		-- Special case: Treat `set X` as `set "X"` (and same with 'setx' and 'for').
+		-- Treat `set X` as `set "X"` (and same with 'setx' and 'for').
 		args   .var = tokens[tokPos].value
 		visited.var = true
 		tokPos      = tokPos + 1
 	end
 
+	-- Parse arguments and run command.
 	tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
 	if not tokPos then  return nil  end
 
@@ -874,12 +878,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.scopeStack[1].variables.CanvasHeight = context.canvasH
 
 	--
-	-- Settings, dynamic.
-	--
-	elseif command == "round" then
-		context.round = args.round -- Should this be included in gfxStack? Probably, to keep things simple (don't have dynamic settings), but not sure.
-
-	--
 	-- State.
 	--
 	elseif command == "push" then
@@ -935,11 +933,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		ensureCanvasAndInitted(context) -- Canvas and shader.
 		maybeApplyMask(context)
 
-		LG.setCanvas(context.maskCanvas)
+		LG.setCanvas(context.maskCanvas) -- @Incomplete: Handle setlayer which also sets the canvas. (I think maybeApplyMask() needs to be called in more places. We should also push other things than graphics to gfxState.)
 		if args.clear then  LG.clear(0, 0, 0, 1)  end
 
-		context.gfxState.maskMode = true
-		shaderSend(shaderMain, "maskMode", context.gfxState.maskMode)
+		context.gfxState.makeMaskMode = true
+		shaderSend(shaderMain, "maskMode", context.gfxState.makeMaskMode)
 
 		LG.setColor(1, 1, 1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't.
 
@@ -954,20 +952,36 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			LG.setCanvas(context.art.canvas)
 		end
 
-		context.gfxState.maskMode = false
-		shaderSend(shaderMain, "maskMode", context.gfxState.maskMode)
+		context.gfxState.makeMaskMode = false
+		shaderSend(shaderMain, "maskMode", context.gfxState.makeMaskMode)
 
 	elseif command == "origin" then
 		LG.origin()
-
 	elseif command == "move" then
-		LG.translate(maybeRound(context,args.x), maybeRound(context,args.y))
-
+		LG.translate(args.x, args.y)
 	elseif command == "rotate" then
-		LG.rotate(args.a)
-
+		LG.rotate(args.rot)
 	elseif command == "scale" then
 		LG.scale(args.x, (args.y ~= args.y and args.x or args.y))
+
+	elseif command == "setlayer" then
+		-- @Incomplete: Handle makemask, mask and pop which also sets the canvas.
+
+		-- ensureCanvasAndInitted(context) -- Done pre-args!
+
+		if args.name == "" then
+			LG.setCanvas(context.art.canvas)
+
+		else
+			if context.layers[args.name] then
+				LG.setCanvas(nil) -- Don't accidentally release the current canvas!
+				context.layers[args.name]:release()
+			end
+
+			context.layers[args.name] = LG.newCanvas(args.w,args.h, {format="rgba16", msaa=args.aa})
+			LG.setCanvas(context.layers[args.name])
+			LG.clear(0, 0, 0, 0) -- Needed? I think the values are 0 by default.
+		end
 
 	--
 	-- Drawing.
@@ -978,39 +992,46 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.push("all")
 		LG.origin()
 		LG.setColor(args.r, args.g, args.b, args.a)
-		LG.rectangle("fill", -1,-1, context.art.canvas:getWidth()+2,context.art.canvas:getHeight()+2) -- Not sure if the bleeding is necessary (if msaa>1).
+		LG.rectangle("fill", -1,-1, LG.getCanvas():getWidth()+2,LG.getCanvas():getHeight()+2) -- Not sure if the bleeding is necessary (if msaa>1).
 		LG.pop()
 
 	elseif command == "rect" then
 		ensureCanvasAndInitted(context) -- Canvas.
 
-		local x = maybeRound(context, args.x-args.ax*args.w)
-		local y = maybeRound(context, args.y-args.ay*args.h)
-		local w = maybeRound(context, args.w)
-		local h = maybeRound(context, args.h)
+		applyColorMode(context, "rectangle", args.w,args.h)
 
-		applyColorMode(context, "rectangle", w,h)
+		LG.push()
+		LG.translate(args.x, args.y)
+		LG.rotate(args.rot)
+		LG.translate(-args.ax*args.w, -args.ay*args.h)
 
-		if     args.mode == "fill" then  drawRectangleFill(x,y, w,h)
-		elseif args.mode == "line" then  drawRectangleLine(x,y, w,h, args.thick)
+		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h)
+		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.thick)
 		else
+			LG.pop()
 			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
+		LG.pop()
 
 	elseif command == "circle" then
 		ensureCanvasAndInitted(context) -- Canvas.
 
-		local x    = maybeRound(context, args.x)
-		local y    = maybeRound(context, args.y)
-		local segs = (args.segs >= 3) and args.segs or math.max(math.floor(math.max(args.rx,args.ry)*TAU/10), 64)
+		local segs = (args.segs > 0) and math.max(args.segs, 3) or math.max(math.floor(math.max(args.rx,args.ry)*TAU/10), 64)
 
 		applyColorMode(context, "circle", args.rx,args.ry)
 
-		if     args.mode == "fill" then  drawCircleFill(x,y, args.rx,args.ry, segs)
-		elseif args.mode == "line" then  drawCircleLine(x,y, args.rx,args.ry, segs, args.thick)
+		LG.push()
+		LG.translate(args.x, args.y)
+		LG.rotate(args.rot)
+		LG.translate(-(args.ax*2-1)*args.rx, -(args.ay*2-1)*args.ry)
+
+		if     args.mode == "fill" then  drawCircleFill(0,0, args.rx,args.ry, segs)
+		elseif args.mode == "line" then  drawCircleLine(0,0, args.rx,args.ry, segs, args.thick)
 		else
+			LG.pop()
 			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
+		LG.pop()
 
 	elseif command == "text" then
 		if not (args.align == "left" or args.align == "center" or args.align == "right" or args.align == "justify") then
@@ -1025,7 +1046,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		applyColorMode(context, "rectangle", 1,1) -- @Incomplete: Handle gradients for text like the other "shapes".
 
-		LG.printf(args.text, maybeRound(context,args.x-args.ax*w),maybeRound(context,args.y-args.ay*h), w, args.align)
+		LG.push()
+		LG.translate(args.x, args.y)
+		LG.rotate(args.rot)
+		LG.translate(round(-args.ax*w), round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
+		LG.printf(args.text, 0,0, w, args.align)
+		LG.pop()
 
 	elseif command == "image" then
 		if args.path == ""                                           then  return (tokenError(context, startTok, "Missing path."))  end
@@ -1047,7 +1073,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				popGfxState(context)
 
 				local imageData = fixImageDataForSaving(art.canvas:newImageData()) ; art.canvas:release() -- @Speed: Is there a way to use art.canvas directly? (See :PremultipliedArtCanvas)
-				imageOrCanvas   = LG.newImage(imageData)                           ; imageData :release()
+				-- imageData:encode("png", "image.png"):release() -- DEBUG
+				imageOrCanvas = LG.newImage(imageData) ; imageData:release()
 
 			else
 				local s, err = readFile(false, path)
@@ -1064,8 +1091,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		local iw,ih = imageOrCanvas:getDimensions()
-		local x     = maybeRound(context, args.x-args.ax*iw*args.sx)
-		local y     = maybeRound(context, args.y-args.ay*ih*args.sy)
 
 		imageOrCanvas:setFilter(args.filter)
 		applyColorMode(context, "rectangle", iw*args.sx,ih*args.sy)
@@ -1073,11 +1098,38 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		-- if imageOrCanvas:typeOf("Canvas") then
 		-- 	LG.push("all")
 		-- 	LG.setBlendMode("alpha", "premultiplied") -- This doesn't work well with loveColor.a<1! Can the shader do something to fix it? :PremultipliedArtCanvas
-		-- 	LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
+		-- 	LG.draw(imageOrCanvas)
 		-- 	LG.pop()
 		-- else
-			LG.draw(imageOrCanvas, x,y, 0, args.sx,args.sy)
+			LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih)
 		-- end
+
+	elseif command == "layer" then
+		if args.name == "" then  return (tokenError(context, startTok, "Missing name."))  end
+
+		local imageOrCanvas = context.layers[args.name]
+		if not imageOrCanvas then
+			return (tokenError(context, startTok, "No layer '%s'", args.name))
+		end
+
+		if imageOrCanvas:typeOf("Canvas") then
+			if imageOrCanvas == LG.getCanvas() then
+				LG.setCanvas(context.art.canvas) -- This is like an automatic `setlayer""`. (Good?)
+			end
+
+			local imageData = fixImageDataForSaving(imageOrCanvas:newImageData()) ; imageOrCanvas:release() -- @Speed: Is there a way to use imageOrCanvas directly? (See :PremultipliedArtCanvas)
+			-- imageData:encode("png", "layer.png"):release() -- DEBUG
+			imageOrCanvas = LG.newImage(imageData) ; imageData:release()
+
+			context.layers[args.name] = imageOrCanvas
+		end
+
+		local iw,ih = imageOrCanvas:getDimensions()
+
+		imageOrCanvas:setFilter(args.filter)
+		applyColorMode(context, "rectangle", iw*args.sx,ih*args.sy)
+
+		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih)
 
 	elseif command == "end" then
 		return (tokenError(context, startTok, "Unexpected 'end'."))
@@ -1131,8 +1183,9 @@ local function cleanup(context, success)
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 
-	for _, font  in pairs(context.fonts ) do  font :release()  end
-	for _, image in pairs(context.images) do  image:release()  end
+	for _, font          in pairs(context.fonts ) do  font         :release()  end
+	for _, image         in pairs(context.images) do  image        :release()  end
+	for _, imageOrCanvas in pairs(context.layers) do  imageOrCanvas:release()  end
 end
 
 local artFilesBeingLoaded = {}
