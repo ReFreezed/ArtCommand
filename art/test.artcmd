@@ -41,17 +41,17 @@ color 1 0 .5
 circle 260 110 30 10 "line" thick2
 circle 260 110 12 25 "line" thick2
 
-font 'SquadaOne.ttf' 19
+font 'resources/SquadaOne.ttf' 19
 color 1 1 .7
 text 100 18 -filter 'Good? "GOOD"?! Good.'
 
-imagefont "ReFreezedSmall.fnt"
+imagefont "resources/ReFreezedSmall.fnt"
 color .8 1 1
 text 100 38 -filter "Yippee ki-yay!"
 
-imagefont "abc.png" spacing1 "ABC"
+imagefont "resources/abc.png" spacing1 "ABC"
 color 1 1 1 .5
-text 170 39 -filter "ABCB A"
+text 170 39 -filter "ABCBA"
 
 # Transform.
 move 50 50
