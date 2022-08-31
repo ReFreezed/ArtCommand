@@ -54,7 +54,7 @@ local COMMANDS = {
 	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
 	["grey" ] = { {"grey",1},{"a",1} }, -- Short for `color rgbN`.
 	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
-	["font" ] = { {"size",12} },
+	["font" ] = { {"path",""--[[=builtinFont]]}, {"size",12} },
 
 	["makemask"] = { {"clear",true} },
 	["mask"    ] = { {"mask",true} },
@@ -71,9 +71,9 @@ local COMMANDS = {
 
 	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"rot",0}, {"thick",1}, anchor={"ax","ay"}, size={"w","h"}, xy={"x","y"} },
 	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"rot",0}, {"segs",0--[[=auto]]}, {"thick",1}, r={"rx","ry"}, anchor={"ax","ay"}, xy={"x","y"} },
-	["text"  ] = { {"text",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"rot",0}, {"wrap",1/0},{"align","left"}, anchor={"ax","ay"}, xy={"x","y"} },
-	["image" ] = { {"path",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"}, xy={"x","y"} },
-	["layer" ] = { {"name",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter","linear"}, anchor={"ax","ay"}, scale={"sx","sy"}, xy={"x","y"} },
+	["text"  ] = { {"text",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"rot",0}, {"wrap",1/0},{"align","left"}, {"lineh",1}, {"filter",true}, anchor={"ax","ay"}, xy={"x","y"} },
+	["image" ] = { {"path",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter",true}, anchor={"ax","ay"}, scale={"sx","sy"}, xy={"x","y"} },
+	["layer" ] = { {"name",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter",true}, anchor={"ax","ay"}, scale={"sx","sy"}, xy={"x","y"} },
 }
 
 
@@ -100,9 +100,9 @@ local function Context()return{
 	canvasToMask = nil,
 	maskCanvas   = nil,
 
-	fonts  = {--[[ [size1]=font        , ... ]]},
-	images = {--[[ [path1]=image       , ... ]]},
+	images = {--[[ [path1]=image, ... ]]},
 	layers = {--[[ [name1]=image|canvas, ... ]]},
+	fonts  = {--[[ [path1]{[size1]=font,...}, ... ]]},
 
 	-- Settings.
 	canvasW = DEFAULT_ART_SIZE,
@@ -1058,8 +1058,30 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		table.insert(gfxState.gradient, args.a)
 
 	elseif command == "font" then
-		context.fonts[args.size] = context.fonts[args.size] or LG.newFont(args.size)
-		context.gfxState.font    = context.fonts[args.size]
+		local fonts = context.fonts[args.path] or {}
+		local font  = fonts[args.size]
+
+		if font then
+			-- void
+
+		elseif args.path == "" then
+			font = LG.newFont(args.size)
+
+		else
+			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
+
+			local s, err = readFile(false, path)
+			if not s then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
+
+			local fileData      = LF.newFileData(s, path) -- @Speed: Cache this (though people probably don't use too many sizes of the same font per art piece).
+			local ok, fontOrErr = pcall(LG.newFont, fileData, args.size) ; fileData:release()
+			if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, fontOrErr))  end
+			font = fontOrErr
+		end
+
+		context.fonts[args.path] = fonts
+		fonts[args.size]         = font
+		context.gfxState.font    = font
 
 	elseif command == "makemask" then
 		ensureCanvasAndInitted(context)
@@ -1188,8 +1210,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local font         = context.gfxState.font
 		local w, textLines = font:getWrap(args.text, args.wrap)
-		local h            = (#textLines-1) * math.floor(font:getHeight()*font:getLineHeight()) + font:getHeight() -- @Incomplete: Line height argument.
+		local h            = (#textLines-1) * math.floor(font:getHeight()*args.lineh) + font:getHeight()
 
+		font:setFilter(args.filter and "linear" or "nearest")
+		font:setLineHeight(args.lineh)
 		applyCanvas(context)
 		applyColor(context, "rectangle", 1,1) -- @Incomplete: Handle gradients for text like the other "shapes", somehow.
 		LG.setFont(font)
@@ -1202,8 +1226,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.pop()
 
 	elseif command == "image" then
-		if args.path == ""                                           then  return (tokenError(context, startTok, "Missing path."))  end
-		if not (args.filter == "linear" or args.filter == "nearest") then  return (tokenError(context, startTok, "Bad filter '%s'. Must be 'linear' or 'nearest'.", args.filter))  end
+		if args.path == "" then  return (tokenError(context, startTok, "Missing path."))  end
 
 		ensureCanvasAndInitted(context)
 
@@ -1241,7 +1264,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local iw,ih = imageOrCanvas:getDimensions()
 
-		imageOrCanvas:setFilter(args.filter)
+		imageOrCanvas:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
@@ -1281,7 +1304,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local iw,ih = imageOrCanvas:getDimensions()
 
-		imageOrCanvas:setFilter(args.filter)
+		imageOrCanvas:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
@@ -1339,9 +1362,12 @@ local function cleanup(context, loveGfxStackDepth, success)
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 
-	for _, font          in pairs(context.fonts ) do  font         :release()  end
 	for _, image         in pairs(context.images) do  image        :release()  end
 	for _, imageOrCanvas in pairs(context.layers) do  imageOrCanvas:release()  end
+
+	for _, fonts in pairs(context.fonts) do
+		for _, font in pairs(fonts) do  font:release()  end
+	end
 end
 
 local artFilesBeingLoaded = {}

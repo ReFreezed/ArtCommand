@@ -41,6 +41,10 @@ color 1 0 .5
 circle 260 110 30 10 "line" thick2
 circle 260 110 12 25 "line" thick2
 
+font 'SquadaOne.ttf' 19
+color 1 1 .7
+text 100 20 -filter 'Good? "GOOD"?! Good.'
+
 # Transform.
 move 50 50
 
@@ -60,7 +64,7 @@ makemask
 	circle 50 50 r10
 
 	font 24
-	text text"Hello, world!" x12
+	text text"Hello, world!" x12 -filter
 
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
@@ -83,8 +87,8 @@ circle "line" r24, "line" x22 y-15 r10
 
 # Reset transform.
 origin
-color 1 1 .89
-circle r20
+color 1 .6 .5
+circle r15
 
 # Functions.
 func DrawCircle X Y
@@ -208,7 +212,7 @@ color rgb1           ; image "face.png" 100 250 sx.5
 grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 sx.3 sy.2
 
 color rgb1 .13
-image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5 filter"nearest"
+image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5 -filter
 
 set Circles "circles.artcmd"
 color rgb1  1; imageCircles 200 230
