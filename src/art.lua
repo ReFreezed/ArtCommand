@@ -52,6 +52,7 @@ local COMMANDS = {
 	["pop" ] = { },
 
 	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
+	["grey" ] = { {"grey",1},{"a",1} }, -- Short for `color rgbN`.
 	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
 	["font" ] = { {"size",12} },
 
@@ -125,7 +126,7 @@ local function GfxState()return{
 
 	-- "user"
 	-- Color.
-	colorMode          = "color", -- "color" | "gradient"
+	colorMode          = "flatcolor", -- "flatcolor" | "gradient"
 	flatColor          = {1,1,1,1},
 	gradient           = {--[[ r1,g1,b1,a1, ... ]]},
 	colorTexture       = nil,
@@ -238,7 +239,7 @@ end
 local function applyColor(context, shape, w,h)
 	local gfxState = context.gfxState
 
-	if gfxState.colorMode == "color" then
+	if gfxState.colorMode == "flatcolor" then
 		LG.setColor(gfxState.flatColor)
 		shaderSend(shaderMain, "useColorTexture", false)
 		return
@@ -1018,13 +1019,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return (tokenError(context, startTok, "Internal error. (%s)", status))
 		end
 
-	elseif command == "color" then
+	elseif command == "color" or command == "grey" then
 		ensureCanvasAndInitted(context)
 
 		local gfxState     = context.gfxState
-		gfxState.colorMode = "color"
-		updateColor(gfxState.flatColor, args.r,args.g,args.b,args.a)
+		gfxState.colorMode = "flatcolor"
 		table.clear(gfxState.gradient)
+
+		if command == "color" then  updateColor(gfxState.flatColor, args.r,args.g,args.b,args.a)
+		else                        updateColor(gfxState.flatColor, args.grey,args.grey,args.grey,args.a)  end
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)

@@ -218,9 +218,9 @@ color rgb1 .5; imageCircles 250 230
 setlayer "foo" 40 40
 	makemask
 		fill 1 1 1
-		color rgb0; rect xy15 size10
+		grey0; rect xy15 size10
 	mask
-		color rgb1
+		grey1
 		rect 15 0 10 40
 		rect 0 15 40 10
 	maskFalse
