@@ -15,7 +15,7 @@
 	makePathAbsolute
 	printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
 	round, clamp
-	toColor32
+	toColor32, updateColor
 	updateVec4
 
 --============================================================]]
@@ -113,6 +113,13 @@ function _G.toColor32(r, g, b, a)
 	else
 		return clamp(round(r*255), 0, 255)
 	end
+end
+
+function _G.updateColor(color, r,g,b,a)
+	color[1] = r
+	color[2] = g
+	color[3] = b
+	color[4] = a
 end
 
 

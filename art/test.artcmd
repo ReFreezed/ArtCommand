@@ -181,17 +181,34 @@ pop
 color 0 0 1
 rect 20 (300+0*15) 30 10
 push
-grad .5 0 0, 0 1 0
-rect 20 (300+1*15) 30 10
+	grad .5 0 0, 0 1 0
+	rect 20 (300+1*15) 30 10
 pop
 rect 20 (300+2*15) 30 10
+
+push
+	move 60 300; color 1 0 0; rect
+	push
+		move 0 10; color 0 1 0; rect
+		makemask
+			move 0 10; circle r5 anchor0
+			push
+				move 0 10; circle r5 anchor0
+			pop
+			move 10 0; circle r5 anchor0
+		mask
+			fill 1 1 1
+		maskFalse
+	pop
+	move 10 0; color 0 0 1; rect
+pop
 
 # Images.
 color rgb1           ; image "face.png" 100 250 sx.5
 grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 sx.3 sy.2
 
 color rgb1 .13
-image "face.png" 150 (round(.7*CanvasHeight)) ax1 ay.5 scale3.5 filter"nearest"
+image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5 filter"nearest"
 
 set Circles "circles.artcmd"
 color rgb1  1; imageCircles 200 230
@@ -199,7 +216,17 @@ color rgb1 .5; imageCircles 250 230
 
 # Layers.
 setlayer "foo" 40 40
-	color rgb.9
-	rect 15 0 10 40
-	rect 0 15 40 10
-layer "foo" 40 190 anchor.5 rot45deg
+	makemask
+		fill 1 1 1
+		color rgb0; rect xy15 size10
+	mask
+		color rgb1
+		rect 15 0 10 40
+		rect 0 15 40 10
+	maskFalse
+color 0 1 1 ; layer "foo" 40 190 anchor.5 rot45deg
+color 0 1 .5; layer "foo" 80 190 anchor.5 rot55deg
+
+# Debug.
+assert (1 < 5)
+print (3^7)

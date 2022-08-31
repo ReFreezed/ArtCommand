@@ -375,7 +375,7 @@ function love.draw()
 
 	else
 		local text = "No art loaded"
-		local w    = LG.getFont():getWidth(text)
+		local w    = LG.getFont():getWidth(text) -- @Incomplete: Use predictable font.
 		local h    = LG.getFont():getHeight()
 		local x    = math.floor((ww-w)/2)
 		local y    = math.floor((wh-h)/2)
