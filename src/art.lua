@@ -51,10 +51,11 @@ local COMMANDS = {
 	["push"] = { },
 	["pop" ] = { },
 
-	["color"] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
-	["grey" ] = { {"grey",1},{"a",1} }, -- Short for `color rgbN`.
-	["grad" ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
-	["font" ] = { {"path",""--[[=builtinFont]]}, {"size",12} },
+	["color"    ] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
+	["grey"     ] = { {"grey",1},{"a",1} }, -- Short for `color rgbN`.
+	["grad"     ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
+	["font"     ] = { {"path",""--[[=builtinFont]]}, {"size",12} },
+	["imagefont"] = { {"path",""}, {"chars",""}, {"spacing",0} },
 
 	["makemask"] = { {"clear",true} },
 	["mask"    ] = { {"mask",true} },
@@ -62,18 +63,19 @@ local COMMANDS = {
 	["origin"] = { },
 	["move"  ] = { {"x",0},{"y",0}, xy={"x","y"} },
 	["rotate"] = { {"rot",0} },
-	["scale" ] = { {"x",1},{"y",1}, scale={"x","y"} },
+	["scale" ] = { {"x",1},{"y",1}, xy={"x","y"} },
+	["shear" ] = { {"x",1},{"y",1}, xy={"x","y"} },
 
 	["setlayer"] = { {"name",""}, {"w",0--[[=context.canvasW]]},{"h",0--[[=context.canvasH]]}, {"aa",0--[[=context.msaa]]}, size={"w","h"} },
 
 	-- Drawing.
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0}, {"rot",0}, {"thick",1}, anchor={"ax","ay"}, size={"w","h"}, xy={"x","y"} },
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"rot",0}, {"segs",0--[[=auto]]}, {"thick",1}, r={"rx","ry"}, anchor={"ax","ay"}, xy={"x","y"} },
-	["text"  ] = { {"text",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"rot",0}, {"wrap",1/0},{"align","left"}, {"lineh",1}, {"filter",true}, anchor={"ax","ay"}, xy={"x","y"} },
-	["image" ] = { {"path",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter",true}, anchor={"ax","ay"}, scale={"sx","sy"}, xy={"x","y"} },
-	["layer" ] = { {"name",""}, {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1}, {"rot",0}, {"filter",true}, anchor={"ax","ay"}, scale={"sx","sy"}, xy={"x","y"} },
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0},   {"rot",0}, {"thick",1},                                                                     xy={"x","y"}, size={"w","h"}, anchor={"ax","ay"} }, -- @Incomplete: Scale+shear.
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"rot",0}, {"segs",0--[[=auto]]}, {"thick",1},                                              xy={"x","y"}, r={"rx","ry"},  anchor={"ax","ay"} }, -- @Incomplete: Scale+shear.
+	["text"  ] = { {"text",""},     {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1},   {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"},                 anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["image" ] = { {"path",""},     {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1},   {"rot",0}, {"kx",0},{"ky",0}, {"filter",true},                                              xy={"x","y"},                 anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["layer" ] = { {"name",""},     {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1},   {"rot",0}, {"kx",0},{"ky",0}, {"filter",true},                                              xy={"x","y"},                 anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 }
 
 
@@ -100,9 +102,10 @@ local function Context()return{
 	canvasToMask = nil,
 	maskCanvas   = nil,
 
-	images = {--[[ [path1]=image, ... ]]},
-	layers = {--[[ [name1]=image|canvas, ... ]]},
-	fonts  = {--[[ [path1]{[size1]=font,...}, ... ]]},
+	images      = {--[[ [path1]=image, ... ]]},
+	layers      = {--[[ [name1]=image|canvas, ... ]]},
+	fontsByPath = {--[[ [path1]=font, ... ]]}, -- Image fonts.
+	fontsBySize = {--[[ [path1]={[size1]=font,...}, ... ]]}, -- Vector fonts.
 
 	-- Settings.
 	canvasW = DEFAULT_ART_SIZE,
@@ -823,7 +826,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	if not commandTok then  tokPos = tokPos + 1  end -- name
 
 	--
-	-- Language.
+	-- Function.
 	--
 	if command == "func" then
 		if not isToken(tokens[tokPos], "username") then  return (tokenError(context, tokens[tokPos], "Expected a name for the function."))  end
@@ -881,6 +884,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
 	if not tokPos then  return nil  end
 
+	--
+	-- Language.
+	--
+	----------------------------------------------------------------
 	if command == "set" then
 		if args.var   == ""  then  return (tokenError(context, startTok, "Missing variable name."))  end
 		if args.value == nil then  return (tokenError(context, startTok, "Missing value to assign to '%s'.", args.var))  end
@@ -888,6 +895,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		getLast(context.scopeStack).variables[args.var] = args.value
 
+	----------------------------------------------------------------
 	elseif command == "setx" then
 		if args.var   == ""  then  return (tokenError(context, startTok, "Missing variable name."))  end
 		if args.value == nil then  return (tokenError(context, startTok, "Missing value to assign to '%s'.", args.var))  end
@@ -898,6 +906,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		context.scopeStack[stackIndex].variables[args.var] = args.value
 
+	----------------------------------------------------------------
 	elseif command == "do" then
 		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "Invalid ','."))  end
 
@@ -918,6 +927,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		if stop == STOP_ALL then  return 1/0, STOP_ALL  end
 
+	----------------------------------------------------------------
 	elseif command == "for" then
 		if args.var  == "" then  return (tokenError(context, startTok, "Empty variable name."))  end
 		if args.step == 0  then  return (tokenError(context, startTok, "Step is zero."))  end
@@ -958,31 +968,37 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		if stopAll then  return 1/0, STOP_ALL  end
 
+	----------------------------------------------------------------
 	elseif command == "stop" then
 		if args.all then  print("Stopping all!")  end
 		return 1/0, (args.all and STOP_ALL or STOP_ONE)
 
+	----------------------------------------------------------------
 	elseif command == "assert" then
 		if not args.value then  return (tokenError(context, startTok, "Assertion failed!"))  end
 
 	elseif command == "print" then
-		print(args.value)
+		local ln = getLineNumber(context.source, startTok.position)
+		printf("%s:%d: %s", context.path, ln, tostring(args.value)) -- @Robustness: Don't print invalid UTF-8!
 
 	--
 	-- Settings, app.
 	--
+	----------------------------------------------------------------
 	elseif command == "backdrop" then
 		context.art.backdrop[1] = args.r
 		context.art.backdrop[2] = args.g
 		context.art.backdrop[3] = args.b
 		context.art.backdrop[4] = args.a
 
+	----------------------------------------------------------------
 	elseif command == "zoom" then
 		context.art.zoom = args.zoom
 
 	--
 	-- Settings, init.
 	--
+	----------------------------------------------------------------
 	elseif command == "canvas" then
 		if context.art.canvas then  return (tokenError(context, startTok, "Cannot use '%s' after drawing commands.", command))  end
 
@@ -996,10 +1012,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	-- State.
 	--
+	----------------------------------------------------------------
 	elseif command == "push" then
 		ensureCanvasAndInitted(context)
 		pushGfxState(context, "user")
 
+	----------------------------------------------------------------
 	elseif command == "pop" then
 		local status = popGfxState(context, "user") -- Will fail if there was no push - otherwise ensureCanvasAndInitted() will have been called.
 
@@ -1019,6 +1037,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return (tokenError(context, startTok, "Internal error. (%s)", status))
 		end
 
+	----------------------------------------------------------------
 	elseif command == "color" or command == "grey" then
 		ensureCanvasAndInitted(context)
 
@@ -1034,6 +1053,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			gfxState.colorTexture = nil
 		end
 
+	----------------------------------------------------------------
 	elseif command == "grad" then
 		ensureCanvasAndInitted(context)
 
@@ -1057,8 +1077,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		table.insert(gfxState.gradient, args.b)
 		table.insert(gfxState.gradient, args.a)
 
+	----------------------------------------------------------------
 	elseif command == "font" then
-		local fonts = context.fonts[args.path] or {}
+		local fonts = context.fontsBySize[args.path] or {}
 		local font  = fonts[args.size]
 
 		if font then
@@ -1079,10 +1100,71 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			font = fontOrErr
 		end
 
-		context.fonts[args.path] = fonts
-		fonts[args.size]         = font
-		context.gfxState.font    = font
+		context.fontsBySize[args.path] = fonts
+		fonts[args.size]               = font
+		context.gfxState.font          = font
 
+	----------------------------------------------------------------
+	elseif command == "imagefont" then
+		local font = context.fontsByPath[args.path]
+
+		if not font then
+			local fontPath = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
+
+			local fontStr, err = readFile(false, fontPath)
+			if not fontStr then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", fontPath, err))  end
+
+			local fontFileData = LF.newFileData(fontStr, fontPath)
+			local ok, fontOrErr
+
+			-- BMFont.
+			if args.chars == "" then
+				if args.spacing ~= 0 then  return (tokenError(context, startTok, "Cannot modify the glyph spacing for BMFonts."))  end
+
+				local imagePath0 = ""
+				local pos        = 1
+
+				for _pos, _imagePath in fontStr:gmatch'%f[^\n%z]()page%f[ ][^\n]- file="([^\n]-)"' do
+					if imagePath0 ~= "" then
+						return (tokenError(context, startTok,
+							"Failed loading BMFont...\n %s:%d: Font references multiple image files, which is not supported.",
+							fontPath, getLineNumber(fontStr, _pos)
+						))
+					end
+					imagePath0 = _imagePath
+					pos        = _pos
+				end
+				if imagePath0 == "" then
+					return (tokenError(context, startTok, "Failed loading BMFont...\n %s: Font seem to reference no image file.", fontPath))
+				end
+
+				local imagePath = makePathAbsolute(imagePath0, (fontPath:gsub("[^/\\]+$", "")))
+
+				local imageStr, err = readFile(false, imagePath)
+				if not imageStr then
+					return (tokenError(context, startTok,
+						"Failed loading BMFont...\n %s:%d: Could not read referenced image '%s'. (%s)",
+						fontPath, getLineNumber(fontStr, pos), imagePath0, err
+					))
+				end
+
+				local imageFileData = LF.newFileData(imageStr, imagePath)
+				ok, fontOrErr       = pcall(LG.newFont, fontFileData, imageFileData) ; imageFileData:release()
+
+			-- LÖVE ImageFont.
+			else
+				ok, fontOrErr = pcall(LG.newImageFont, fontFileData, args.chars, args.spacing)
+			end
+
+			fontFileData:release()
+			if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", fontPath, fontOrErr))  end
+			font = fontOrErr
+		end
+
+		context.fontsByPath[args.path] = font
+		context.gfxState.font          = font
+
+	----------------------------------------------------------------
 	elseif command == "makemask" then
 		ensureCanvasAndInitted(context)
 		if not maybeApplyMask(context, startTok) then  return nil  end -- 'makemask' also exits 'mask' mode.
@@ -1100,6 +1182,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.gfxState.makeMaskMode = true
 		updateColor(context.gfxState.flatColor, 1,1,1,1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't. (Should we also update colorMode?)
 
+	----------------------------------------------------------------
 	elseif command == "mask" then
 		ensureCanvasAndInitted(context)
 		if not maybeApplyMask(context, startTok) then  return nil  end
@@ -1119,6 +1202,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			-- void  We would apply the mask, but we just did that!
 		end
 
+	----------------------------------------------------------------
 	elseif command == "origin" then
 		LG.origin()
 	elseif command == "move" then
@@ -1126,8 +1210,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "rotate" then
 		LG.rotate(args.rot)
 	elseif command == "scale" then
-		LG.scale(args.x, (args.y ~= args.y and args.x or args.y))
+		LG.scale(args.x, args.y)
+	elseif command == "shear" then
+		LG.shear(args.x, args.y)
 
+	----------------------------------------------------------------
 	elseif command == "setlayer" then
 		ensureCanvasAndInitted(context)
 
@@ -1149,6 +1236,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	-- Drawing.
 	--
+	----------------------------------------------------------------
 	elseif command == "fill" then
 		ensureCanvasAndInitted(context)
 
@@ -1161,6 +1249,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.rectangle("fill", -1,-1, context.gfxState.canvas:getWidth()+2,context.gfxState.canvas:getHeight()+2) -- Not sure if the bleeding is necessary (if msaa>1).
 		LG.pop()
 
+	----------------------------------------------------------------
 	elseif command == "rect" then
 		if not (args.mode == "fill" or args.mode == "line") then  return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))  end
 
@@ -1180,6 +1269,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		LG.pop()
 
+	----------------------------------------------------------------
 	elseif command == "circle" then
 		if not (args.mode == "fill" or args.mode == "line") then  return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))  end
 
@@ -1201,6 +1291,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		LG.pop()
 
+	----------------------------------------------------------------
 	elseif command == "text" then
 		if not (args.align == "left" or args.align == "center" or args.align == "right" or args.align == "justify") then
 			return (tokenError(context, startTok, "Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align))
@@ -1212,6 +1303,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local w, textLines = font:getWrap(args.text, args.wrap)
 		local h            = (#textLines-1) * math.floor(font:getHeight()*args.lineh) + font:getHeight()
 
+		if not font:hasGlyphs(args.text) then
+			tokenWarning(context, startTok, "Current font is missing some glyphs for the text. Skipping those characters.")
+		end
+
 		font:setFilter(args.filter and "linear" or "nearest")
 		font:setLineHeight(args.lineh)
 		applyCanvas(context)
@@ -1221,10 +1316,13 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.push()
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
 		LG.translate(round(-args.ax*w), round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
 		LG.printf(args.text, 0,0, w, args.align)
 		LG.pop()
 
+	----------------------------------------------------------------
 	elseif command == "image" then
 		if args.path == "" then  return (tokenError(context, startTok, "Missing path."))  end
 
@@ -1274,9 +1372,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		-- 	LG.draw(imageOrCanvas)
 		-- 	LG.pop()
 		-- else
-			LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih)
+			LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 		-- end
 
+	----------------------------------------------------------------
 	elseif command == "layer" then
 		local layerName = args.name
 		if layerName == "" then  return (tokenError(context, startTok, "Missing name."))  end
@@ -1308,8 +1407,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyCanvas(context)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
-		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih)
+		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
+	----------------------------------------------------------------
 	elseif command == "end" then
 		return (tokenError(context, startTok, "Unexpected 'end'."))
 	else
@@ -1362,10 +1462,11 @@ local function cleanup(context, loveGfxStackDepth, success)
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 
-	for _, image         in pairs(context.images) do  image        :release()  end
-	for _, imageOrCanvas in pairs(context.layers) do  imageOrCanvas:release()  end
+	for _, image         in pairs(context.images     ) do  image        :release()  end
+	for _, imageOrCanvas in pairs(context.layers     ) do  imageOrCanvas:release()  end
+	for _, font          in pairs(context.fontsByPath) do  font         :release()  end
 
-	for _, fonts in pairs(context.fonts) do
+	for _, fonts in pairs(context.fontsBySize) do
 		for _, font in pairs(fonts) do  font:release()  end
 	end
 end

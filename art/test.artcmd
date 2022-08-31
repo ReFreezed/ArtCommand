@@ -29,7 +29,7 @@ fill.4 .4 .4 .5
 # Draw stuff.
 color 1 1 1 .1
 font 62  # Big boy!
-text 490 -5 ax1 wrap550 align"right" "TEST TEST TEST TEST
+text 495 -5 ax1 kx-.15 wrap550 lineh.9 align"right" "TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 r10
@@ -43,7 +43,15 @@ circle 260 110 12 25 "line" thick2
 
 font 'SquadaOne.ttf' 19
 color 1 1 .7
-text 100 20 -filter 'Good? "GOOD"?! Good.'
+text 100 18 -filter 'Good? "GOOD"?! Good.'
+
+imagefont "ReFreezedSmall.fnt"
+color .8 1 1
+text 100 38 -filter "Yippee ki-yay!"
+
+imagefont "abc.png" spacing1 "ABC"
+color 1 1 1 .5
+text 170 39 -filter "ABCB A"
 
 # Transform.
 move 50 50
@@ -191,9 +199,9 @@ pop
 rect 20 (300+2*15) 30 10
 
 push
-	move 60 300; color 1 0 0; rect
+	move 60 300; color 1 .2 .2; rect
 	push
-		move 0 10; color 0 1 0; rect
+		move 0 10; color 0 .9 0; rect
 		makemask
 			move 0 10; circle r5 anchor0
 			push

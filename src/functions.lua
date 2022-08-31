@@ -13,7 +13,7 @@
 	getLineNumber
 	lerp, lerp4
 	makePathAbsolute
-	printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
+	printf, printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
 	round, clamp
 	toColor32, updateColor
 	updateVec4
@@ -21,6 +21,10 @@
 --============================================================]]
 
 
+
+function _G.printf(s, ...)
+	print(string.format(s, ...))
+end
 
 function _G.printFileMessage(pathOrContext, ln, s, ...)
 	print(string.format("%s:%d: "..s, (pathOrContext.path or pathOrContext), ln, ...))
