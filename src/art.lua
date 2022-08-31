@@ -69,13 +69,17 @@ local COMMANDS = {
 	["setlayer"] = { {"name",""}, {"w",0--[[=context.canvasW]]},{"h",0--[[=context.canvasH]]}, {"aa",0--[[=context.msaa]]}, size={"w","h"} },
 
 	-- Drawing.
+	["point"] = { {"x",0},{"y",0}, xy={"x","y"} },
+
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0},{"ay",0},   {"rot",0}, {"thick",1},                                                                     xy={"x","y"}, size={"w","h"}, anchor={"ax","ay"} }, -- @Incomplete: Scale+shear.
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"rot",0}, {"segs",0--[[=auto]]}, {"thick",1},                                              xy={"x","y"}, r={"rx","ry"},  anchor={"ax","ay"} }, -- @Incomplete: Scale+shear.
-	["text"  ] = { {"text",""},     {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1},   {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"},                 anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
-	["image" ] = { {"path",""},     {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1},   {"rot",0}, {"kx",0},{"ky",0}, {"filter",true},                                              xy={"x","y"},                 anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
-	["layer" ] = { {"name",""},     {"x",0},{"y",0}, {"ax",0},{"ay",0}, {"sx",1},{"sy",1},   {"rot",0}, {"kx",0},{"ky",0}, {"filter",true},                                              xy={"x","y"},                 anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 },                    {"rot",0},                    {"thick",1},                                                  xy={"x","y"}, anchor={"ax","ay"}, size={"w","h"} }, -- @Incomplete: Scale+shear.
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5},                    {"rot",0},                    {"thick",1}, {"segs",0--[[=auto]]},                           xy={"x","y"}, anchor={"ax","ay"}, r={"rx","ry"}  }, -- @Incomplete: Scale+shear.
+	["poly"  ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["line"  ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["text"  ] = { {"text",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["image" ] = { {"path",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["layer" ] = { {"name",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 }
 
 
@@ -106,6 +110,8 @@ local function Context()return{
 	layers      = {--[[ [name1]=image|canvas, ... ]]},
 	fontsByPath = {--[[ [path1]=font, ... ]]}, -- Image fonts.
 	fontsBySize = {--[[ [path1]={[size1]=font,...}, ... ]]}, -- Vector fonts.
+
+	points = {},
 
 	-- Settings.
 	canvasW = DEFAULT_ART_SIZE,
@@ -884,6 +890,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
 	if not tokPos then  return nil  end
 
+	local isFollowedBySequence = isToken(tokens[tokPos], ",")
+
 	--
 	-- Language.
 	--
@@ -978,8 +986,16 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not args.value then  return (tokenError(context, startTok, "Assertion failed!"))  end
 
 	elseif command == "print" then
-		local ln = getLineNumber(context.source, startTok.position)
-		printf("%s:%d: %s", context.path, ln, tostring(args.value)) -- @Robustness: Don't print invalid UTF-8!
+		-- @Robustness: Don't print invalid UTF-8!
+		if isSequence then
+			io.write("\t", tostring(args.value))
+		else
+			local ln = getLineNumber(context.source, startTok.position)
+			io.write(context.path, ":", ln, ": ", tostring(args.value))
+		end
+		if not isFollowedBySequence then
+			io.write("\n")
+		end
 
 	--
 	-- Settings, app.
@@ -1237,6 +1253,14 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	-- Drawing.
 	--
 	----------------------------------------------------------------
+	elseif command == "point" then
+		if not isSequence then
+			table.clear(context.points)
+		end
+		table.insert(context.points, args.x)
+		table.insert(context.points, args.y)
+
+	----------------------------------------------------------------
 	elseif command == "fill" then
 		ensureCanvasAndInitted(context)
 
@@ -1289,6 +1313,94 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		elseif args.mode == "line" then  drawCircleLine(0,0, args.rx,args.ry, segs, args.thick)
 		else error(args.mode) end
 
+		LG.pop()
+
+	----------------------------------------------------------------
+	elseif command == "poly" then
+		if not (args.mode == "fill" or args.mode == "line") then  return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))  end
+
+		if not context.points[1] then  return (tokenError(context, startTok, "No points added."))  end
+		if not context.points[5] then  return (tokenError(context, startTok, "Not enough points added."))  end
+
+		if args.mode == "fill" and not love.math.isConvex(context.points) then
+			return (tokenError(context, startTok, "The added points form a concave shape. Filled polygons must be convex."))
+		end
+
+		ensureCanvasAndInitted(context)
+
+		local x1 =  1/0
+		local x2 = -1/0
+		local y1 =  1/0
+		local y2 = -1/0
+
+		for i = 1, #context.points, 2 do
+			x1 = math.min(x1, context.points[i  ])
+			x2 = math.max(x2, context.points[i  ])
+			y1 = math.min(y1, context.points[i+1])
+			y2 = math.max(y2, context.points[i+1])
+		end
+
+		local colorW = x2 - x1
+		local colorH = y2 - y1
+
+		if not args.shift then
+			x1, y1 = 0, 0
+		end
+
+		LG.setLineWidth(args.thick)
+		LG.setLineStyle("rough")
+		applyCanvas(context)
+		applyColor(context, "rectangle", colorW,colorH) -- @Incomplete: colorTexture for polygons.
+
+		LG.push()
+		LG.translate(args.x+x1, args.y+y1)
+		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
+		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
+		LG.translate(-x1, -y1)
+		LG.polygon(args.mode, context.points) -- @Temp
+		LG.pop()
+
+	----------------------------------------------------------------
+	elseif command == "line" then
+		if not context.points[1] then  return (tokenError(context, startTok, "No points added."))  end
+		if not context.points[3] then  return (tokenError(context, startTok, "Not enough points added."))  end
+
+		ensureCanvasAndInitted(context)
+
+		local x1 =  1/0
+		local x2 = -1/0
+		local y1 =  1/0
+		local y2 = -1/0
+
+		for i = 1, #context.points, 2 do
+			x1 = math.min(x1, context.points[i  ])
+			x2 = math.max(x2, context.points[i  ])
+			y1 = math.min(y1, context.points[i+1])
+			y2 = math.max(y2, context.points[i+1])
+		end
+
+		local colorW = x2 - x1
+		local colorH = y2 - y1
+
+		if not args.shift then
+			x1, y1 = 0, 0
+		end
+
+		LG.setLineWidth(args.thick)
+		LG.setLineStyle("rough")
+		applyCanvas(context)
+		applyColor(context, "rectangle", colorW,colorH) -- @Incomplete: colorTexture for lines.
+
+		LG.push()
+		LG.translate(args.x+x1, args.y+y1)
+		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
+		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
+		LG.translate(-x1, -y1)
+		LG.line(context.points) -- @Temp
 		LG.pop()
 
 	----------------------------------------------------------------
