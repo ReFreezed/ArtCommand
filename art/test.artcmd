@@ -246,12 +246,18 @@ print Circles, (3^7), (rep("Hey",3))
 # Lines and polygons.
 set O -40  # Offset.
 point xyO, (70+O)(20+O), (30+O)(50+O), (40+O)(80+O)
-color 0 1 .5 1 ; line (70-O)(400-O) thick4
-color 0 1 .5 .5; line (70-O)(400-O) thick4 rot20deg
-color 0 1 .5 .2; line (70-O)(400-O) thick4 rot20deg -shift
+color 0 1 .5 1 ; line (70-O)(395-O) thick4
+color 0 1 .5 .5; line (70-O)(395-O) thick4 rot20deg
+color 0 1 .5 .2; line (70-O)(395-O) thick4 rot20deg -shift
 
 set O -10  # Offset.
 point xyO, (20+O)O, (40+O)(15+O), xy(40+O), (15+O)(40+O), O(20+O)
-color 1 .7 .8 1 ; poly "fill" (30-O)(440-O)
-color 1 .7 .8 .5; poly "fill" (30-O)(440-O) sx3 rot15deg
-color 1 .7 .8 .2; poly "fill" (30-O)(440-O) sx3 rot40deg -shift
+color 1 .7 .8 1 ; poly "fill" (30-O)(435-O)
+color 1 .7 .8 .5; poly "fill" (30-O)(435-O) sx3 rot15deg
+color 1 .7 .8 .2; poly "fill" (30-O)(435-O) sx3 rot40deg -shift
+
+point 0 -15, 150 0, 0 35, -15 0
+grad 1 .3 0, 1 1 .4 1  0deg; poly "fill" 35 550
+grad 1 .3 0, 1 1 .4 1 90deg; poly "fill" 75 550
+grad 1 .3 0, 1 1 .4 1  0deg; poly "line" 115 550 thick4
+grad 1 .3 0, 1 1 .4 1 90deg; poly "line" 155 550 thick4

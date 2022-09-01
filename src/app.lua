@@ -92,7 +92,9 @@ function love.load(args, rawArgs)
 	_G.LF = love.filesystem
 	_G.LG = love.graphics
 
-	_G.ffi = require"ffi"
+	_G.ffi   = require"ffi"
+	_G.math  = require"src.math"
+	_G.mathv = math.v
 
 	require"functions" -- First!
 	require"art"

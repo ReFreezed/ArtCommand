@@ -239,8 +239,10 @@ end
 
 
 local function applyCanvas(context)
-	LG.setCanvas(context.gfxState.canvas)
 	shaderSend(shaderMain, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
+
+	LG.setCanvas(context.gfxState.canvas)
+	LG.setShader(shaderMain)
 end
 
 -- applyColor( context, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
@@ -797,7 +799,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local visited  = {}
 
 		for i, argName in ipairs(funcInfo.arguments) do
-			argInfos[i] = {(argName:gsub("^.", string.lower)), nil} -- Argument "FooBar" gets the name "fooBar".  @Speed @Memory
+			argInfos[i] = {(argName:lower()), nil} -- Argument "FooBar" gets the name "foobar".  @Speed @Memory
 		end
 
 		tokPos = parseArguments(context, tokens, tokPos, funcName, argInfos, args, visited)
@@ -1347,10 +1349,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			x1, y1 = 0, 0
 		end
 
-		LG.setLineWidth(args.thick)
-		LG.setLineStyle("rough")
 		applyCanvas(context)
-		applyColor(context, "rectangle", colorW,colorH) -- @Incomplete: colorTexture for polygons.
+		applyColor(context, "rectangle", colorW,colorH)
 
 		LG.push()
 		LG.translate(args.x+x1, args.y+y1)
@@ -1359,7 +1359,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
 		LG.translate(-x1, -y1)
-		LG.polygon(args.mode, context.points) -- @Temp
+
+		if     args.mode == "fill" then  drawPolygonFill(context.points)
+		elseif args.mode == "line" then  drawPolygonLine(context.points, args.thick)
+		else error(args.mode) end
+
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1388,10 +1392,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			x1, y1 = 0, 0
 		end
 
-		LG.setLineWidth(args.thick)
-		LG.setLineStyle("rough")
 		applyCanvas(context)
-		applyColor(context, "rectangle", colorW,colorH) -- @Incomplete: colorTexture for lines.
+		applyColor(context, "rectangle", colorW,colorH)
 
 		LG.push()
 		LG.translate(args.x+x1, args.y+y1)
@@ -1400,7 +1402,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
 		LG.translate(-x1, -y1)
-		LG.line(context.points) -- @Temp
+		drawLine(context.points, args.thick)
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1422,7 +1424,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		font:setFilter(args.filter and "linear" or "nearest")
 		font:setLineHeight(args.lineh)
 		applyCanvas(context)
-		applyColor(context, "rectangle", 1,1) -- @Incomplete: Handle gradients for text like the other "shapes", somehow.
+		applyColor(context, "rectangle", 1,1) -- @Incomplete: Handle gradients for text/glyphs like the other shapes, somehow.
 		LG.setFont(font)
 
 		LG.push()
