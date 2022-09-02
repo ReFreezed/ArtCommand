@@ -74,7 +74,7 @@ local COMMANDS = {
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
 	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 },                    {"rot",0},                    {"thick",1},                                                  xy={"x","y"}, anchor={"ax","ay"}, size={"w","h"} }, -- @Incomplete: Scale+shear.
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5},                    {"rot",0},                    {"thick",1}, {"segs",0--[[=auto]]},                           xy={"x","y"}, anchor={"ax","ay"}, r={"rx","ry"}  }, -- @Incomplete: Scale+shear.
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5},                    {"rot",0},                    {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, r={"rx","ry"}  }, -- @Incomplete: Scale+shear.
 	["poly"  ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["line"  ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["text"  ] = { {"text",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
@@ -1063,8 +1063,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		gfxState.colorMode = "flatcolor"
 		table.clear(gfxState.gradient)
 
-		if command == "color" then  updateColor(gfxState.flatColor, args.r,args.g,args.b,args.a)
-		else                        updateColor(gfxState.flatColor, args.grey,args.grey,args.grey,args.a)  end
+		if command == "color" then  updateVec4(gfxState.flatColor, args.r,args.g,args.b,args.a)
+		else                        updateVec4(gfxState.flatColor, args.grey,args.grey,args.grey,args.a)  end
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
@@ -1198,7 +1198,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		context.gfxState.makeMaskMode = true
-		updateColor(context.gfxState.flatColor, 1,1,1,1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't. (Should we also update colorMode?)
+		updateVec4(context.gfxState.flatColor, 1,1,1,1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't. (Should we also update colorMode?)
 
 	----------------------------------------------------------------
 	elseif command == "mask" then
@@ -1297,11 +1297,20 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "circle" then
-		if not (args.mode == "fill" or args.mode == "line") then  return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))  end
+		if not (args.mode == "fill" or args.mode == "fillclosed" or args.mode == "line" or args.mode == "linepie" or args.mode == "lineclosed") then
+			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
+		end
 
 		ensureCanvasAndInitted(context)
 
-		local segs = (args.segs > 0) and math.max(args.segs, 3) or math.max(math.floor(math.max(args.rx,args.ry)*TAU/10), 64)
+		local angle1 = args.from
+		local angle2 = math.clamp(args.to, args.from-TAU, args.from+TAU)
+
+		local segs = (
+			args.segs > 0
+			and args.segs
+			or  math.round(math.max(math.max(args.rx, args.ry) * TAU/10, 64) * math.abs(angle2-angle1)/TAU)
+		)
 
 		applyCanvas(context)
 		applyColor(context, "circle", args.rx,args.ry)
@@ -1311,8 +1320,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.rotate(args.rot)
 		LG.translate(-(args.ax*2-1)*args.rx, -(args.ay*2-1)*args.ry)
 
-		if     args.mode == "fill" then  drawCircleFill(0,0, args.rx,args.ry, segs)
-		elseif args.mode == "line" then  drawCircleLine(0,0, args.rx,args.ry, segs, args.thick)
+		if     args.mode == "fill"       then  drawCircleFill(0,0, args.rx,args.ry, angle1,angle2, false   , segs)
+		elseif args.mode == "fillclosed" then  drawCircleFill(0,0, args.rx,args.ry, angle1,angle2, true    , segs)
+		elseif args.mode == "line"       then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "open"  , segs, args.thick)
+		elseif args.mode == "linepie"    then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "pie"   , segs, args.thick)
+		elseif args.mode == "lineclosed" then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "closed", segs, args.thick)
 		else error(args.mode) end
 
 		LG.pop()
@@ -1432,7 +1444,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
 		LG.shear(args.kx, args.ky)
-		LG.translate(round(-args.ax*w), round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
+		LG.translate(math.round(-args.ax*w), math.round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
 		LG.printf(args.text, 0,0, w, args.align)
 		LG.pop()
 
@@ -1651,7 +1663,7 @@ function _G.loadArtFile(path, isLocal)
 	entry.variables.rad     = math.rad
 	entry.variables.rand    = love.math.random
 	entry.variables.randf   = function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or n1*love.math.random()  end -- randomf( [ n1=0, ] n2 )
-	entry.variables.round   = function(n)  return math.floor(n+.5)  end
+	entry.variables.round   = math.round
 	entry.variables.sin     = math.sin
 	entry.variables.sinh    = math.sinh
 	entry.variables.sqrt    = math.sqrt

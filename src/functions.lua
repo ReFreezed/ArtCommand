@@ -11,11 +11,9 @@
 
 	getLast, itemWith1, indexOf
 	getLineNumber
-	lerp, lerp4
 	makePathAbsolute
 	printf, printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
-	round, clamp
-	toColor32, updateColor
+	toColor32
 	updateVec4
 
 --============================================================]]
@@ -83,47 +81,17 @@ end
 
 
 
-function _G.round(v)
-	return math.floor(v+.5)
-end
-
-function _G.clamp(v, min,max)
-	return math.max(math.min(v, max), min)
-end
-
-
-
-function _G.lerp(v1,v2, t)
-	return v1 + t*(v2-v1)
-end
-
-function _G.lerp4(r1,g1,b1,a1, r2,g2,b2,a2, t)
-	return lerp(r1,r2, t)
-	     , lerp(g1,g2, t)
-	     , lerp(b1,b2, t)
-	     , lerp(a1,a2, t)
-end
-
-
-
 -- colorValue8    = toColor32( colorValue )
 -- r8, g8, b8, a8 = toColor32( r, g, b, a )
 function _G.toColor32(r, g, b, a)
 	if g then
-		return clamp(round(r*255), 0, 255)
-		     , clamp(round(g*255), 0, 255)
-		     , clamp(round(b*255), 0, 255)
-		     , clamp(round(a*255), 0, 255)
+		return math.clamp(math.round(r*255), 0, 255)
+		     , math.clamp(math.round(g*255), 0, 255)
+		     , math.clamp(math.round(b*255), 0, 255)
+		     , math.clamp(math.round(a*255), 0, 255)
 	else
-		return clamp(round(r*255), 0, 255)
+		return math.clamp(math.round(r*255), 0, 255)
 	end
-end
-
-function _G.updateColor(color, r,g,b,a)
-	color[1] = r
-	color[2] = g
-	color[3] = b
-	color[4] = a
 end
 
 
