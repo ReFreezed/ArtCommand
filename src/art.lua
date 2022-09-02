@@ -73,8 +73,8 @@ local COMMANDS = {
 
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 },                    {"rot",0},                    {"thick",1},                                                  xy={"x","y"}, anchor={"ax","ay"}, size={"w","h"} }, -- @Incomplete: Scale+shear.
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5},                    {"rot",0},                    {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, r={"rx","ry"}  }, -- @Incomplete: Scale+shear.
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1},                                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, size={"w","h"} },
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}  },
 	["poly"  ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["line"  ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["text"  ] = { {"text",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
@@ -1287,6 +1287,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.push()
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*args.w, -args.ay*args.h)
 
 		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h)
@@ -1318,6 +1320,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.push()
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
 		LG.translate(-(args.ax*2-1)*args.rx, -(args.ay*2-1)*args.ry)
 
 		if     args.mode == "fill"       then  drawCircleFill(0,0, args.rx,args.ry, angle1,angle2, false   , segs)
