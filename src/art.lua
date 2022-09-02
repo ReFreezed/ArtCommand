@@ -73,7 +73,7 @@ local COMMANDS = {
 
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1},                                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, size={"w","h"} },
+	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"rx",0},{"ry",0}, {"segs",0--[[=auto]]},        xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}, size={"w","h"} },
 	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}  },
 	["poly"  ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["line"  ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
@@ -248,6 +248,9 @@ end
 -- applyColor( context, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
 -- shapeToDraw = "rectangle" | "circle"
 local function applyColor(context, shape, w,h)
+	w = math.abs(w)
+	h = math.abs(h)
+
 	local gfxState = context.gfxState
 
 	if gfxState.colorMode == "flatcolor" then
@@ -1284,6 +1287,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyCanvas(context)
 		applyColor(context, "rectangle", args.w,args.h)
 
+		local segs = (
+			args.segs > 0
+			and args.segs
+			or  math.round(math.max(math.max(args.rx, args.ry) * TAU/10, 64) * .25)
+		)
+
 		LG.push()
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
@@ -1291,8 +1300,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*args.w, -args.ay*args.h)
 
-		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h)
-		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.thick)
+		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h, args.rx,args.ry, segs)
+		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.rx,args.ry, segs, args.thick)
 		else error(args.mode) end
 
 		LG.pop()
@@ -1611,7 +1620,8 @@ function _G.loadArtFile(path, isLocal)
 		return nil
 	end
 
-	print("Loading "..path.."...")
+	printf("Loading %s...", path)
+	local startTime = love.timer.getTime()
 	LG.reset()
 
 	local context    = Context()
@@ -1720,7 +1730,7 @@ function _G.loadArtFile(path, isLocal)
 		print("Nothing was rendered!") -- Should we call ensureCanvasAndInitted()? Especially if an art file loads another.
 	end
 
-	print("Loading "..path.."... done!")
+	printf("Loading %s... done in %.2f seconds!", path, love.timer.getTime()-startTime)
 	return context.art.canvas and context.art
 end
 

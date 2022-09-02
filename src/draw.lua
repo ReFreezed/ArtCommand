@@ -204,10 +204,6 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 	LG.draw(mesh)
 end
 
-function _G.drawPolygonLine(points, lw)
-	_drawLine(true, points, lw, false, 0,0)
-end
-
 
 
 function _G.drawLine(points, lw)
@@ -216,9 +212,64 @@ end
 
 
 
-function _G.drawRectangleFill(x,y, w,h)
-	local iw,ih = A.images.rectangle:getDimensions()
-	LG.draw(A.images.rectangle, x,y, 0, w/iw,h/ih)
+local corner = {}
+local points = {}
+
+local function drawRoundedRectangle(fill, x,y, w,h, rx,ry, segs, lw)
+	table.clear(corner)
+	table.clear(points)
+
+	rx = math.min(rx, w/2)
+	ry = math.min(ry, h/2)
+
+	segs            = math.max(segs, 1)
+	local angleStep = .25*TAU / segs
+
+	for i = 0, segs do
+		local angle = i*angleStep
+		table.insert(corner, rx*(1-math.cos(angle)))
+		table.insert(corner, ry*(1-math.sin(angle)))
+	end
+
+	local cornerCount = #corner
+	local i1x         = 2*rx < w and 0 or 1
+	local i1y         = 2*ry < h and 0 or 1
+
+	for i = i1y, segs do -- tl
+		table.insert(points, x+  corner[2*i+1])
+		table.insert(points, y+  corner[2*i+2])
+	end
+	for i = i1x, segs do -- tr
+		table.insert(points, x+w-corner[cornerCount-2*i-1])
+		table.insert(points, y+  corner[cornerCount-2*i  ])
+	end
+	for i = i1y, segs do -- br
+		table.insert(points, x+w-corner[2*i+1])
+		table.insert(points, y+h-corner[2*i+2])
+	end
+	for i = i1x, segs do -- bl
+		table.insert(points, x+  corner[cornerCount-2*i-1])
+		table.insert(points, y+h-corner[cornerCount-2*i  ])
+	end
+
+	if    fill
+	then  drawPolygonFill(points) -- @Speed: Might possibly wanna draw the mesh as a fan.
+	else  drawPolygonLine(points, lw)  end
+end
+
+
+
+function _G.drawRectangleFill(x,y, w,h, rx,ry, segs)
+	if w < 0 then  x, w = x+w, -w  end
+	if h < 0 then  y, h = y+h, -h  end
+
+	if rx > 0 and ry > 0 then
+		drawRoundedRectangle(true, x,y, w,h, rx,ry, segs, 0)
+
+	else
+		local iw,ih = A.images.rectangle:getDimensions()
+		LG.draw(A.images.rectangle, x,y, 0, w/iw,h/ih)
+	end
 end
 
 
@@ -236,7 +287,15 @@ local mesh, vertices = nil, {
 	{0,0, 0,0, 1,1,1,1},
 }
 
-function _G.drawRectangleLine(x,y, w,h, lw)
+function _G.drawRectangleLine(x,y, w,h, rx,ry, segs, lw)
+	if w < 0 then  x, w = x+w, -w  end
+	if h < 0 then  y, h = y+h, -h  end
+
+	if rx > 0 and ry > 0 then
+		drawRoundedRectangle(false, x,y, w,h, rx,ry, segs, lw)
+		return
+	end
+
 	--
 	--   1 2 3 4
 	-- 1 2-----4  10=2
@@ -301,8 +360,9 @@ function _G.drawCircleFill(x,y, rx,ry, angle1,angle2, closed, segs)
 		vertices[i][1],vertices[i][2], vertices[i][3],vertices[i][4] = rx*c,ry*s, .5+.5*c,.5+.5*s
 	end
 
-	if closed then  copyVertexXyuv(vertices, 2, 1)
-	else            vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = 0,0, .5,.5  end
+	if    closed
+	then  copyVertexXyuv(vertices, 2, 1)
+	else  vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = 0,0, .5,.5  end
 
 	mesh:setVertices(vertices, 1, segs+2)
 	mesh:setDrawRange(         1, segs+2)
@@ -395,6 +455,12 @@ function _G.drawPolygonFill(points)
 	mesh:setVertices(vertices, 1, pointCount)
 	mesh:setDrawRange(         1, pointCount)
 	LG.draw(mesh)
+end
+
+
+
+function _G.drawPolygonLine(points, lw)
+	_drawLine(true, points, lw, false, 0,0)
 end
 
 

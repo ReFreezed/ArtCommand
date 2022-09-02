@@ -274,3 +274,14 @@ Arc (195+1*33) 520 "fill"       "line"       -90deg 135deg 5
 Arc (195+2*33) 520 "fill"       "linepie"    -90deg 135deg 5
 Arc (195+3*33) 520 "fillclosed" "lineclosed" -90deg 135deg 5
 Arc (195+4*33) 520 "fill"       "linepie"    90deg  135deg 3
+
+# Rounded rectangles.
+grad .9 .4 1, .9 .1 1 1 45deg
+rect"fill" (340+0*50) (390+0*50) size40 thick4 segs2
+rect"fill" (340+0*50) (390+1*50) size40 thick4 segs2 r10
+rect"fill" (340+0*50) (390+2*50) size40 thick4 segs2 r999
+rect"fill" (340+0*50) (390+3*50) size40 thick4 segs2 rx17 ry9
+rect"line" (340+1*50) (390+0*50) size40 thick4 segs2
+rect"line" (340+1*50) (390+1*50) size40 thick4 segs2 r10
+rect"line" (340+1*50) (390+2*50) size40 thick4 segs2 r999
+rect"line" (340+1*50) (390+3*50) size40 thick4 segs2 rx999 ry10
