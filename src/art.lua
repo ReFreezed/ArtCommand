@@ -74,12 +74,16 @@ local COMMANDS = {
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
 	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"rx",0},{"ry",0}, {"segs",0--[[=auto]]},        xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}, size={"w","h"} },
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}  },
+	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"} },
 	["poly"  ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["line"  ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["text"  ] = { {"text",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["image" ] = { {"path",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
 	["layer" ] = { {"name",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+
+	-- Effects.
+	["boxblur"] = { {"x",0},{"y",0}, xy={"x","y"} },
+	["blur"]    = { {"x",0},{"y",0}, xy={"x","y"} },
 }
 
 
@@ -103,6 +107,8 @@ local function Context()return{
 
 	gfxState = nil, -- (including love.graphics)
 
+	workCanvas1  = nil,
+	workCanvas2  = nil,
 	canvasToMask = nil,
 	maskCanvas   = nil,
 
@@ -239,10 +245,10 @@ end
 
 
 local function applyCanvas(context)
-	shaderSend(shaderMain, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
+	shaderSend(A.shaders.main, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
 
 	LG.setCanvas(context.gfxState.canvas)
-	LG.setShader(shaderMain)
+	LG.setShader(A.shaders.main)
 end
 
 -- applyColor( context, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
@@ -258,7 +264,7 @@ local function applyColor(context, shape, w,h)
 	if gfxState.colorMode == "flatcolor" then
 		local r,g,b,a = unpack(gfxState.flatColor)
 		LG.setColor(r*a, g*a, b*a, a)
-		shaderSend(shaderMain, "useColorTexture", false)
+		shaderSend(A.shaders.main, "useColorTexture", false)
 		return
 	end
 
@@ -309,10 +315,10 @@ local function applyColor(context, shape, w,h)
 		error(gfxState.colorMode)
 	end
 
-	shaderSend    (shaderMain, "useColorTexture"   , true)
-	shaderSend    (shaderMain, "colorTextureRadial", gfxState.colorTextureRadial)
-	shaderSend    (shaderMain, "colorTexture"      , gfxState.colorTexture)
-	shaderSendVec4(shaderMain, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
+	shaderSend    (A.shaders.main, "useColorTexture"   , true)
+	shaderSend    (A.shaders.main, "colorTextureRadial", gfxState.colorTextureRadial)
+	shaderSend    (A.shaders.main, "colorTexture"      , gfxState.colorTexture)
+	shaderSendVec4(A.shaders.main, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
 end
 
 
@@ -324,27 +330,26 @@ local function ensureCanvasAndInitted(context)
 		format = "rgba16",
 		msaa   = (context.msaa > 1 and context.msaa or nil),
 	}
-	local settingsMask = {
-		format = "r16",
-		msaa   = settingsCanvas.msaa,
-	}
-
 	context.art.canvas   = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
+	context.workCanvas1  = LG.newCanvas(context.canvasW,context.canvasH, {format="rgba16"})
+	context.workCanvas2  = LG.newCanvas(context.canvasW,context.canvasH, {format="rgba16"})
 	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
-	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, settingsMask)
+	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r16", msaa=settingsCanvas.msaa})
 
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
+	context.workCanvas1:setFilter("nearest")
+	context.workCanvas2:setFilter("nearest")
 	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness.
 	context.maskCanvas:setFilter("nearest") -- Fixes mask fuzziness.
 
-	shaderSend(shaderMain, "textBlendFix"   , false)
-	shaderSend(shaderMain, "makeMaskMode"   , false)
-	shaderSend(shaderMain, "useColorTexture", false)
+	shaderSend(A.shaders.main, "textBlendFix"   , false)
+	shaderSend(A.shaders.main, "makeMaskMode"   , false)
+	shaderSend(A.shaders.main, "useColorTexture", false)
 
 	gfxStateSetCanvas(context, context.art.canvas, nil)
 
 	applyCanvas(context)
-	LG.setShader(shaderMain)
+	LG.setShader(A.shaders.main)
 end
 
 
@@ -726,14 +731,14 @@ local function popGfxState(context, stackType)
 		gfxStateSetCanvas(context, gfxState.canvas, gfxState.fallbackCanvas)
 
 	elseif stackType == "applymask" then
-		shaderSend(shaderApplyMask, "mask", context.maskCanvas)
+		shaderSend(A.shaders.applyMask, "mask", context.maskCanvas)
 
 		LG.setCanvas(nil) -- Before push/pop. Not sure it affects canvas switching. Probably doesn't matter.
 		LG.push("all")
 		LG.reset()
 		LG.setCanvas(gfxState.canvas)
 		LG.setBlendMode("alpha", "premultiplied")
-		LG.setShader(shaderApplyMask)
+		LG.setShader(A.shaders.applyMask)
 		LG.draw(context.canvasToMask)
 		LG.pop()
 
@@ -789,6 +794,14 @@ local function isCanvasReferenced(context, canvas)
 		if canvas == gfxState.canvas or canvas == gfxState.fallbackCanvas then  return true  end
 	end
 	return false
+end
+
+local function initWorkCanvas(canvas, workCanvas)
+	local filter = canvas:getFilter()
+	canvas:setFilter("nearest")
+	LG.setCanvas(workCanvas)
+	LG.draw(canvas)
+	canvas:setFilter(filter)
 end
 
 local runBlock
@@ -1213,7 +1226,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		gfxStateSetCanvas(context, context.maskCanvas, nil)
 		if args.clear then
-			applyCanvas(context)
+			LG.setCanvas(context.gfxState.canvas)
 			LG.clear(0, 0, 0, 1)
 		end
 
@@ -1234,7 +1247,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			-- @UX: Could we enable the mask just by setting a flag, and not use a separate canvas? That'd be great.
 			pushGfxState(context, "applymask")
 			gfxStateSetCanvas(context, context.canvasToMask, nil)
-			applyCanvas(context)
+			LG.setCanvas(context.gfxState.canvas)
 			LG.clear(0, 0, 0, 0)
 		else
 			-- void  We would apply the mask, but we just did that!
@@ -1256,9 +1269,22 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "setlayer" then
 		ensureCanvasAndInitted(context)
 
+		-- No layer.
 		if args.name == "" then
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetNoLayer
 
+		-- Yes layer, reuse existing canvas.
+		elseif
+			context.layers[args.name]
+			and context.layers[args.name]:getWidth () == args.w
+			and context.layers[args.name]:getHeight() == args.h
+			and context.layers[args.name]:getMSAA  () == args.aa
+		then
+			gfxStateSetCanvas(context, context.layers[args.name], context.gfxState.fallbackCanvas)
+			LG.setCanvas(context.gfxState.canvas)
+			LG.clear(0, 0, 0, 0)
+
+		-- Yes layer, create new canvas.
 		else
 			if context.layers[args.name] then
 				LG.setCanvas(nil) -- Don't accidentally release the current canvas!
@@ -1267,8 +1293,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			context.layers[args.name] = LG.newCanvas(args.w,args.h, {format="rgba16", msaa=args.aa})
 			gfxStateSetCanvas(context, context.layers[args.name], context.gfxState.fallbackCanvas)
-			applyCanvas(context)
-			LG.clear(0, 0, 0, 0) -- Needed? I think the values are 0 by default.
 		end
 
 	--
@@ -1490,9 +1514,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.scale(args.sx, args.sy)
 		LG.shear(args.kx, args.ky)
 		LG.translate(math.round(-args.ax*w), math.round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
-		shaderSend(shaderMain, "textBlendFix", true)
+		shaderSend(A.shaders.main, "textBlendFix", true)
 		LG.printf(args.text, 0,0, w, args.align)
-		shaderSend(shaderMain, "textBlendFix", false)
+		shaderSend(A.shaders.main, "textBlendFix", false)
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1543,6 +1567,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local layerName = args.name
 		if layerName == "" then  return (tokenError(context, startTok, "Missing name."))  end
 
+		ensureCanvasAndInitted(context)
+
 		local canvas = context.layers[layerName]
 		if not canvas then
 			return (tokenError(context, startTok, "No layer '%s'", layerName))
@@ -1563,6 +1589,74 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
 		LG.draw(canvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+
+	--
+	-- Effects.
+	--
+	----------------------------------------------------------------
+	elseif command == "boxblur" then
+		ensureCanvasAndInitted(context)
+
+		LG.push()
+		LG.reset()
+		LG.setBlendMode("replace", "premultiplied")
+		initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
+		LG.setShader(A.shaders.fxBlurBox)
+
+		shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.x, 0, 1000))
+		shaderSendVec2(A.shaders.fxBlurBox, "direction", .5, 0)
+		LG.setCanvas(context.workCanvas2)
+		LG.draw(context.workCanvas1)
+
+		shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.y, 0, 1000))
+		shaderSendVec2(A.shaders.fxBlurBox, "direction", 0, .5)
+		LG.setCanvas(context.workCanvas1)
+		LG.draw(context.workCanvas2)
+
+		LG.setShader(nil)
+		LG.setCanvas(context.gfxState.canvas)
+		LG.draw(context.workCanvas1)
+		LG.pop()
+
+	----------------------------------------------------------------
+	elseif command == "blur" then
+		ensureCanvasAndInitted(context)
+
+		local BLUR_SIZE  = 13 -- 5|9|13 (See fxBlurGaussian.gl)
+		local BLUR_REACH = ((BLUR_SIZE==5 and 2.5) or (BLUR_SIZE==13 and 3.5) or 3) / BLUR_SIZE -- Magic inaccurate numbers... @Cleanup
+
+		LG.push()
+		LG.reset()
+		LG.setBlendMode("replace", "premultiplied")
+		initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
+
+		local canvasRead  = context.workCanvas1
+		local canvasWrite = context.workCanvas2
+		context.workCanvas1:setFilter("linear")
+		context.workCanvas2:setFilter("linear")
+
+		-- @Incomplete: These loops are probably not exactly correct. I think we wanna
+		-- double the radius each iteration (and iterate fewer times).
+		LG.setShader(A.shaders.fxBlurGaussian)
+		shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
+		for _ = 1, math.clamp(args.x, 0, 1000) do
+			LG.setCanvas(canvasWrite)
+			LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+		end
+		shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,BLUR_REACH)
+		for _ = 1, math.clamp(args.y, 0, 1000) do
+			LG.setCanvas(canvasWrite)
+			LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+		end
+
+		context.workCanvas1:setFilter("nearest")
+		context.workCanvas2:setFilter("nearest")
+		LG.setShader(nil)
+		LG.setCanvas(context.gfxState.canvas)
+		LG.draw(canvasRead)
+		LG.pop()
 
 	----------------------------------------------------------------
 	elseif command == "end" then
@@ -1614,6 +1708,8 @@ local function cleanup(context, loveGfxStackDepth, success)
 
 	if not success and context.art.canvas then  context.art.canvas:release()  end
 
+	if context.workCanvas1  then  context.workCanvas1 :release()  end
+	if context.workCanvas2  then  context.workCanvas2 :release()  end
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 

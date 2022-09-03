@@ -82,9 +82,9 @@ makemask
 	grad rgb0 1, rgb0 0; rect 24 (40+2*14) 12 10
 
 mask
-	color 1 50% 1
-	rect w1000 h1000 anchor.5
+	color 1 50% 1; rect w1000 h1000 anchor.5
 	TestBlobs 1 1 4
+	color; font14; text "YES" x36 y42
 mask False
 
 TestBlobs -13 1 4
@@ -228,7 +228,7 @@ color rgb1 .5                 ; imageCircles (185+1*50) 230
 grad a.5,a1,a0,a1,a.5 rot90deg; imageCircles (185+2*50) 230
 
 # Layers.
-setlayer "foo" 40 40
+setlayer"foo" 40 40
 	makemask
 		fill 1 1 1
 		grey0; rect xy15 size10
@@ -237,8 +237,8 @@ setlayer "foo" 40 40
 		rect 15 0 10 40
 		rect 0 15 40 10
 	maskFalse
-color 0 1 1 ; layer "foo" 40 190 anchor.5 rot45deg
-color 0 1 .5; layer "foo" 80 190 anchor.5 rot55deg
+color 0 1 1 ; layer"foo" 40 190 anchor.5 rot45deg
+color 0 1 .5; layer"foo" 80 190 anchor.5 rot55deg
 
 # Debug.
 assert (1 < 5)
@@ -286,3 +286,15 @@ rect"line" (340+1*50) (390+0*50) size40 thick4 segs2
 rect"line" (340+1*50) (390+1*50) size40 thick4 segs2 r10
 rect"line" (340+1*50) (390+2*50) size40 thick4 segs2 r999
 rect"line" (340+1*50) (390+3*50) size40 thick4 segs2 rx999 ry10
+
+# Effects.
+setlayer"fx"
+	grey0; rect (440   ) (390+0*50   ) 40 40
+	grey1; rect (440+10) (390+0*50+10) 20 20
+	boxblur xy10
+layer"fx"
+setlayer"fx"
+	grey0; rect (440   ) (390+1*50   ) 40 40
+	grey1; rect (440+10) (390+1*50+10) 20 20
+	blur xy30
+layer"fx"

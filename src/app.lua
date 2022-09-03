@@ -18,12 +18,10 @@ _G.TAU = 2*math.pi
 
 
 _G.A = { -- Assets.
-	images = {},
-	quads  = {},
+	images  = {},
+	quads   = {},
+	shaders = {},
 }
-
-_G.shaderMain      = nil
-_G.shaderApplyMask = nil
 
 local thePathIn     = ""
 local thePathOut    = "" -- Empty means auto.
@@ -101,11 +99,20 @@ function love.load(args, rawArgs)
 	require"draw"
 	require"filesystem"
 
-	_G.shaderMain      = LG.newShader("src/shaders/main.gl")
-	_G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl")
-	if DEV then
-		require"hotLoader".monitor("src/shaders/main.gl"     , function(path)  _G.shaderMain      = LG.newShader("src/shaders/main.gl"     ) ; tryLoadingTheArtFile()  end)
-		require"hotLoader".monitor("src/shaders/applyMask.gl", function(path)  _G.shaderApplyMask = LG.newShader("src/shaders/applyMask.gl") ; tryLoadingTheArtFile()  end)
+	for _, filename in ipairs(LF.getDirectoryItems"src/shaders") do
+		local name = filename:match"^(.+)%.gl$"
+
+		if name then
+			local path      = "src/shaders/" .. filename
+			A.shaders[name] = LG.newShader(path)
+
+			if DEV then
+				require"hotLoader".monitor(path, function(path)
+					A.shaders[name] = LG.newShader(path)
+					tryLoadingTheArtFile()
+				end)
+			end
+		end
 	end
 
 	A.images.rectangle = newImageUsingPalette({
