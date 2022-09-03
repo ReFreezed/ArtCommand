@@ -9,6 +9,8 @@
 *
 ***************************************************************/
 
+uniform bool textBlendFix;
+
 uniform bool makeMaskMode;
 
 uniform bool useColorTexture;
@@ -25,6 +27,7 @@ vec2 rotateCcw(vec2 v, vec2 angle) {
 
 vec4 effect(vec4 loveColor, Image tex, vec2 texPos, vec2 screenPosPx) {
 	vec4 color = Texel(tex, texPos);
+	if (textBlendFix)  color.rgb = vec3(color.a);
 
 	if (useColorTexture) {
 		vec2 colorTexPos = texPos;

@@ -31,6 +31,7 @@ end
 
 
 
+-- Note: The image has premultiplied alpha.
 function _G.newImageUsingPalette(pixelRows, palette)
 	local imageData = love.image.newImageData(#pixelRows[1], #pixelRows)
 
@@ -39,7 +40,7 @@ function _G.newImageUsingPalette(pixelRows, palette)
 			local k       = pixelRow:sub(col, col)
 			local pixel   = palette[k] or error("No color for '"..k.."'.")
 			local r,g,b,a = unpack(pixel)
-			imageData:setPixel(col-1,row-1, r,g,b,a) -- @Speed
+			imageData:setPixel(col-1,row-1, r*a,g*a,b*a,a) -- @Speed
 		end
 	end
 

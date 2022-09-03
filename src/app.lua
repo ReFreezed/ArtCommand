@@ -9,7 +9,7 @@
 --=
 --==============================================================
 
-	fixImageDataForSaving
+	fixImageDataForSaving, normalizeImageAndMultiplyAlpha
 
 --============================================================]]
 
@@ -260,6 +260,21 @@ function _G.fixImageDataForSaving(imageData16)
 
 	imageData16:release()
 	return imageData8
+end
+
+-- imageData16 = normalizeImageAndMultiplyAlpha( imageData )
+-- Note: imageData is released.
+function _G.normalizeImageAndMultiplyAlpha(imageData)
+	local iw,ih       = imageData:getDimensions()
+	local imageData16 = love.image.newImageData(iw,ih, "rgba16")
+
+	imageData16:mapPixel(function(x,y, r,g,b,a) -- @Speed
+		r,g,b,a = imageData:getPixel(x,y)
+		return r*a, g*a, b*a, a
+	end)
+
+	imageData:release()
+	return imageData16
 end
 
 function love.keypressed(key)

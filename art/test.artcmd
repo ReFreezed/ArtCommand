@@ -223,8 +223,9 @@ color rgb1 .13
 image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5 -filter
 
 set Circles "circles.artcmd"
-color rgb1  1; imageCircles 200 230
-color rgb1 .5; imageCircles 250 230
+color rgb1  1                 ; imageCircles (185+0*50) 230
+color rgb1 .5                 ; imageCircles (185+1*50) 230
+grad a.5,a1,a0,a1,a.5 rot90deg; imageCircles (185+2*50) 230
 
 # Layers.
 setlayer "foo" 40 40

@@ -53,7 +53,7 @@ local COMMANDS = {
 
 	["color"    ] = { {"r",1},{"g",1},{"b",1},{"a",1}, rgb={"r","g","b"} },
 	["grey"     ] = { {"grey",1},{"a",1} }, -- Short for `color rgbN`.
-	["grad"     ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"angle",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
+	["grad"     ] = { {"r",1},{"g",1},{"b",1},{"a",1}, {"rot",0}, {"scale",1}, {"radial",false},{"fit",true}, rgb={"r","g","b"} },
 	["font"     ] = { {"path",""--[[=builtinFont]]}, {"size",12} },
 	["imagefont"] = { {"path",""}, {"chars",""}, {"spacing",0} },
 
@@ -106,8 +106,8 @@ local function Context()return{
 	canvasToMask = nil,
 	maskCanvas   = nil,
 
-	images      = {--[[ [path1]=image, ... ]]},
-	layers      = {--[[ [name1]=image|canvas, ... ]]},
+	images      = {--[[ [path1]=image|canvas, ... ]]},
+	layers      = {--[[ [name1]=image, ... ]]},
 	fontsByPath = {--[[ [path1]=font, ... ]]}, -- Image fonts.
 	fontsBySize = {--[[ [path1]={[size1]=font,...}, ... ]]}, -- Vector fonts.
 
@@ -251,10 +251,13 @@ local function applyColor(context, shape, w,h)
 	w = math.abs(w)
 	h = math.abs(h)
 
+	LG.setBlendMode("alpha", "premultiplied")
+
 	local gfxState = context.gfxState
 
 	if gfxState.colorMode == "flatcolor" then
-		LG.setColor(gfxState.flatColor)
+		local r,g,b,a = unpack(gfxState.flatColor)
+		LG.setColor(r*a, g*a, b*a, a)
 		shaderSend(shaderMain, "useColorTexture", false)
 		return
 	end
@@ -330,9 +333,11 @@ local function ensureCanvasAndInitted(context)
 	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
 	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, settingsMask)
 
-	context.maskCanvas:setFilter("nearest") -- This fixes weird fuzziness when applying mask.
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
+	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness.
+	context.maskCanvas:setFilter("nearest") -- Fixes mask fuzziness.
 
+	shaderSend(shaderMain, "textBlendFix"   , false)
 	shaderSend(shaderMain, "makeMaskMode"   , false)
 	shaderSend(shaderMain, "useColorTexture", false)
 
@@ -745,6 +750,18 @@ local function popGfxState(context, stackType)
 		LG.pop()
 		--]]
 
+		--[[ DEBUG
+		local imageData       = context.maskCanvas:newImageData()
+		local imageDataToSave = love.image.newImageData(imageData:getDimensions())
+		imageDataToSave:mapPixel(function(x,y, r,g,b,a)
+			local v = imageData:getPixel(x,y)
+			return v,v,v,1
+		end)
+		imageData:release()
+		imageDataToSave:encode("png", "mask.png"):release()
+		imageDataToSave:release()
+		--]]
+
 	else
 		error(stackType)
 	end
@@ -1083,7 +1100,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		gfxState.colorTextureRadial = args.radial
 		gfxState.colorTextureFit    = args.fit
 		gfxState.colorTextureScaleX = args.scale -- colorTextureScaleY isn't used.  @Incomplete: For radial gradients it makes sense to scale y!
-		gfxState.colorTextureAngle  = args.angle
+		gfxState.colorTextureAngle  = args.rot
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
@@ -1269,14 +1286,29 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "fill" then
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context)
-		LG.setColor(args.r, args.g, args.b, args.a)
+		local gfxState = context.gfxState
+		local cw,ch    = gfxState.canvas:getDimensions()
 
+		-- Save minimal state.
+		local colorMode = gfxState.colorMode
+		local color     = {unpack(gfxState.flatColor)}
+
+		gfxState.colorMode = "flatcolor"
+		updateVec4(gfxState.flatColor, args.r,args.g,args.b,args.a)
+
+		-- Fill!
 		-- Note: We don't use clear() because of shaders and stuff. This is a drawing operation!
+		applyCanvas(context)
+		applyColor(context, "rectangle", cw,ch)
+
 		LG.push()
 		LG.origin()
-		LG.rectangle("fill", -1,-1, context.gfxState.canvas:getWidth()+2,context.gfxState.canvas:getHeight()+2) -- Not sure if the bleeding is necessary (if msaa>1).
+		LG.rectangle("fill", -1,-1, cw+2,ch+2) -- Not sure if the bleeding is necessary (if msaa>1).
 		LG.pop()
+
+		-- Restore state.
+		gfxState.colorMode = colorMode
+		updateVec4(gfxState.flatColor, unpack(color))
 
 	----------------------------------------------------------------
 	elseif command == "rect" then
@@ -1458,7 +1490,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.scale(args.sx, args.sy)
 		LG.shear(args.kx, args.ky)
 		LG.translate(math.round(-args.ax*w), math.round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
+		shaderSend(shaderMain, "textBlendFix", true)
 		LG.printf(args.text, 0,0, w, args.align)
+		shaderSend(shaderMain, "textBlendFix", false)
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1473,7 +1507,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
 
 			if args.path:find"%.artcmd$" then
-				pushGfxState(context, "user")
+				pushGfxState(context, "user") -- @Cleanup
 
 				local art = loadArtFile(path, context.isLocal)
 				if not art then  return (tokenError(context, startTok, "Could not load .artcmd image."))  end
@@ -1481,18 +1515,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 				assert(popGfxState(context, "user") == "success")
 
-				local imageData = fixImageDataForSaving(imageOrCanvas:newImageData()) ; imageOrCanvas:release() -- @Speed: Is there a way to use imageOrCanvas directly? (See :PremultipliedArtCanvas)
-				-- imageData:encode("png", "image.png"):release() -- DEBUG
-				imageOrCanvas = LG.newImage(imageData) ; imageData:release()
-
 			else
 				local s, err = readFile(false, path)
 				if not s then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
 
-				local fileData       = LF.newFileData(s, path)
-				local ok, imageOrErr = pcall(LG.newImage, fileData) ; fileData:release()
-				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageOrErr))  end
-				imageOrCanvas = imageOrErr
+				local fileData           = LF.newFileData(s, path)
+				local ok, imageDataOrErr = pcall(love.image.newImageData, fileData) ; fileData:release()
+				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageDataOrErr))  end
+				local imageData = normalizeImageAndMultiplyAlpha(imageDataOrErr)
+				imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
 			end
 
 			-- imageOrCanvas:setFilter("nearest") -- Fixes weird fuzziness, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
@@ -1505,48 +1536,33 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyCanvas(context)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
-		-- if imageOrCanvas:typeOf("Canvas") then
-		-- 	LG.push("all")
-		-- 	LG.setBlendMode("alpha", "premultiplied") -- This doesn't work well with loveColor.a<1! Can the shader do something to fix it? :PremultipliedArtCanvas
-		-- 	LG.draw(imageOrCanvas)
-		-- 	LG.pop()
-		-- else
-			LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
-		-- end
+		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
 	----------------------------------------------------------------
 	elseif command == "layer" then
 		local layerName = args.name
 		if layerName == "" then  return (tokenError(context, startTok, "Missing name."))  end
 
-		local imageOrCanvas = context.layers[layerName]
-		if not imageOrCanvas then
+		local canvas = context.layers[layerName]
+		if not canvas then
 			return (tokenError(context, startTok, "No layer '%s'", layerName))
 		end
 
-		if imageOrCanvas:typeOf("Canvas") then
-			if imageOrCanvas == context.gfxState.canvas then
-				gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
-				-- return (tokenError(context, startTok, "Cannot draw layer '%s' as its currently active.", layerName))
-			elseif isCanvasReferenced(context, imageOrCanvas) then
-				return (tokenError(context, startTok, "Cannot draw layer '%s' at this point.", layerName))
-			end
-
-			LG.setCanvas(nil) -- Don't accidentally call newImageData() on the current canvas!
-			local imageData = fixImageDataForSaving(imageOrCanvas:newImageData()) ; imageOrCanvas:release() -- @Speed: Is there a way to use imageOrCanvas directly? (See :PremultipliedArtCanvas)
-			-- imageData:encode("png", "layer.png"):release() -- DEBUG
-			imageOrCanvas = LG.newImage(imageData) ; imageData:release()
-
-			context.layers[layerName] = imageOrCanvas
+		if canvas == context.gfxState.canvas then
+			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
+			-- LG.setCanvas(nil) ; canvas:newImageData():encode("png", "layer.png") -- DEBUG
+			-- return (tokenError(context, startTok, "Cannot draw layer '%s' as its currently active.", layerName))
+		elseif isCanvasReferenced(context, canvas) then
+			return (tokenError(context, startTok, "Cannot draw layer '%s' at this point.", layerName))
 		end
 
-		local iw,ih = imageOrCanvas:getDimensions()
+		local iw,ih = canvas:getDimensions()
 
-		imageOrCanvas:setFilter(args.filter and "linear" or "nearest")
+		canvas:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
-		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+		LG.draw(canvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
 	----------------------------------------------------------------
 	elseif command == "end" then
@@ -1601,8 +1617,8 @@ local function cleanup(context, loveGfxStackDepth, success)
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 
-	for _, image         in pairs(context.images     ) do  image        :release()  end
-	for _, imageOrCanvas in pairs(context.layers     ) do  imageOrCanvas:release()  end
+	for _, imageOrCanvas in pairs(context.images     ) do  imageOrCanvas:release()  end
+	for _, canvas        in pairs(context.layers     ) do  canvas       :release()  end
 	for _, font          in pairs(context.fontsByPath) do  font         :release()  end
 
 	for _, fonts in pairs(context.fontsBySize) do
