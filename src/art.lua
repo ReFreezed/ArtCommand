@@ -84,6 +84,12 @@ local COMMANDS = {
 	-- Effects.
 	["boxblur"] = { {"x",0},{"y",0}, xy={"x","y"} },
 	["blur"]    = { {"x",0},{"y",0}, xy={"x","y"} },
+
+	["contrast"  ] = { {"contrast",1} },
+	["brightness"] = { {"brightness",1} },
+	["gamma"     ] = { {"gamma",1} },
+
+	["noise"] = { {"x",0},{"y",0},{"z",0/0}, {"sx",1},{"sy",1}, scale={"sx","sy"} },
 }
 
 
@@ -337,10 +343,8 @@ local function ensureCanvasAndInitted(context)
 	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r16", msaa=settingsCanvas.msaa})
 
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
-	context.workCanvas1:setFilter("nearest")
-	context.workCanvas2:setFilter("nearest")
 	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness.
-	context.maskCanvas:setFilter("nearest") -- Fixes mask fuzziness.
+	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness.
 
 	shaderSend(A.shaders.main, "textBlendFix"   , false)
 	shaderSend(A.shaders.main, "makeMaskMode"   , false)
@@ -802,6 +806,26 @@ local function initWorkCanvas(canvas, workCanvas)
 	LG.setCanvas(workCanvas)
 	LG.draw(canvas)
 	canvas:setFilter(filter)
+end
+
+-- applyEffect( context, callback )
+-- outputCanvas = callback( context, readCanvas, writeCanvas )
+local function applyEffect(context, cb)
+	ensureCanvasAndInitted(context)
+
+	LG.push()
+	LG.reset()
+	LG.setBlendMode("replace", "premultiplied")
+	initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
+
+	local canvasOut = cb(context, context.workCanvas1, context.workCanvas2)
+
+	LG.setShader(nil)
+	LG.setCanvas(context.gfxState.canvas)
+	canvasOut:setFilter("nearest")
+	LG.draw(canvasOut)
+	canvasOut:setFilter("linear")
+	LG.pop()
 end
 
 local runBlock
@@ -1595,68 +1619,57 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "boxblur" then
-		ensureCanvasAndInitted(context)
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			LG.setShader(A.shaders.fxBlurBox)
 
-		LG.push()
-		LG.reset()
-		LG.setBlendMode("replace", "premultiplied")
-		initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
-		LG.setShader(A.shaders.fxBlurBox)
+			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.x, 0, 1000))
+			shaderSendVec2(A.shaders.fxBlurBox, "direction", .5, 0)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
 
-		shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.x, 0, 1000))
-		shaderSendVec2(A.shaders.fxBlurBox, "direction", .5, 0)
-		LG.setCanvas(context.workCanvas2)
-		LG.draw(context.workCanvas1)
+			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.y, 0, 1000))
+			shaderSendVec2(A.shaders.fxBlurBox, "direction", 0, .5)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
 
-		shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.y, 0, 1000))
-		shaderSendVec2(A.shaders.fxBlurBox, "direction", 0, .5)
-		LG.setCanvas(context.workCanvas1)
-		LG.draw(context.workCanvas2)
+			return canvasRead
+		end)
 
-		LG.setShader(nil)
-		LG.setCanvas(context.gfxState.canvas)
-		LG.draw(context.workCanvas1)
-		LG.pop()
+	elseif command == "blur" then
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			local BLUR_SIZE  = 13 -- 5|9|13 (See fxBlurGaussian.gl)
+			local BLUR_REACH = ((BLUR_SIZE==5 and 2.5) or (BLUR_SIZE==13 and 3.5) or 3) / BLUR_SIZE -- Magic inaccurate numbers... @Cleanup
+
+			-- @Incomplete: These loops are probably not exactly correct. I think we wanna
+			-- double the radius each iteration (and iterate fewer times).
+			LG.setShader(A.shaders.fxBlurGaussian)
+			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
+			for _ = 1, math.clamp(args.x, 0, 1000) do
+				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+				canvasRead, canvasWrite = canvasWrite, canvasRead
+			end
+			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,BLUR_REACH)
+			for _ = 1, math.clamp(args.y, 0, 1000) do
+				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+				canvasRead, canvasWrite = canvasWrite, canvasRead
+			end
+
+			return canvasRead
+		end)
 
 	----------------------------------------------------------------
-	elseif command == "blur" then
-		ensureCanvasAndInitted(context)
+	elseif command == "contrast" then -- {"contrast",1}
+		error("@Incomplete: contrast")
 
-		local BLUR_SIZE  = 13 -- 5|9|13 (See fxBlurGaussian.gl)
-		local BLUR_REACH = ((BLUR_SIZE==5 and 2.5) or (BLUR_SIZE==13 and 3.5) or 3) / BLUR_SIZE -- Magic inaccurate numbers... @Cleanup
+	elseif command == "brightness" then -- {"brightness",1}
+		error("@Incomplete: brightness")
 
-		LG.push()
-		LG.reset()
-		LG.setBlendMode("replace", "premultiplied")
-		initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
+	elseif command == "gamma" then -- {"gamma",1}
+		error("@Incomplete: gamma")
 
-		local canvasRead  = context.workCanvas1
-		local canvasWrite = context.workCanvas2
-		context.workCanvas1:setFilter("linear")
-		context.workCanvas2:setFilter("linear")
-
-		-- @Incomplete: These loops are probably not exactly correct. I think we wanna
-		-- double the radius each iteration (and iterate fewer times).
-		LG.setShader(A.shaders.fxBlurGaussian)
-		shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
-		for _ = 1, math.clamp(args.x, 0, 1000) do
-			LG.setCanvas(canvasWrite)
-			LG.draw(canvasRead)
-			canvasRead, canvasWrite = canvasWrite, canvasRead
-		end
-		shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,BLUR_REACH)
-		for _ = 1, math.clamp(args.y, 0, 1000) do
-			LG.setCanvas(canvasWrite)
-			LG.draw(canvasRead)
-			canvasRead, canvasWrite = canvasWrite, canvasRead
-		end
-
-		context.workCanvas1:setFilter("nearest")
-		context.workCanvas2:setFilter("nearest")
-		LG.setShader(nil)
-		LG.setCanvas(context.gfxState.canvas)
-		LG.draw(canvasRead)
-		LG.pop()
+	----------------------------------------------------------------
+	elseif command == "noise" then -- {"x",0},{"y",0},{"z",0/0}, {"sx",1},{"sy",1}, scale={"sx","sy"}
+		error("@Incomplete: noise")
 
 	----------------------------------------------------------------
 	elseif command == "end" then
