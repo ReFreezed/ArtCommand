@@ -99,19 +99,91 @@ function love.load(args, rawArgs)
 	require"draw"
 	require"filesystem"
 
-	for _, filename in ipairs(LF.getDirectoryItems"src/shaders") do
-		local name = filename:match"^(.+)%.gl$"
+	local function includeShader(paths, lines, lineFiles, lineLines, path)
+		if paths[path] then  return  end
+		paths[path] = true
+		table.insert(paths, path)
 
-		if name then
-			local path      = "src/shaders/" .. filename
-			A.shaders[name] = LG.newShader(path)
+		local ln = 0
 
-			if DEV then
-				require"hotLoader".monitor(path, function(path)
-					A.shaders[name] = LG.newShader(path)
-					tryLoadingTheArtFile()
-				end)
+		for line in LF.lines(path) do
+			ln                = ln + 1
+			local includePath = line:match'^%s*#include%s+"(.-)"'
+
+			if includePath then
+				includeShader(paths, lines, lineFiles, lineLines, "src/shaders/"..includePath)
+			else
+				table.insert(lines, line)
+				lineFiles[#lines] = path
+				lineLines[#lines] = ln
 			end
+		end
+	end
+
+	local function newShader(path)
+		local paths     = {}
+		local lines     = {}
+		local lineFiles = {}
+		local lineLines = {}
+
+		includeShader(paths, lines, lineFiles, lineLines, path)
+
+		local ok, loveShaderOrErr = pcall(LG.newShader, table.concat(lines, "\n"))
+		if ok then  return {shader=loveShaderOrErr, path=path, paths=paths}  end
+		local err = loveShaderOrErr
+
+		err = err:gsub("\nLine (%d+): ([^\n]*)", function(lnStr, s)
+			local ln = tonumber(lnStr)
+			s = (s
+				:gsub("^%u+: ", "")
+				:gsub("^'' : ", "")
+				:gsub(" : ", ": ")
+			)
+			if lineFiles[ln] then  return "\n\t"..lineFiles[ln]..":"..lineLines[ln]..": "..s
+			else                   return '\n\t[meta "'..path..'"]:'..lnStr..": "..s  end
+		end)
+
+		err = err:gsub("\nERROR: %d+ compilation errors.  No code generated.$", "")
+
+		error(path..": "..err, 0)
+	end
+
+	local onShaderPathModified
+
+	local function loadShader(name, path)
+		local shader    = newShader(path)
+		A.shaders[name] = shader
+
+		if DEV then
+			for _, path in ipairs(shader.paths) do
+				require"hotLoader".monitor(path, onShaderPathModified)
+			end
+		end
+	end
+
+	--[[local]] function onShaderPathModified(path)
+		local loadedAny = false
+
+		for name, shader in pairs(A.shaders) do
+			if indexOf(shader.paths, path) then
+				local ok, err = pcall(loadShader, name, shader.path)
+				if ok then
+					loadedAny = true
+				else
+					print(err)
+				end
+			end
+		end
+
+		if loadedAny then
+			tryLoadingTheArtFile()
+		end
+	end
+
+	for _, filename in ipairs(LF.getDirectoryItems"src/shaders") do
+		local name = filename:match"^(%a.*)%.gl$"
+		if name then
+			loadShader(name, "src/shaders/"..filename)
 		end
 	end
 

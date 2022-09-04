@@ -88,8 +88,11 @@ local COMMANDS = {
 	["contrast"  ] = { {"contrast",1} },
 	["brightness"] = { {"brightness",1} },
 	["gamma"     ] = { {"gamma",1} },
+	["tint"      ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
+	["overlay"   ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
 
-	["noise"] = { {"x",0},{"y",0},{"z",0/0}, {"sx",1},{"sy",1}, scale={"sx","sy"} },
+	-- Generators.
+	["noise"] = { {"x",0},{"y",0},{"z",0}, {"sx",1},{"sy",1}, scale={"sx","sy"} },
 }
 
 
@@ -251,10 +254,10 @@ end
 
 
 local function applyCanvas(context)
-	shaderSend(A.shaders.main, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
+	shaderSend(A.shaders.main.shader, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
 
 	LG.setCanvas(context.gfxState.canvas)
-	LG.setShader(A.shaders.main)
+	LG.setShader(A.shaders.main.shader)
 end
 
 -- applyColor( context, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
@@ -270,7 +273,7 @@ local function applyColor(context, shape, w,h)
 	if gfxState.colorMode == "flatcolor" then
 		local r,g,b,a = unpack(gfxState.flatColor)
 		LG.setColor(r*a, g*a, b*a, a)
-		shaderSend(A.shaders.main, "useColorTexture", false)
+		shaderSend(A.shaders.main.shader, "useColorTexture", false)
 		return
 	end
 
@@ -321,10 +324,10 @@ local function applyColor(context, shape, w,h)
 		error(gfxState.colorMode)
 	end
 
-	shaderSend    (A.shaders.main, "useColorTexture"   , true)
-	shaderSend    (A.shaders.main, "colorTextureRadial", gfxState.colorTextureRadial)
-	shaderSend    (A.shaders.main, "colorTexture"      , gfxState.colorTexture)
-	shaderSendVec4(A.shaders.main, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
+	shaderSend    (A.shaders.main.shader, "useColorTexture"   , true)
+	shaderSend    (A.shaders.main.shader, "colorTextureRadial", gfxState.colorTextureRadial)
+	shaderSend    (A.shaders.main.shader, "colorTexture"      , gfxState.colorTexture)
+	shaderSendVec4(A.shaders.main.shader, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
 end
 
 
@@ -346,14 +349,14 @@ local function ensureCanvasAndInitted(context)
 	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness.
 	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness.
 
-	shaderSend(A.shaders.main, "textBlendFix"   , false)
-	shaderSend(A.shaders.main, "makeMaskMode"   , false)
-	shaderSend(A.shaders.main, "useColorTexture", false)
+	shaderSend(A.shaders.main.shader, "textBlendFix"   , false)
+	shaderSend(A.shaders.main.shader, "makeMaskMode"   , false)
+	shaderSend(A.shaders.main.shader, "useColorTexture", false)
 
 	gfxStateSetCanvas(context, context.art.canvas, nil)
 
 	applyCanvas(context)
-	LG.setShader(A.shaders.main)
+	LG.setShader(A.shaders.main.shader)
 end
 
 
@@ -735,14 +738,14 @@ local function popGfxState(context, stackType)
 		gfxStateSetCanvas(context, gfxState.canvas, gfxState.fallbackCanvas)
 
 	elseif stackType == "applymask" then
-		shaderSend(A.shaders.applyMask, "mask", context.maskCanvas)
+		shaderSend(A.shaders.applyMask.shader, "mask", context.maskCanvas)
 
 		LG.setCanvas(nil) -- Before push/pop. Not sure it affects canvas switching. Probably doesn't matter.
 		LG.push("all")
 		LG.reset()
 		LG.setCanvas(gfxState.canvas)
 		LG.setBlendMode("alpha", "premultiplied")
-		LG.setShader(A.shaders.applyMask)
+		LG.setShader(A.shaders.applyMask.shader)
 		LG.draw(context.canvasToMask)
 		LG.pop()
 
@@ -1538,9 +1541,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.scale(args.sx, args.sy)
 		LG.shear(args.kx, args.ky)
 		LG.translate(math.round(-args.ax*w), math.round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
-		shaderSend(A.shaders.main, "textBlendFix", true)
+		shaderSend(A.shaders.main.shader, "textBlendFix", true)
 		LG.printf(args.text, 0,0, w, args.align)
-		shaderSend(A.shaders.main, "textBlendFix", false)
+		shaderSend(A.shaders.main.shader, "textBlendFix", false)
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1620,15 +1623,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "boxblur" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			LG.setShader(A.shaders.fxBlurBox)
+			LG.setShader(A.shaders.fxBlurBox.shader)
 
-			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.x, 0, 1000))
-			shaderSendVec2(A.shaders.fxBlurBox, "direction", .5, 0)
+			shaderSend    (A.shaders.fxBlurBox.shader, "radius"   , math.clamp(args.x, 0, 1000))
+			shaderSendVec2(A.shaders.fxBlurBox.shader, "direction", .5, 0)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 
-			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.y, 0, 1000))
-			shaderSendVec2(A.shaders.fxBlurBox, "direction", 0, .5)
+			shaderSend    (A.shaders.fxBlurBox.shader, "radius"   , math.clamp(args.y, 0, 1000))
+			shaderSendVec2(A.shaders.fxBlurBox.shader, "direction", 0, .5)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 
@@ -1642,13 +1645,13 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- @Incomplete: These loops are probably not exactly correct. I think we wanna
 			-- double the radius each iteration (and iterate fewer times).
-			LG.setShader(A.shaders.fxBlurGaussian)
-			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
+			LG.setShader(A.shaders.fxBlurGaussian.shader)
+			shaderSendVec2(A.shaders.fxBlurGaussian.shader, "direction", BLUR_REACH,0)
 			for _ = 1, math.clamp(args.x, 0, 1000) do
 				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 				canvasRead, canvasWrite = canvasWrite, canvasRead
 			end
-			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,BLUR_REACH)
+			shaderSendVec2(A.shaders.fxBlurGaussian.shader, "direction", 0,BLUR_REACH)
 			for _ = 1, math.clamp(args.y, 0, 1000) do
 				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 				canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -1658,18 +1661,55 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end)
 
 	----------------------------------------------------------------
-	elseif command == "contrast" then -- {"contrast",1}
-		error("@Incomplete: contrast")
+	elseif command == "contrast" then
+		error("@Incomplete: contrast") -- {"contrast",1}
 
-	elseif command == "brightness" then -- {"brightness",1}
-		error("@Incomplete: brightness")
+	elseif command == "brightness" then
+		error("@Incomplete: brightness") -- {"brightness",1}
 
-	elseif command == "gamma" then -- {"gamma",1}
-		error("@Incomplete: gamma")
+	elseif command == "gamma" then
+		error("@Incomplete: gamma") -- {"gamma",1}
 
+	elseif command == "tint" then -- Fade hue and saturation toward.
+		error("@Incomplete: tint") -- {"r",0},{"g",0},{"b",0},{"a",1}
+
+	elseif command == "overlay" then -- Fade colors toward.
+		error("@Incomplete: overlay") -- {"r",0},{"g",0},{"b",0},{"a",1}
+
+	--
+	-- Generators.
+	--
 	----------------------------------------------------------------
-	elseif command == "noise" then -- {"x",0},{"y",0},{"z",0/0}, {"sx",1},{"sy",1}, scale={"sx","sy"}
-		error("@Incomplete: noise")
+	elseif command == "noise" then
+		ensureCanvasAndInitted(context)
+
+		local gfxState = context.gfxState
+		local canvas   = gfxState.canvas
+		local cw,ch    = canvas:getDimensions()
+		local iw,ih    = A.images.rectangle:getDimensions()
+
+		shaderSendVec3(A.shaders.generateNoise.shader, "offset", args.x,args.y,args.z)
+		shaderSendVec2(A.shaders.generateNoise.shader, "scale" , args.sx,args.sy)
+
+		if gfxState.colorMode == "gradient" then
+			applyColor(context, "rectangle", 1,1) -- Generates colorTexture.
+			shaderSend(A.shaders.generateNoise.shader, "useColorTexture" , true)
+			shaderSend(A.shaders.generateNoise.shader, "colorTexture"    , gfxState.colorTexture)
+			shaderSend(A.shaders.generateNoise.shader, "colorTextureSize", gfxState.colorTexture:getWidth())
+		else
+			local r,g,b,a = unpack(gfxState.flatColor)
+			shaderSend    (A.shaders.generateNoise.shader, "useColorTexture", false)
+			shaderSendVec4(A.shaders.generateNoise.shader, "color0"         , 0,0,0,a)
+			shaderSendVec4(A.shaders.generateNoise.shader, "color1"         , r*a, g*a, b*a, a)
+		end
+
+		LG.push()
+		LG.reset()
+		LG.setCanvas(canvas)
+		LG.setBlendMode("alpha", "premultiplied")
+		LG.setShader(A.shaders.generateNoise.shader)
+		LG.draw(A.images.rectangle, 0,0, 0, cw/iw,ch/ih)
+		LG.pop()
 
 	----------------------------------------------------------------
 	elseif command == "end" then

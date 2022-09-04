@@ -1,0 +1,36 @@
+/***************************************************************
+*
+*  Generator: Simplex noise
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+#include "_noise3D.gl"
+
+uniform vec3 offset;
+uniform vec2 scale;
+
+uniform bool useColorTexture;
+uniform vec4 color0;
+uniform vec4 color1;
+uniform Image colorTexture;
+uniform int colorTextureSize;
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+	vec2 pos = (screenPos + offset.xy) * scale;
+
+	// float v = .5 + .5*snoise(pos); // 2D
+	float v = .5 + .5*snoise(vec3(pos, offset.z)); // 3D
+	// float v = .5 + .5*snoise(vec4(pos, offset.z, .5315)); // 4D
+
+	if (useColorTexture) {
+		float inset = .5 / colorTextureSize;
+		return Texel(colorTexture, vec2(inset+v*(1-2*inset), 0));
+	} else {
+		return mix(color0, color1, v);
+	}
+}
