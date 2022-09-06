@@ -299,6 +299,25 @@ setlayer"fx"
 	blur xy30
 layer"fx"
 
+# Effects: color modifications.
+# contrast .3
+# brightness .5
+# saturation .3
+# gamma 2.2
+# overlay 1 0 1 .6
+
+# tint 0 0 1 1    # Fully saturated blue.
+# tint 0 1 1 .5   # Half towards fully saturated cyan.
+# tint 1 0 .5 .5  # Half towards fully saturated red-purple.
+# tint 0 0 0 1    # No saturation.
+# tint 1 1 1 1    # No saturation.
+
+# tint 0 0 .5 1   # 50% saturated blue. (Between black[000] and blue[001].)
+# tint .5 .5 1 1  # 50% saturated blue. (Between blue[001] and white[111].)
+
+# tint 0 .5 0 1   # 50% saturated green. (Between black[000] and green[010].)
+# tint .5 1 .5 1  # 50% saturated green. (Between green[010] and white[111].)
+
 # Generator: noise.
 makemask; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2
 makemask; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale.15

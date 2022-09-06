@@ -1,0 +1,211 @@
+/***************************************************************
+*
+*  Color spaces
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+****************************************************************
+
+	toHsl, fromHsl
+	toHsp, fromHsp
+	toHsv, fromHsv
+
+***************************************************************/
+
+
+
+vec3 toHsl(vec3 rgb) {
+	float channelMax = max(max(rgb.r, rgb.g), rgb.b);
+	float channelMin = min(min(rgb.r, rgb.g), rgb.b);
+
+	vec3 hsl = vec3(0, 0, (channelMax+channelMin)/2);
+
+	// If non-achromatic.
+	if (channelMax > channelMin) {
+		float channelRange = channelMax - channelMin;
+
+		if (hsl.z > .5)  hsl.y = channelRange / (2 - channelMax - channelMin);
+		else             hsl.y = channelRange / (    channelMax + channelMin);
+
+		if      (channelMax == rgb.r) {  hsl.x = (rgb.g - rgb.b) / channelRange; if (rgb.g < rgb.b)  hsl.x += 6;  }
+		else if (channelMax == rgb.g) {  hsl.x = (rgb.b - rgb.r) / channelRange + 2;  }
+		else if (channelMax == rgb.b) {  hsl.x = (rgb.r - rgb.g) / channelRange + 4;  }
+
+		hsl.x /= 6;
+	}
+
+	return hsl;
+}
+
+float _colorSpaces_fromHue(float p, float q, float t) {
+	if (t < 0) {  t += 1;  }
+	if (t > 1) {  t -= 1;  }
+
+	if (t < 1/6.) {  return p + (q-p) *       t  * 6;  }
+	if (t < 1/2.) {  return      q                  ;  }
+	if (t < 2/3.) {  return p + (q-p) * (2/3.-t) * 6;  }
+
+	return p;
+}
+
+vec3 fromHsl(vec3 hsl) {
+	vec3 rgb = vec3(hsl.z);
+
+	// If non-achromatic.
+	if (hsl.y > 0) {
+		float q = 0;
+
+		if (hsl.z < .5)  q = hsl.z * (1 + hsl.y);
+		else             q = hsl.z + hsl.y - hsl.z * hsl.y;
+
+		float p = 2 * hsl.z - q;
+
+		rgb.r = _colorSpaces_fromHue(p, q, hsl.x+1/3.);
+		rgb.g = _colorSpaces_fromHue(p, q, hsl.x     );
+		rgb.b = _colorSpaces_fromHue(p, q, hsl.x-1/3.);
+	}
+
+	return rgb;
+}
+
+
+
+vec3 toHsv(vec3 rgb) {
+	float channelMax = max(max(rgb.r, rgb.g), rgb.b);
+	float channelMin = min(min(rgb.r, rgb.g), rgb.b);
+
+	vec3 hsv = vec3(0, 0, channelMax);
+
+	float channelRange = channelMax - channelMin;
+	if (channelMax > 0)  hsv.y = channelRange / channelMax;
+
+	// If non-achromatic.
+	if (channelMax > channelMin) {
+		if      (channelMax == rgb.r) {  hsv.x = (rgb.g - rgb.b) / channelRange; if (rgb.g < rgb.b)  hsv.x += 6;  }
+		else if (channelMax == rgb.g) {  hsv.x = (rgb.b - rgb.r) / channelRange + 2;  }
+		else if (channelMax == rgb.b) {  hsv.x = (rgb.r - rgb.g) / channelRange + 4;  }
+
+		hsv.x /= 6;
+	}
+
+	return hsv;
+}
+
+vec3 fromHsv(vec3 hsv) {
+	float v = hsv.z;
+
+	int   i = int(hsv.x * 6);
+	float f =     hsv.x * 6 - float(i);
+
+	float p = v * (1 -           hsv.y);
+	float q = v * (1 -      f  * hsv.y);
+	float t = v * (1 - (1 - f) * hsv.y);
+
+	i = int(mod(i, 6));
+
+	vec3 rgb = vec3(0);
+
+	if      (i == 0) {  rgb.r = v; rgb.g = t; rgb.b = p;  }
+	else if (i == 1) {  rgb.r = q; rgb.g = v; rgb.b = p;  }
+	else if (i == 2) {  rgb.r = p; rgb.g = v; rgb.b = t;  }
+	else if (i == 3) {  rgb.r = p; rgb.g = q; rgb.b = v;  }
+	else if (i == 4) {  rgb.r = t; rgb.g = p; rgb.b = v;  }
+	else if (i == 5) {  rgb.r = v; rgb.g = p; rgb.b = q;  }
+
+	return rgb;
+}
+
+
+
+//
+// HSP (hue, saturation, perceived brightness)
+// public domain, Darel Rex Finley, 2006
+// http://alienryderflex.com/hsp.html
+//
+
+#define pr .299
+#define pg .587
+#define pb .114
+
+// This function expects the passed-in values to be on a scale
+// of 0 to 1, and uses that same scale for the return values.
+vec3 toHsp(vec3 rgb) {
+	float r=rgb.r, g=rgb.g, b=rgb.b;
+	float h, s, p;
+
+	// Calculate the Perceived brightness.
+	p = sqrt(r*r*pr + g*g*pg + b*b*pb);
+
+	// Calculate the Hue and Saturation. (This part works
+	// the same way as in the HSV/b and HSL systems?)
+	if (r == g && r == b) {
+		h = 0; s = 0;
+	} else if (r >= g && r >= b) { // R is largest.
+		if (b >= g) {  h = 6/6.-1/6.*(b-g)/(r-g); s = 1-g/r;  }
+		else        {  h = 0/6.+1/6.*(g-b)/(r-b); s = 1-b/r;  }
+	} else if (g >= r && g >= b) { // G is largest.
+		if (r >= b) {  h = 2/6.-1/6.*(r-b)/(g-b); s = 1-b/g;  }
+		else        {  h = 2/6.+1/6.*(b-r)/(g-r); s = 1-r/g;  }
+	} else                       { // B is largest.
+		if (g >= r) {  h = 4/6.-1/6.*(g-r)/(b-r); s = 1-r/b;  }
+		else        {  h = 4/6.+1/6.*(r-g)/(b-g); s = 1-g/b;  }
+	}
+
+	return vec3(h, s, p);
+}
+
+//
+// This function expects the passed-in values to be on a scale
+// of 0 to 1, and uses that same scale for the return values.
+//
+// Note that some combinations of HSP, even if in the scale
+// 0-1, may return RGB values that exceed a value of 1. For
+// example, if you pass in the HSP color 0,1,1, the result
+// will be the RGB color 2.037,0,0.
+//
+vec3 fromHsp(vec3 hsp) {
+	float h=hsp.x, s=hsp.y, p=hsp.z;
+	float r, g, b, part, minOverMax=1-s;
+
+	if (minOverMax > 0) {
+		if        (h < 1/6.) { // R>G>B
+			h = 6*(+h-0/6.); part = 1+h*(1/minOverMax-1);
+			b = p / sqrt(pr/minOverMax/minOverMax + pg*part*part + pb);
+			r = b/minOverMax; g = b+h*(r-b);
+		} else if (h < 2/6.) { // G>R>B
+			h = 6*(-h+2/6.); part = 1+h*(1/minOverMax-1);
+			b = p / sqrt(pg/minOverMax/minOverMax + pr*part*part + pb);
+			g = b/minOverMax; r = b+h*(g-b);
+		} else if (h < 3/6.) { // G>B>R
+			h = 6*(+h-2/6.); part = 1+h*(1/minOverMax-1);
+			r = p / sqrt(pg/minOverMax/minOverMax + pb*part*part + pr);
+			g = r/minOverMax; b = r+h*(g-r);
+		} else if (h < 4/6.) { // B>G>R
+			h = 6*(-h+4/6.); part = 1+h*(1/minOverMax-1);
+			r = p / sqrt(pb/minOverMax/minOverMax + pg*part*part + pr);
+			b = r/minOverMax; g = r+h*(b-r);
+		} else if (h < 5/6.) { // B>R>G
+			h = 6*(+h-4/6.); part = 1+h*(1/minOverMax-1);
+			g = p / sqrt(pb/minOverMax/minOverMax + pr*part*part + pg);
+			b = g/minOverMax; r = g+h*(b-g);
+		} else               { // R>B>G
+			h = 6*(-h+6/6.); part = 1+h*(1/minOverMax-1);
+			g = p / sqrt(pr/minOverMax/minOverMax + pb*part*part + pg);
+			r = g/minOverMax; b = g+h*(r-g);
+		}
+	} else {
+		if      (h < 1/6.) {  h = 6*(+h-0/6.); r = sqrt(p*p / (pr+pg*h*h)); g = r*h; b = 0;  } // R>G>B
+		else if (h < 2/6.) {  h = 6*(-h+2/6.); g = sqrt(p*p / (pg+pr*h*h)); r = g*h; b = 0;  } // G>R>B
+		else if (h < 3/6.) {  h = 6*(+h-2/6.); g = sqrt(p*p / (pg+pb*h*h)); b = g*h; r = 0;  } // G>B>R
+		else if (h < 4/6.) {  h = 6*(-h+4/6.); b = sqrt(p*p / (pb+pg*h*h)); g = b*h; r = 0;  } // B>G>R
+		else if (h < 5/6.) {  h = 6*(+h-4/6.); b = sqrt(p*p / (pb+pr*h*h)); r = b*h; g = 0;  } // B>R>G
+		else               {  h = 6*(-h+6/6.); r = sqrt(p*p / (pr+pb*h*h)); b = r*h; g = 0;  } // R>B>G
+	}
+
+	return vec3(r, g, b);
+}
+
+

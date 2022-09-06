@@ -85,11 +85,13 @@ local COMMANDS = {
 	["boxblur"] = { {"x",0},{"y",0}, xy={"x","y"} },
 	["blur"]    = { {"x",0},{"y",0}, xy={"x","y"} },
 
-	["contrast"  ] = { {"contrast",1} },
-	["brightness"] = { {"brightness",1} },
-	["gamma"     ] = { {"gamma",1} },
-	["tint"      ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
-	["overlay"   ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
+	["contrast"  ] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
+	["brightness"] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
+	["saturation"] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
+	["gamma"     ] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
+
+	["tint"   ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
+	["overlay"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
 
 	-- Generators.
 	["noise"] = { {"x",0},{"y",0},{"z",0}, {"sx",1},{"sy",1}, scale={"sx","sy"} },
@@ -807,6 +809,7 @@ local function initWorkCanvas(canvas, workCanvas)
 	local filter = canvas:getFilter()
 	canvas:setFilter("nearest")
 	LG.setCanvas(workCanvas)
+	LG.clear(0, 0, 0, 0)
 	LG.draw(canvas)
 	canvas:setFilter(filter)
 end
@@ -819,12 +822,13 @@ local function applyEffect(context, cb)
 	LG.push()
 	LG.reset()
 	LG.setBlendMode("replace", "premultiplied")
-	initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
+	initWorkCanvas(context.gfxState.canvas, context.workCanvas1) -- @Incomplete: Handle canvas not being the same size as workCanvas.
 
 	local canvasOut = cb(context, context.workCanvas1, context.workCanvas2)
 
-	LG.setShader(nil)
 	LG.setCanvas(context.gfxState.canvas)
+	LG.setShader(nil)
+	LG.setColor(1, 1, 1)
 	canvasOut:setFilter("nearest")
 	LG.draw(canvasOut)
 	canvasOut:setFilter("linear")
@@ -1662,19 +1666,58 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "contrast" then
-		error("@Incomplete: contrast") -- {"contrast",1}
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxContrast.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			LG.setShader(A.shaders.fxContrast.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
 
 	elseif command == "brightness" then
-		error("@Incomplete: brightness") -- {"brightness",1}
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxBrightness.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			LG.setShader(A.shaders.fxBrightness.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
+
+	elseif command == "saturation" then
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxSaturation.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			LG.setShader(A.shaders.fxSaturation.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
 
 	elseif command == "gamma" then
-		error("@Incomplete: gamma") -- {"gamma",1}
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxGamma.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			LG.setShader(A.shaders.fxGamma.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
 
-	elseif command == "tint" then -- Fade hue and saturation toward.
-		error("@Incomplete: tint") -- {"r",0},{"g",0},{"b",0},{"a",1}
+	elseif command == "overlay" then -- Fade pixels toward color.
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxOverlay.shader, "params", args.r,args.g,args.b,args.a)
+			LG.setShader(A.shaders.fxOverlay.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
 
-	elseif command == "overlay" then -- Fade colors toward.
-		error("@Incomplete: overlay") -- {"r",0},{"g",0},{"b",0},{"a",1}
+	elseif command == "tint" then -- Change hue and saturation, leave brighness.
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxTint.shader, "params", args.r,args.g,args.b,args.a)
+			LG.setShader(A.shaders.fxTint.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
 
 	--
 	-- Generators.

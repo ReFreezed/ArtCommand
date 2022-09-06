@@ -1,0 +1,28 @@
+/***************************************************************
+*
+*  Effect: Saturation
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+#include "_colorSpaces.gl"
+
+uniform vec4 params; // {filterR, filterG, filterB, saturation}
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+	vec4 color  = Texel(tex, texUv);
+	color.rgb  /= color.a;
+
+	float brightness = toHsp(color.rgb).z;
+
+	color     -= brightness;
+	color.rgb  = mix(color.rgb, color.rgb*params.a, params.rgb);
+	color     += brightness;
+
+	color.rgb = clamp(color.rgb, vec3(0), vec3(1)) * color.a;
+	return color;
+}

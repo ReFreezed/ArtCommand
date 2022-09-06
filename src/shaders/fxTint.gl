@@ -1,0 +1,43 @@
+/***************************************************************
+*
+*  Effect: Tint - change hue and saturation, leave brighness
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+#include "_colorSpaces.gl"
+
+uniform vec4 params; // {r, g, b, tintAmount}
+
+#define H x
+#define S y
+#define P z
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+	vec4 pixel  = Texel(tex, texUv);
+	pixel.rgb  /= pixel.a;
+
+	vec3 tintHsp  = toHsp(params.rgb);
+	vec3 pixelHsp = toHsp(pixel.rgb);
+
+	// Construct fully tinted result.
+	vec3 resultHsp = vec3(tintHsp.H, tintHsp.S, pixelHsp.P);
+
+	// Dark tint colors count as fully saturated, which is no good! Treat black as fully desaturated, just like white.
+	resultHsp.S *= max(max(params.r, params.g), params.b);
+
+	// Convert to RGB.
+	vec3 result = fromHsp(resultHsp);
+
+	// Fade color with brightness>.5 towards white (similar to L in HSL).
+	if (pixelHsp.P > .5)  result = mix(result, vec3(1), pixelHsp.P*2-1);
+
+	// Mix by tint amount.
+	result = mix(pixel.rgb, result, params.a);
+
+	return vec4(clamp(result, vec3(0), vec3(1))*pixel.a, pixel.a);
+}
