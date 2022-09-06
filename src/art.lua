@@ -839,15 +839,15 @@ local function applyEffect(context, cb)
 	LG.pop()
 end
 
--- image|canvas|nil = getOrLoadImage( context, tokenForError, path )
+-- image|canvas|nil = getOrLoadImage( context, tokenForError, pathIdentifier )
 -- Returns nil on error.
-local function getOrLoadImage(context, tokForError, path)
-	local imageOrCanvas = context.images[path]
+local function getOrLoadImage(context, tokForError, pathIdent)
+	local imageOrCanvas = context.images[pathIdent]
 	if imageOrCanvas then  return imageOrCanvas  end
 
-	local path = makePathAbsolute(path, (context.path:gsub("[^/\\]+$", "")))
+	local path = makePathAbsolute(pathIdent, (context.path:gsub("[^/\\]+$", "")))
 
-	if path:find"%.artcmd$" then
+	if pathIdent:find"%.artcmd$" then
 		pushGfxState(context, "user") -- @Cleanup
 
 		local art = loadArtFile(path, context.isLocal)
@@ -862,13 +862,13 @@ local function getOrLoadImage(context, tokForError, path)
 
 		local fileData           = LF.newFileData(s, path)
 		local ok, imageDataOrErr = pcall(love.image.newImageData, fileData) ; fileData:release()
-		if not ok then  return (tokenError(context, tokForError, "Could not load '%s'. (%s)", path, imageDataOrErr))  end
+		if not ok then  return (tokenError(context, tokForError, "Could not load '%s'. (%s)", pathIdent, imageDataOrErr))  end
 		local imageData = normalizeImageAndMultiplyAlpha(imageDataOrErr)
 		imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
 	end
 
 	-- imageOrCanvas:setFilter("nearest") -- Fixes fuzziness caused by MSAA, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
-	context.images[path] = imageOrCanvas
+	context.images[pathIdent] = imageOrCanvas
 	return imageOrCanvas
 end
 
@@ -1895,9 +1895,9 @@ local function cleanup(context, loveGfxStackDepth, success)
 	if context.canvasToMask then  context.canvasToMask:release()  end
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 
-	for _, imageOrCanvas in pairs(context.images     ) do  imageOrCanvas:release()  end
-	for _, canvas        in pairs(context.layers     ) do  canvas       :release()  end
-	for _, font          in pairs(context.fontsByPath) do  font         :release()  end
+	for _, texture in pairs(context.images     ) do  texture:release()  end
+	for _, canvas  in pairs(context.layers     ) do  canvas :release()  end
+	for _, font    in pairs(context.fontsByPath) do  font   :release()  end
 
 	for _, fonts in pairs(context.fontsBySize) do
 		for _, font in pairs(fonts) do  font:release()  end
