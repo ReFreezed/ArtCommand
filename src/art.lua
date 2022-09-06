@@ -66,7 +66,7 @@ local COMMANDS = {
 	["scale" ] = { {"x",1},{"y",1}, xy={"x","y"} },
 	["shear" ] = { {"x",1},{"y",1}, xy={"x","y"} },
 
-	["setlayer"] = { {"name",""}, {"w",0--[[=context.canvasW]]},{"h",0--[[=context.canvasH]]}, {"aa",0--[[=context.msaa]]}, size={"w","h"} },
+	["setlayer"] = { {"name",""}, {"path",""}, {"w",0--[[=context.canvasW]]},{"h",0--[[=context.canvasH]]}, {"aa",0--[[=context.msaa]]}, size={"w","h"} },
 
 	-- Drawing.
 	["point"] = { {"x",0},{"y",0}, xy={"x","y"} },
@@ -349,8 +349,8 @@ local function ensureCanvasAndInitted(context)
 	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r16", msaa=settingsCanvas.msaa})
 
 	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
-	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness.
-	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness.
+	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
+	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
 
 	shaderSend(A.shaders.main.shader, "textBlendFix"   , false)
 	shaderSend(A.shaders.main.shader, "makeMaskMode"   , false)
@@ -702,6 +702,12 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 	end
 end
 
+local function pushTransformAndReset(blendMode)
+	LG.push()
+	LG.reset()
+	LG.setBlendMode(blendMode, "premultiplied")
+end
+
 -- pushGfxState( context, stackType )
 -- stackType: see GfxState.stackType
 local function pushGfxState(context, stackType)
@@ -744,10 +750,8 @@ local function popGfxState(context, stackType)
 		shaderSend(A.shaders.applyMask.shader, "mask", context.maskCanvas)
 
 		LG.setCanvas(nil) -- Before push/pop. Not sure it affects canvas switching. Probably doesn't matter.
-		LG.push("all")
-		LG.reset()
+		pushTransformAndReset("alpha")
 		LG.setCanvas(gfxState.canvas)
-		LG.setBlendMode("alpha", "premultiplied")
 		LG.setShader(A.shaders.applyMask.shader)
 		LG.draw(context.canvasToMask)
 		LG.pop()
@@ -820,9 +824,7 @@ end
 local function applyEffect(context, cb)
 	ensureCanvasAndInitted(context)
 
-	LG.push()
-	LG.reset()
-	LG.setBlendMode("replace", "premultiplied")
+	pushTransformAndReset("replace")
 	initWorkCanvas(context.gfxState.canvas, context.workCanvas1) -- @Incomplete: Handle canvas not being the same size as workCanvas.
 
 	local canvasOut = cb(context, context.workCanvas1, context.workCanvas2)
@@ -834,6 +836,39 @@ local function applyEffect(context, cb)
 	LG.draw(canvasOut)
 	canvasOut:setFilter("linear")
 	LG.pop()
+end
+
+-- image|canvas|nil = getOrLoadImage( context, tokenForError, path )
+-- Returns nil on error.
+local function getOrLoadImage(context, tokForError, path)
+	local imageOrCanvas = context.images[path]
+	if imageOrCanvas then  return imageOrCanvas  end
+
+	local path = makePathAbsolute(path, (context.path:gsub("[^/\\]+$", "")))
+
+	if path:find"%.artcmd$" then
+		pushGfxState(context, "user") -- @Cleanup
+
+		local art = loadArtFile(path, context.isLocal)
+		if not art then  return (tokenError(context, tokForError, "Could not load .artcmd image."))  end
+		imageOrCanvas = art.canvas
+
+		assert(popGfxState(context, "user") == "success")
+
+	else
+		local s, err = readFile(false, path)
+		if not s then  return (tokenError(context, tokForError, "Could not read '%s'. (%s)", path, err))  end
+
+		local fileData           = LF.newFileData(s, path)
+		local ok, imageDataOrErr = pcall(love.image.newImageData, fileData) ; fileData:release()
+		if not ok then  return (tokenError(context, tokForError, "Could not load '%s'. (%s)", path, imageDataOrErr))  end
+		local imageData = normalizeImageAndMultiplyAlpha(imageDataOrErr)
+		imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
+	end
+
+	-- imageOrCanvas:setFilter("nearest") -- Fixes fuzziness caused by MSAA, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
+	context.images[path] = imageOrCanvas
+	return imageOrCanvas
 end
 
 local runBlock
@@ -1301,30 +1336,53 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "setlayer" then
 		ensureCanvasAndInitted(context)
 
+		local layerName = args.name
+		local iw        = args.w
+		local ih        = args.h
+
+		local imageOrCanvas
+
+		if args.path ~= "" then
+			imageOrCanvas = getOrLoadImage(context, startTok, args.path)
+			if not imageOrCanvas then  return nil  end
+
+			iw,ih = imageOrCanvas:getDimensions()
+		end
+
 		-- No layer.
-		if args.name == "" then
+		if layerName == "" then
+			if args.path ~= "" then  return (tokenError(context, startTok, "Missing layer name."))  end
+
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetNoLayer
 
 		-- Yes layer, reuse existing canvas.
 		elseif
-			context.layers[args.name]
-			and context.layers[args.name]:getWidth () == args.w
-			and context.layers[args.name]:getHeight() == args.h
-			and context.layers[args.name]:getMSAA  () == args.aa
+			context.layers[layerName]
+			and context.layers[layerName]:getWidth () == iw
+			and context.layers[layerName]:getHeight() == ih
+			and context.layers[layerName]:getMSAA  () == args.aa
 		then
-			gfxStateSetCanvas(context, context.layers[args.name], context.gfxState.fallbackCanvas)
+			gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
 			LG.setCanvas(context.gfxState.canvas)
 			LG.clear(0, 0, 0, 0)
 
 		-- Yes layer, create new canvas.
 		else
-			if context.layers[args.name] then
+			if context.layers[layerName] then
 				LG.setCanvas(nil) -- Don't accidentally release the current canvas!
-				context.layers[args.name]:release()
+				context.layers[layerName]:release()
 			end
 
-			context.layers[args.name] = LG.newCanvas(args.w,args.h, {format="rgba16", msaa=args.aa})
-			gfxStateSetCanvas(context, context.layers[args.name], context.gfxState.fallbackCanvas)
+			context.layers[layerName] = LG.newCanvas(iw,ih, {format="rgba16", msaa=args.aa})
+			gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
+		end
+
+		if args.path ~= "" then
+			imageOrCanvas:setFilter("nearest")
+			pushTransformAndReset("replace")
+			LG.setCanvas(context.gfxState.canvas)
+			LG.draw(imageOrCanvas)
+			LG.pop()
 		end
 
 	--
@@ -1557,34 +1615,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		local imageOrCanvas = context.images[args.path]
-
-		if not imageOrCanvas then
-			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
-
-			if args.path:find"%.artcmd$" then
-				pushGfxState(context, "user") -- @Cleanup
-
-				local art = loadArtFile(path, context.isLocal)
-				if not art then  return (tokenError(context, startTok, "Could not load .artcmd image."))  end
-				imageOrCanvas = art.canvas
-
-				assert(popGfxState(context, "user") == "success")
-
-			else
-				local s, err = readFile(false, path)
-				if not s then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
-
-				local fileData           = LF.newFileData(s, path)
-				local ok, imageDataOrErr = pcall(love.image.newImageData, fileData) ; fileData:release()
-				if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, imageDataOrErr))  end
-				local imageData = normalizeImageAndMultiplyAlpha(imageDataOrErr)
-				imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
-			end
-
-			-- imageOrCanvas:setFilter("nearest") -- Fixes weird fuzziness, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
-			context.images[args.path] = imageOrCanvas
-		end
+		local imageOrCanvas = getOrLoadImage(context, startTok, args.path)
+		if not imageOrCanvas then  return nil  end
 
 		local iw,ih = imageOrCanvas:getDimensions()
 
@@ -1758,10 +1790,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			shaderSendVec4(A.shaders.generateNoise.shader, "color1"         , r*a, g*a, b*a, a)
 		end
 
-		LG.push()
-		LG.reset()
+		pushTransformAndReset("alpha")
 		LG.setCanvas(canvas)
-		LG.setBlendMode("alpha", "premultiplied")
 		LG.setShader(A.shaders.generateNoise.shader)
 		LG.draw(A.images.rectangle, 0,0, 0, cw/iw,ch/ih)
 		LG.pop()

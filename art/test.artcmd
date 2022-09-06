@@ -322,8 +322,7 @@ layer"fx"
 # tint 0 .5 0 1   # 50% saturated green. (Between black[000] and green[010].)
 # tint .5 1 .5 1  # 50% saturated green. (Between green[010] and white[111].)
 
-setlayer"forest" 200 118
-	image "forest.png" -filter
+setlayer"forest" "forest.png"
 	levels .5 1  .25 .75  mid.25
 color; layer"forest" 450 80 -filter rot5deg
 
