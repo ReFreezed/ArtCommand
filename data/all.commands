@@ -1,0 +1,99 @@
+################################################################
+#
+#  Commands
+#
+#---------------------------------------------------------------
+#
+#  Art Command
+#  by Marcus 'ReFreezed' Thunström
+#
+################################################################
+
+# command argName1=defaultValue ... alias1=argName1&... ...  # defaultValue=nil means the value can be any type.
+
+#
+# Language.
+#
+set   var=""  value=nil  # Set variable.
+setx  var=""  value=nil  # Set existing variable.
+
+do  
+for  var="I"  from=1 to=0 step=1
+end   # Dummy, for error message.
+
+stop  all=false
+
+assert  value=nil
+print   value=nil
+
+# Special commands: `func` and user-defined functions.
+
+#
+# Settings.
+#
+
+# App. (Doesn't affect the image.)
+backdrop  r=0 g=0 b=0 a=1  rgb=r&g&b
+zoom      zoom=1  # There is also autoZoom!
+
+# Init.
+canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
+
+#
+# State.
+#
+push 
+pop  
+
+color      r=1 g=1 b=1 a=1  rgb=r&g&b
+grey       grey=1 a=1  # Short for `color rgbN`.
+grad       r=1 g=1 b=1 a=1  rot=0  scale=1  radial=false fit=true  rgb=r&g&b
+font       path=""(builtinFont)  size=12
+imagefont  path=""  chars=""  spacing=0
+
+makemask  clear=true
+mask      mask=true
+
+origin 
+move    x=0 y=0  xy=x&y
+rotate  rot=0
+scale   x=1 y=1  xy=x&y
+shear   x=1 y=1  xy=x&y
+
+setlayer  name=""  path=""  w=0(context.canvasW) h=0(context.canvasH)  aa=0(context.msaa)  size=w&h
+
+#
+# Drawing.
+#
+point  x=0 y=0  xy=x&y
+
+fill  r=0 g=0 b=0 a=1  rgb=r&g&b  # A rectangle that covers the whole screen.
+
+rect     mode="fill"  x=0 y=0  w=10 h=10  ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  rx=0 ry=0      segs=0(auto)          xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=rx&ry  size=w&h
+circle   mode="fill"  x=0 y=0  rx=5 ry=5  ax=.5 ay=.5  sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  from=0 to=tau  segs=0(auto)          xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=rx&ry
+poly     mode="fill"  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true                           xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+line                  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true                           xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+text     text=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  wrap=1/0  align="left"  lineh=1  filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+image    path=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0                                   filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+layer    name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0                                   filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+pattern  layer=""     x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  mirrorx=false mirrory=false      filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  mirror=mirrorx&mirrory
+
+#
+# Effects.
+#
+boxblur  x=0 y=0  xy=x&y
+blur     x=0 y=0  xy=x&y
+
+contrast    amount=1  r=1 g=1 b=1
+brightness  amount=1  r=1 g=1 b=1
+saturation  amount=1  r=1 g=1 b=1
+gamma       amount=1  r=1 g=1 b=1
+levels      rangeinfrom=0 rangeinto=1  rangeoutfrom=0 rangeoutto=1  mid=.5
+
+overlay  r=0 g=0 b=0 a=1  rgb=r&g&b
+tint     r=0 g=0 b=0 a=1  rgb=r&g&b
+
+#
+# Generators.
+#
+noise  x=0 y=0 z=0  sx=1 sy=1  scale=sx&sy
