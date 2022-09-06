@@ -73,13 +73,14 @@ local COMMANDS = {
 
 	["fill"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} }, -- A rectangle that covers the whole screen.
 
-	["rect"  ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"rx",0},{"ry",0}, {"segs",0--[[=auto]]},        xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}, size={"w","h"} },
-	["circle"] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"} },
-	["poly"  ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
-	["line"  ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
-	["text"  ] = { {"text",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
-	["image" ] = { {"path",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
-	["layer" ] = { {"name",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["rect"   ] = { {"mode","fill"}, {"x",0},{"y",0}, {"w",10},{"h",10}, {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"rx",0},{"ry",0}, {"segs",0--[[=auto]]},        xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"}, size={"w","h"} },
+	["circle" ] = { {"mode","fill"}, {"x",0},{"y",0}, {"rx",5},{"ry",5}, {"ax",.5},{"ay",.5}, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"segs",0--[[=auto]]}, {"from",0},{"to",TAU},    xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, r={"rx","ry"} },
+	["poly"   ] = { {"mode","fill"}, {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["line"   ] = {                  {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"thick",1}, {"shift",true},                                  xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["text"   ] = { {"text",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"wrap",1/0}, {"align","left"}, {"lineh",1}, {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["image"  ] = { {"path",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["layer"  ] = { {"name",""},     {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0},                                              {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"} },
+	["pattern"] = { {"layer",""},    {"x",0},{"y",0},                    {"ax",0 },{"ay",0 }, {"sx",1},{"sy",1}, {"rot",0}, {"kx",0},{"ky",0}, {"mirrorx",false},{"mirrory",false},         {"filter",true}, xy={"x","y"}, anchor={"ax","ay"}, scale={"sx","sy"}, shear={"kx","ky"}, mirror={"mirrorx","mirrory"} },
 
 	-- Effects.
 	["boxblur"] = { {"x",0},{"y",0}, xy={"x","y"} },
@@ -1298,7 +1299,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		context.gfxState.makeMaskMode = true
-		updateVec4(context.gfxState.flatColor, 1,1,1,1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't. (Should we also update colorMode?)
+		updateVec4(context.gfxState.flatColor, 1,1,1,1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't. (Should we also update colorMode? Is this line even a good idea?)
 
 	----------------------------------------------------------------
 	elseif command == "mask" then
@@ -1633,26 +1634,69 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		local canvas = context.layers[layerName]
-		if not canvas then
+		local texture = context.layers[layerName]
+		if not texture then
 			return (tokenError(context, startTok, "No layer '%s'", layerName))
 		end
 
-		if canvas == context.gfxState.canvas then
+		if texture == context.gfxState.canvas then
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
-			-- LG.setCanvas(nil) ; canvas:newImageData():encode("png", "layer.png") -- DEBUG
+			-- LG.setCanvas(nil) ; texture:newImageData():encode("png", "layer.png") -- DEBUG
 			-- return (tokenError(context, startTok, "Cannot draw layer '%s' as its currently active.", layerName))
-		elseif isCanvasReferenced(context, canvas) then
+		elseif isCanvasReferenced(context, texture) then
 			return (tokenError(context, startTok, "Cannot draw layer '%s' at this point.", layerName))
 		end
 
-		local iw,ih = canvas:getDimensions()
+		local iw,ih = texture:getDimensions()
 
-		canvas:setFilter(args.filter and "linear" or "nearest")
+		texture:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context)
 		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
 
-		LG.draw(canvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+
+	----------------------------------------------------------------
+	elseif command == "pattern" then
+		local layerName = args.layer
+		if layerName == "" then  return (tokenError(context, startTok, "Missing layer name."))  end
+
+		ensureCanvasAndInitted(context)
+
+		local texture = context.layers[layerName]
+		if not texture then  return (tokenError(context, startTok, "No layer '%s'.", layerName))  end
+
+		if texture == context.gfxState.canvas then
+			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
+		elseif isCanvasReferenced(context, texture) then
+			return (tokenError(context, startTok, "Cannot draw layer '%s' at this point.", layerName))
+		end
+
+		local cw,ch = context.gfxState.canvas:getDimensions()
+		local iw,ih = texture:getDimensions()
+
+		texture:setFilter(args.filter and "linear" or "nearest")
+		texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
+		applyCanvas(context)
+		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
+		LG.push()
+
+		LG.translate(args.x, args.y)
+		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
+		LG.translate(-args.ax*iw, -args.ay*ih)
+		LG.scale(iw, ih)
+
+		local u1, v1 = LG.inverseTransformPoint(0 , 0 )
+		local u2, v2 = LG.inverseTransformPoint(cw, 0 )
+		local u3, v3 = LG.inverseTransformPoint(cw, ch)
+		local u4, v4 = LG.inverseTransformPoint(0 , ch)
+
+		LG.origin()
+		drawQuad(texture,  0,0, cw,0, cw,ch, 0,ch,  u1,v1, u2,v2, u3,v3, u4,v4)
+
+		LG.pop()
+		texture:setWrap("clamp")
 
 	--
 	-- Effects.

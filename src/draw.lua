@@ -12,6 +12,7 @@
 	drawCircleFill, drawCircleLine
 	drawLine
 	drawPolygonFill, drawPolygonLine
+	drawQuad
 	drawRectangleFill, drawRectangleLine
 	newImageUsingPalette
 	shaderSend*
@@ -471,6 +472,30 @@ end
 
 function _G.drawPolygonLine(points, lw)
 	_drawLine(true, points, lw, false, 0,0)
+end
+
+
+
+local vertices = {
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0, 1,1,1,1},
+}
+local mesh = nil
+
+function _G.drawQuad(texture, x1,y1,x2,y2,x3,y3,x4,y4, u1,v1,u2,v2,u3,v3,u4,v4)
+	mesh = mesh or LG.newMesh(vertices, "fan", "stream")
+
+	vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = x1,y1, u1,v1
+	vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4] = x2,y2, u2,v2
+	vertices[3][1],vertices[3][2], vertices[3][3],vertices[3][4] = x3,y3, u3,v3
+	vertices[4][1],vertices[4][2], vertices[4][3],vertices[4][4] = x4,y4, u4,v4
+
+	mesh:setTexture(texture)
+	mesh:setVertices(vertices)
+
+	LG.draw(mesh)
 end
 
 

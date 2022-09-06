@@ -202,7 +202,7 @@ function love.load(args, rawArgs)
 		"____xxxx",
 		"____xxxx",
 	}, {x={1,1,1,0}, _={1,1,1,1}})
-	A.images.checker:setWrap("repeat", "repeat")
+	A.images.checker:setWrap("repeat")
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
 	initFilesystem()
