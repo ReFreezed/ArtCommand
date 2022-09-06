@@ -89,9 +89,10 @@ local COMMANDS = {
 	["brightness"] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
 	["saturation"] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
 	["gamma"     ] = { {"amount",1}, {"r",1},{"g",1},{"b",1} },
+	["levels"    ] = { {"rangeinfrom",0},{"rangeinto",1}, {"rangeoutfrom",0},{"rangeoutto",1}, {"mid",.5} },
 
-	["tint"   ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
 	["overlay"] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
+	["tint"   ] = { {"r",0},{"g",0},{"b",0},{"a",1}, rgb={"r","g","b"} },
 
 	-- Generators.
 	["noise"] = { {"x",0},{"y",0},{"z",0}, {"sx",1},{"sy",1}, scale={"sx","sy"} },
@@ -1696,6 +1697,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyEffect(context, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxGamma.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
 			LG.setShader(A.shaders.fxGamma.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
+
+	elseif command == "levels" then
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSendVec2(A.shaders.fxLevels.shader, "rangeIn" , args.rangeinfrom,args.rangeinto)
+			shaderSendVec2(A.shaders.fxLevels.shader, "rangeOut", args.rangeoutfrom,args.rangeoutto)
+			shaderSend    (A.shaders.fxLevels.shader, "middle"  , args.mid)
+			LG.setShader(A.shaders.fxLevels.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead

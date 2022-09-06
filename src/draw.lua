@@ -56,16 +56,25 @@ local vec4 = {0,0,0,0}
 function _G.shaderSend(shader, var, ...)
 	pcall(shader.send, shader, var, ...)
 end
-function _G.shaderSendVec2(shader, var, x,y)
-	vec2[1], vec2[2] = x, y
+function _G.shaderSendVec2(shader, var, x,y, _)
+	vec2[1] = x or error("Missing argument 'x'.", 2)
+	vec2[2] = y or error("Missing argument 'y'.", 2)
+	if _ then      error("Too many arguments."  , 2)  end
 	pcall(shader.send, shader, var, vec2)
 end
-function _G.shaderSendVec3(shader, var, x,y,z)
-	vec3[1], vec3[2], vec3[3] = x, y, z
+function _G.shaderSendVec3(shader, var, x,y,z, _)
+	vec3[1] = x or error("Missing argument 'x'.", 2)
+	vec3[2] = y or error("Missing argument 'y'.", 2)
+	vec3[3] = z or error("Missing argument 'z'.", 2)
+	if _ then      error("Too many arguments."  , 2)  end
 	pcall(shader.send, shader, var, vec3)
 end
-function _G.shaderSendVec4(shader, var, x,y,z,w)
-	vec4[1], vec4[2], vec4[3], vec4[4] = x, y, z, w
+function _G.shaderSendVec4(shader, var, x,y,z,w, _)
+	vec4[1] = x or error("Missing argument 'x'.", 2)
+	vec4[2] = y or error("Missing argument 'y'.", 2)
+	vec4[3] = z or error("Missing argument 'z'.", 2)
+	vec4[4] = w or error("Missing argument 'w'.", 2)
+	if _ then      error("Too many arguments."  , 2)  end
 	pcall(shader.send, shader, var, vec4)
 end
 

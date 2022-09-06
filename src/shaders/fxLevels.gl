@@ -1,0 +1,36 @@
+/***************************************************************
+*
+*  Effect: Levels
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+#include "_colorSpaces.gl"
+
+uniform vec2 rangeIn;  // {min, max}
+uniform vec2 rangeOut; // {min, max}
+
+uniform float middle;
+
+#define H x
+#define S y
+#define P z
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+	vec4 pixel  = Texel(tex, texUv);
+	pixel.rgb  /= pixel.a;
+
+	vec3 hsp    = toHsp(pixel.rgb);
+	float power = pow(10, middle*2-1);
+
+	hsp.P = max((hsp.P-rangeIn.x) / (rangeIn.y-rangeIn.x), 0); // Normalize from old range.
+	hsp.P = pow(hsp.P, power); // Apply curve.
+	hsp.P = mix(rangeOut.x, rangeOut.y, hsp.P); // Map to new range.
+
+	vec3 result = fromHsp(hsp);
+	return vec4(clamp(result, vec3(0), vec3(1))*pixel.a, pixel.a);
+}

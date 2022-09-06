@@ -20,7 +20,7 @@ end
 
 
 # Settings.
-canvas 500 600 aa4
+canvas 800 600 aa4
 backdrop0 .3 0 .5
 # backdrop (40/255) (40/255) (40/255)
 fill.4 .4 .4 .5
@@ -29,7 +29,7 @@ fill.4 .4 .4 .5
 # Draw stuff.
 color 1 1 1 .1
 font 62  # Big boy!
-text 495 -5 ax1 kx-.15 wrap550 lineh.9 align"right" "TEST TEST TEST TEST
+text (CanvasWidth-5) -5 ax1 kx-.15 wrap(CanvasWidth-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 r10
@@ -306,6 +306,10 @@ layer"fx"
 # gamma 2.2
 # overlay 1 0 1 .6
 
+# levels .5 .9  .3 .4
+# levels mid.8
+# levels 0 .4  0 .5  mid.9
+
 # tint 0 0 1 1    # Fully saturated blue.
 # tint 0 1 1 .5   # Half towards fully saturated cyan.
 # tint 1 0 .5 .5  # Half towards fully saturated red-purple.
@@ -317,6 +321,11 @@ layer"fx"
 
 # tint 0 .5 0 1   # 50% saturated green. (Between black[000] and green[010].)
 # tint .5 1 .5 1  # 50% saturated green. (Between green[010] and white[111].)
+
+setlayer"forest" 200 118
+	image "forest.png" -filter
+	levels .5 1  .25 .75  mid.25
+color; layer"forest" 450 80 -filter rot5deg
 
 # Generator: noise.
 makemask; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2
