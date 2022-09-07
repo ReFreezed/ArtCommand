@@ -134,7 +134,7 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 			x+edge1X,y+edge1Y, x+edge1X+dir1X,y+edge1Y+dir1Y,
 			x+edge2X,y+edge2Y, x+edge2X-dir2X,y+edge2Y-dir2Y
 		)
-		if not x1 then  x1,y1 = x,y  end -- Parallel lines!  @Incomplete: Use bevel instead of miter in sharp corners. (Also, add argument: lineJoin=auto|miter|bevel|none)
+		if not x1 then  x1,y1 = x+edge1X,y+edge1Y  end -- Straight line or 180° bend!  @Incomplete: Use bevel instead of miter in sharp corners. (Also, add argument: lineJoin=auto|miter|bevel|none)
 		local x2 = 2*x - x1
 		local y2 = 2*y - y1
 

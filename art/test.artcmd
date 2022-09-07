@@ -245,7 +245,7 @@ color 0 1 .5; layer"foo" 80 190 anchor.5 rot55deg
 assert (1 < 5)
 print Circles, (3^7), (rep("Hey",3))
 
-# Lines and polygons.
+# Lines, curves, and polygons.
 set O -40  # Offset.
 point xyO, (70+O)(20+O), (30+O)(50+O), (40+O)(80+O)
 color 0 1 .5 1 ; line (70-O)(395-O) thick4
@@ -263,6 +263,9 @@ grad 1 .3 0, 1 1 .4 1  0deg; poly "fill" 35 550
 grad 1 .3 0, 1 1 .4 1 90deg; poly "fill" 75 550
 grad 1 .3 0, 1 1 .4 1  0deg; poly "line" 115 550 thick4
 grad 1 .3 0, 1 1 .4 1 90deg; poly "line" 155 550 thick4
+
+point 25 0, -20 0, 50 45, 0 25
+color 1 .6 .8; bezier 30 375 thick2
 
 # Arcs.
 func Arc X Y Mode1 Mode2 From To Segs

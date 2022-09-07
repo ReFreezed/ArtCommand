@@ -1495,9 +1495,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.pop()
 
 	----------------------------------------------------------------
-	elseif command == "line" then
+	elseif command == "line" or command == "bezier" then
 		if not context.points[1] then  return (tokenError(context, startTok, "No points added."))  end
 		if not context.points[3] then  return (tokenError(context, startTok, "Not enough points added."))  end
+
+		local points = context.points
+
+		if command == "bezier" then
+			local curve = love.math.newBezierCurve(points)
+			points      = curve:render(args.depth)
+			curve:release()
+		end
 
 		ensureCanvasAndInitted(context)
 
@@ -1506,11 +1514,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local y1 =  1/0
 		local y2 = -1/0
 
-		for i = 1, #context.points, 2 do
-			x1 = math.min(x1, context.points[i  ])
-			x2 = math.max(x2, context.points[i  ])
-			y1 = math.min(y1, context.points[i+1])
-			y2 = math.max(y2, context.points[i+1])
+		for i = 1, #points, 2 do
+			x1 = math.min(x1, points[i  ])
+			x2 = math.max(x2, points[i  ])
+			y1 = math.min(y1, points[i+1])
+			y2 = math.max(y2, points[i+1])
 		end
 
 		local colorW = x2 - x1
@@ -1530,7 +1538,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
 		LG.translate(-x1, -y1)
-		drawLine(context.points, args.thick)
+		drawLine(points, args.thick)
 		LG.pop()
 
 	----------------------------------------------------------------
