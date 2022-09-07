@@ -67,6 +67,7 @@ pop
 
 # Masks.
 makemask
+	color
 	rect w20 h20
 	rect w30 h50 y35
 	circle 50 50 r10
@@ -327,8 +328,19 @@ setlayer"forest" "forest.png"
 color; layer"forest" 450 80 -filter rot5deg
 
 # Generator: noise.
+color
 makemask; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2
 makemask; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale.15
+maskFalse
+
+# Generator: random noise.
+makemask
+	color
+	rect 100 270 50 -50
+	blur xy10
+mask
+	color .8 .9 1
+	random .7 color.6
 maskFalse
 
 # Patterns.

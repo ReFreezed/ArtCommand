@@ -1796,6 +1796,42 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.draw(A.images.rectangle, 0,0, 0, cw/iw,ch/ih)
 		LG.pop()
 
+	elseif command == "random" then
+		ensureCanvasAndInitted(context)
+
+		local canvas = context.gfxState.canvas
+		local cw,ch  = canvas:getDimensions()
+
+		local rng       = love.math.newRandomGenerator(args.seed)
+		local imageData = love.image.newImageData(cw,ch)
+
+		imageData:mapPixel(function(x,y, r,g,b,a) -- @Speed
+			r = rng:random()
+			g = rng:random()
+			b = rng:random()
+
+			if rng:random() > args.level then  return 0, 0, 0, 0  end
+
+			return r
+			     , math.lerp(r, g, args.color)
+			     , math.lerp(r, b, args.color)
+			     , 1
+		end)
+
+		local image = LG.newImage(imageData)
+		image:setFilter("nearest")
+
+		applyCanvas(context)
+		applyColor(context, "rectangle", cw,ch)
+
+		LG.push()
+		LG.origin()
+		LG.draw(image)
+		LG.pop()
+
+		image:release()
+		imageData:release()
+
 	----------------------------------------------------------------
 	elseif command == "end" then
 		return (tokenError(context, startTok, "Unexpected 'end'."))
