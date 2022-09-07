@@ -458,7 +458,11 @@ function love.draw()
 		LG.scale(autoZoom and math.min(ww/cw, wh/ch) or theArt.zoom)
 		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
 
-		LG.setColor(0, 0, 0)
+		if theArt.backdrop[4] >= .8 and (theArt.backdrop[1] + theArt.backdrop[2] + theArt.backdrop[3]) < 3*.3 then
+			LG.setColor(1, 1, 1, .4)
+		else
+			LG.setColor(0, 0, 0)
+		end
 		LG.rectangle("fill", x-1,y-1 , cw+2,1)
 		LG.rectangle("fill", x-1,y+ch, cw+2,1)
 		LG.rectangle("fill", x-1,y-1 , 1,ch+2)

@@ -183,6 +183,7 @@ end
 
 -- tokenError  ( context, token=atEnd, format, ... )
 -- tokenWarning( context, token=atEnd, format, ... )
+-- tokenMessage( context, token=atEnd, format, ... )
 local function tokenError(context, tok, s, ...)
 	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
 	printFileErrorAt(context.path, context.source, pos, s, ...)
@@ -190,6 +191,10 @@ end
 local function tokenWarning(context, tok, s, ...)
 	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
 	printFileWarningAt(context.path, context.source, pos, s, ...)
+end
+local function tokenMessage(context, tok, s, ...)
+	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
+	printFileMessageAt(context.path, context.source, pos, s, ...)
 end
 
 
@@ -629,8 +634,9 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 	end
 end
 
-local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens)
+local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens, lookForElse)
 	local depth         = 1
+	local stack         = {}
 	local expectCommand = true
 
 	while true do
@@ -643,12 +649,25 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 		elseif not expectCommand then
 			-- void
 
-		elseif isToken(tok, "name", "do") or isToken(tok, "name", "for") or isToken(tok, "name", "func") then -- @Volatile
+		elseif isToken(tok, "name", "do") or isToken(tok, "name", "if") or isToken(tok, "name", "for") or isToken(tok, "name", "func") then -- @Volatile
 			depth = depth + 1
+			table.insert(stack, tok)
 
 		elseif isToken(tok, "name", "end") then
 			depth = depth - 1
+			table.remove(stack)
 			if depth == 0 then  return tokPos+1  end
+
+		elseif isToken(tok, "name", "else") then
+			if lookForElse and depth == 1 then
+				return tokPos+1
+			elseif isToken(stack[#stack], "name", "if") then
+				stack[#stack] = tok -- Exit if-block and enter else-block.
+			else
+				tokenError(context, tok, "Unexpected 'else'.")
+				if stack[1] then  tokenMessage(context, stack[#stack], "...block started here.")  end
+				return nil
+			end
 
 		else
 			expectCommand = false
@@ -839,12 +858,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	-- Function call.
 	--
 	if isToken((commandTok or tokens[tokPos]), "username") then
+		if not commandTok and tokens[tokPos].negated then  return (parseError(context, tokens[tokPos].position-1, "Unexpected character."))  end
+
 		local funcName = (commandTok or tokens[tokPos]).value
 		local funcInfo = findInStack(context, "functions", funcName)
-		if not funcInfo then  return (tokenError(context, startTok, "No function '%s'.", funcName))  end
-		if not commandTok then
-			tokPos = tokPos + 1 -- username
-		end
+		if not funcInfo   then  return (tokenError(context, startTok, "No function '%s'.", funcName))  end
+		if not commandTok then  tokPos = tokPos + 1  end -- username
 
 		if context.callStack[funcInfo] then
 			return (tokenError(context, startTok, "Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position)))
@@ -895,6 +914,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	if command == "func" then
 		if not isToken(tokens[tokPos], "username") then  return (tokenError(context, tokens[tokPos], "Expected a name for the function."))  end
+		if tokens[tokPos].negated                  then  return (parseError(context, tokens[tokPos].position-1, "Unexpected character."))  end
 		local funcName = tokens[tokPos].value
 		local entry    = getLast(context.scopeStack)
 		if entry.functions[funcName] then  tokenWarning(context, tokens[tokPos], "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
@@ -905,6 +925,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		entry.functions[funcName] = funcInfo
 
 		while isToken(tokens[tokPos], "username") do
+			if tokens[tokPos].negated then  return (parseError(context, tokens[tokPos].position-1, "Unexpected character."))  end
+
 			local argName = tokens[tokPos].value
 			table.insert(funcInfo.arguments, argName)
 			tokPos = tokPos + 1 -- username
@@ -914,7 +936,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return (tokenError(context, tokens[tokPos], "Expected argument for function '%s'.", funcName))
 		end
 
-		return collectBodyTokens(context, tokens, startTok, tokPos, funcInfo.tokens), STOP_CONTINUE -- May return nil.
+		return collectBodyTokens(context, tokens, startTok, tokPos, funcInfo.tokens, false), STOP_CONTINUE -- May return nil.
 	end
 
 	--
@@ -974,25 +996,40 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.scopeStack[stackIndex].variables[args.var] = args.value
 
 	----------------------------------------------------------------
-	elseif command == "do" then
+	elseif command == "do" or command == "if" then
 		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "Invalid ','."))  end
 
 		-- Get block body.
-		local bodyTokens = {}
-		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens)
+		local trueTokens = {}
+		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, trueTokens, true)
 		if not tokPos then  return nil  end
 
+		local falseTokens = {}
+		if isToken(tokens[tokPos-1], "name", "else") then
+			tokPos = collectBodyTokens(context, tokens, tokens[tokPos-1], tokPos, falseTokens, false)
+			if not tokPos then  return nil  end
+		end
+
 		-- Run block.
-		local entry = ScopeStackEntry()
-		table.insert(context.scopeStack, entry)
+		local isTrue = (command == "do")
+		if not isTrue and type(args.value) == "boolean" and args.value                                    then  isTrue = true  end
+		if not isTrue and type(args.value) == "number"  and args.value ~= 0 and args.value == args.value  then  isTrue = true  end
+		if not isTrue and type(args.value) == "string"  and args.value ~= ""                              then  isTrue = true  end
 
-		local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
-		if not bodyTokPos         then  return nil  end
-		if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
+		local bodyTokens = isTrue and trueTokens or falseTokens
 
-		table.remove(context.scopeStack)
+		if bodyTokens[1] then
+			local entry = ScopeStackEntry()
+			table.insert(context.scopeStack, entry)
 
-		if stop == STOP_ALL then  return 1/0, STOP_ALL  end
+			local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
+			if not bodyTokPos         then  return nil  end
+			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
+
+			table.remove(context.scopeStack)
+
+			if stop == STOP_ALL then  return 1/0, STOP_ALL  end
+		end
 
 	----------------------------------------------------------------
 	elseif command == "for" then
@@ -1004,7 +1041,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		-- Get loop body.
 		local bodyTokens = {}
-		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens)
+		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, false)
 		if not tokPos then  return nil  end
 
 		-- Run loop.
@@ -1321,7 +1358,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		then
 			gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
 			LG.setCanvas(context.gfxState.canvas)
-			LG.clear(0, 0, 0, 0)
+			if args.clear then
+				LG.clear(0, 0, 0, 0)
+			end
 
 		-- Yes layer, create new canvas.
 		else
@@ -1841,8 +1880,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		imageData:release()
 
 	----------------------------------------------------------------
-	elseif command == "end" then
-		return (tokenError(context, startTok, "Unexpected 'end'."))
+	elseif command == "end" or command == "else" then
+		return (tokenError(context, startTok, "Unexpected '%s'.", command))
 	else
 		return (tokenError(context, startTok, "Unimplemented command '%s'.", command))
 	end
@@ -1866,7 +1905,7 @@ end
 		if stop == STOP_ONE then  return 1/0, STOP_CONTINUE  end
 		if stop == STOP_ALL then  return 1/0, STOP_ALL       end
 
-		if not (isToken(commandTok, "name", "do") or isToken(commandTok, "name", "for") or isToken(commandTok, "name", "func")) then -- @Volatile
+		if not (isToken(commandTok, "name", "do") or isToken(commandTok, "name", "if") or isToken(commandTok, "name", "for") or isToken(commandTok, "name", "func")) then -- @Volatile
 			while isToken(tokens[tokPos], ",") do
 				tokPos       = tokPos + 1 -- ','
 				tokPos, stop = runCommand(context, tokens, tokPos, commandTok)

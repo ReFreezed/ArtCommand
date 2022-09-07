@@ -12,7 +12,7 @@
 	getLast, itemWith1, indexOf
 	getLineNumber
 	makePathAbsolute
-	printf, printFileMessage, printFileError, printFileWarning, printFileErrorAt, printFileWarningAt
+	printf, printFileMessage, printFileError, printFileWarning, printFileMessageAt, printFileErrorAt, printFileWarningAt
 	toColor32
 	updateVec4
 
@@ -34,7 +34,7 @@ function _G.printFileWarning(pathOrContext, ln, s, ...)
 	print(string.format("%s:%d: Warning: "..s, (pathOrContext.path or pathOrContext), ln, ...))
 end
 
-local function printFileMessageAt(f, path, source, pos, s, ...)
+local function _printFileMessageAt(f, path, source, pos, s, ...)
 	local lineEndPos     = source:find("\n", pos) or #source+1
 	local startToCurrent = source:sub(1, lineEndPos-1)
 	local ln             = getLineNumber(startToCurrent, #startToCurrent)
@@ -52,11 +52,14 @@ local function printFileMessageAt(f, path, source, pos, s, ...)
 	print(text)
 	print(">-"..("-"):rep(arrowLength).."^")
 end
+function _G.printFileMessageAt(path, source, pos, s, ...)
+	_printFileMessageAt(printFileMessage, path, source, pos, s, ...)
+end
 function _G.printFileErrorAt(path, source, pos, s, ...)
-	printFileMessageAt(printFileError, path, source, pos, s, ...)
+	_printFileMessageAt(printFileError, path, source, pos, s, ...)
 end
 function _G.printFileWarningAt(path, source, pos, s, ...)
-	printFileMessageAt(printFileWarning, path, source, pos, s, ...)
+	_printFileMessageAt(printFileWarning, path, source, pos, s, ...)
 end
 
 

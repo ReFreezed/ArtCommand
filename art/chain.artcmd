@@ -1,0 +1,46 @@
+#
+# "Simple chain" by ReFreezed, 2022-09-07
+#
+canvas 150 400 aa4
+backdrop rgb.2
+
+set LinkFlip False
+
+func Link Dir DrawLight
+	rotate (rad(5)*Dir)
+	move 0 30
+
+	makemask
+		fill rgb1
+		grey0
+		rect (LinkFlip and 1 or -1) 0 1000 1000 ax(LinkFlip and 0 or 1) ay.5
+	mask
+		grad rgb1, rgb.35, rgb.25, rgb.1, rgb.05 rot90deg
+		circle"line" 0 0 10 20 thick7
+	maskFalse
+
+	if DrawLight
+		setlayer"light" -clear
+			color
+			circle (LinkFlip and 2 or -2) -20 r8
+		setlayer
+	end
+
+	setx LinkFlip (not LinkFlip)
+end
+
+for Pass 1 2
+	setx LinkFlip (Pass==1)
+	move (CanvasWidth/2) -25
+
+	for 1 3; Link  1 (Pass==1); end
+	for 1 7; Link -1 (Pass==1); end
+	for 1 7; Link  1 (Pass==1); end
+
+	origin
+end
+
+setlayer"light" -clear
+	color a.2
+	blur xy40
+layer"light"
