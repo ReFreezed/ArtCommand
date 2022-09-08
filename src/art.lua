@@ -71,7 +71,7 @@ local function Context()return{
 	source  = "",
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
-	callStack  = {--[[ [funcInfo1]=true, ... ]]},
+	callStack  = {--[[ [funcInfo1]=true, ... ]]}, -- @Cleanup: Bad name. Not a stack - just bookkeeping.
 	gfxStack   = {--[[ gfxState1, ... ]]},
 
 	gfxState = nil, -- (including love.graphics)
@@ -96,13 +96,17 @@ local function Context()return{
 
 local function FunctionInfo()return{
 	token     = nil,
+	name      = "",
 	arguments = {},
 	tokens    = {},
 }end
 
 local function ScopeStackEntry()return{
-	functions = {--[[ [funcName1]=funcInfo, ... ]]},
-	variables = {--[[ [varName1 ]=value   , ... ]]},
+	functions = {--[[ [funcName1]=functionInfo, ... ]]},
+	variables = {--[[ [varName1 ]=value       , ... ]]},
+
+	callerToken    = nil,
+	calledFunction = nil, -- FunctionInfo
 }end
 
 local function GfxState()return{
@@ -174,8 +178,35 @@ end
 
 
 
+local function printCallStack(context, pos)
+	local relevantEntries = {}
+
+	for i = #context.scopeStack, 1, -1 do
+		if context.scopeStack[i].callerToken then
+			table.insert(relevantEntries, context.scopeStack[i])
+		end
+	end
+
+	print("Stack traceback:")
+
+	printf("\t%s:%d%s",
+		context.path,
+		getLineNumber(context.source, pos),
+		relevantEntries[1] and " ("..relevantEntries[1].calledFunction.name..")" or ""
+	)
+
+	for i, entry in ipairs(relevantEntries) do
+		printf("\t%s:%d%s",
+			context.path,
+			getLineNumber(context.source, entry.callerToken.position),
+			relevantEntries[i+1] and " ("..relevantEntries[i+1].calledFunction.name..")" or ""
+		)
+	end
+end
+
 local function parseError(context, pos, s, ...)
 	printFileErrorAt(context.path, context.source, pos, s, ...)
+	printCallStack(context, pos)
 end
 local function parseWarning(context, pos, s, ...)
 	printFileWarningAt(context.path, context.source, pos, s, ...)
@@ -187,6 +218,7 @@ end
 local function tokenError(context, tok, s, ...)
 	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
 	printFileErrorAt(context.path, context.source, pos, s, ...)
+	printCallStack(context, pos)
 end
 local function tokenWarning(context, tok, s, ...)
 	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
@@ -567,6 +599,8 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			tokPos = tokPos + 1 -- the name
 		end
 
+		local valueStartTok = tokens[tokPos]
+
 		-- Value.
 		if isToken(tokens[tokPos], "literal") then
 			v = tokens[tokPos].value
@@ -624,11 +658,11 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 		if argNames then
 			for _, _argName in ipairs(argNames) do
 				args   [_argName] = v
-				visited[_argName] = true
+				visited[_argName] = valueStartTok
 			end
 		else
 			args   [argName] = v
-			visited[argName] = true
+			visited[argName] = valueStartTok
 		end
 		tokPos = tokPos + 1 -- the value
 	end
@@ -862,11 +896,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local funcName = (commandTok or tokens[tokPos]).value
 		local funcInfo = findInStack(context, "functions", funcName)
-		if not funcInfo   then  return (tokenError(context, startTok, "No function '%s'.", funcName))  end
+		if not funcInfo   then  return (tokenError(context, startTok, "[Call] No function '%s'.", funcName))  end
 		if not commandTok then  tokPos = tokPos + 1  end -- username
 
 		if context.callStack[funcInfo] then
-			return (tokenError(context, startTok, "Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position)))
+			return (tokenError(context, startTok, "[Call] Recursively calling '%s'. (%s:%d)", funcName, context.path, getLineNumber(context.source, funcInfo.token.position)))
 		end
 
 		-- Parse arguments.
@@ -882,10 +916,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not tokPos then  return nil  end
 
 		-- Run function.
-		local entry = ScopeStackEntry()
+		local entry          = ScopeStackEntry()
+		entry.callerToken    = startTok
+		entry.calledFunction = funcInfo
 
 		for i, argInfo in ipairs(argInfos) do
-			if not visited[argInfo[1]] then  return (tokenError(context, startTok, "Missing argument '%s' for '%s'.", argInfo[1], funcName))  end
+			if not visited[argInfo[1]] then  return (tokenError(context, startTok, "[Call] Missing argument '%s' for '%s'.", argInfo[1], funcName))  end
 			entry.variables[funcInfo.arguments[i]] = args[argInfo[1]]
 		end
 
@@ -894,7 +930,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local bodyTokPos, stop = runBlock(context, funcInfo.tokens, 1)
 		if not bodyTokPos              then  return nil  end
-		if funcInfo.tokens[bodyTokPos] then  return (tokenError(context, funcInfo.tokens[bodyTokPos], "Unexpected token."))  end
+		if funcInfo.tokens[bodyTokPos] then  return (tokenError(context, funcInfo.tokens[bodyTokPos], "[Call] Unexpected token."))  end
 
 		table.remove(context.scopeStack)
 		context.callStack[funcInfo] = nil
@@ -913,15 +949,24 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	-- Function.
 	--
 	if command == "func" then
-		if not isToken(tokens[tokPos], "username") then  return (tokenError(context, tokens[tokPos], "Expected a name for the function."))  end
-		if tokens[tokPos].negated                  then  return (parseError(context, tokens[tokPos].position-1, "Unexpected character."))  end
+		if not isToken(tokens[tokPos], "username") then  return (tokenError(context, tokens[tokPos], "[func] Expected a name for the function."))  end
+		if tokens[tokPos].negated                  then  return (parseError(context, tokens[tokPos].position-1, "[func] Unexpected character."))  end
 		local funcName = tokens[tokPos].value
 		local entry    = getLast(context.scopeStack)
-		if entry.functions[funcName] then  tokenWarning(context, tokens[tokPos], "Duplicate function '%s' in the same scope. Replacing.", funcName)  end
+
+		if entry.functions[funcName] then
+			-- @Incomplete: Suppress duplicate warnings.
+			tokenWarning(context, tokens[tokPos],
+				"[func] Duplicate function '%s' in the same scope. Replacing. (%s:%d)",
+				funcName, context.path, getLineNumber(context.source, entry.functions[funcName].token.position)
+			)
+		end
+
 		tokPos = tokPos + 1 -- username
 
 		local funcInfo            = FunctionInfo()
 		funcInfo.token            = startTok
+		funcInfo.name             = funcName
 		entry.functions[funcName] = funcInfo
 
 		while isToken(tokens[tokPos], "username") do
@@ -933,7 +978,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		if not (isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ";")) then
-			return (tokenError(context, tokens[tokPos], "Expected argument for function '%s'.", funcName))
+			return (tokenError(context, tokens[tokPos], "[func] Expected argument for function '%s'.", funcName))
 		end
 
 		return collectBodyTokens(context, tokens, startTok, tokPos, funcInfo.tokens, false), STOP_CONTINUE -- May return nil.
@@ -963,7 +1008,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	if (command == "set" or command == "setx" or command == "for") and isToken(tokens[tokPos], "username") and not tokens[tokPos].negated then
 		-- Treat `set X` as `set "X"` (and same with 'setx' and 'for').
 		args   .var = tokens[tokPos].value
-		visited.var = true
+		visited.var = tokens[tokPos]
 		tokPos      = tokPos + 1
 	end
 
@@ -978,26 +1023,26 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	if command == "set" then
-		if args.var   == ""  then  return (tokenError(context, startTok, "Missing variable name."))  end
-		if args.value == nil then  return (tokenError(context, startTok, "Missing value to assign to '%s'.", args.var))  end
-		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
+		if args.var   == ""  then  return (tokenError(context, (visited.var   or startTok), "[set] Missing variable name."))  end
+		if args.value == nil then  return (tokenError(context, (visited.value or startTok), "[set] Missing value to assign to '%s'.", args.var))  end
+		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
 		getLast(context.scopeStack).variables[args.var] = args.value
 
 	----------------------------------------------------------------
 	elseif command == "setx" then
-		if args.var   == ""  then  return (tokenError(context, startTok, "Missing variable name."))  end
-		if args.value == nil then  return (tokenError(context, startTok, "Missing value to assign to '%s'.", args.var))  end
-		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
+		if args.var   == ""  then  return (tokenError(context, (visited.var   or startTok), "[setx] Missing variable name."))  end
+		if args.value == nil then  return (tokenError(context, (visited.value or startTok), "[setx] Missing value to assign to '%s'.", args.var))  end
+		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
 		local oldV, stackIndex = findInStack(context, "variables", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
-		if oldV == nil then  return (tokenError(context, startTok, "No existing variable '%s'.", args.var))  end
+		if oldV == nil then  return (tokenError(context, (visited.var or startTok), "[setx] No existing variable '%s'.", args.var))  end
 
 		context.scopeStack[stackIndex].variables[args.var] = args.value
 
 	----------------------------------------------------------------
 	elseif command == "do" or command == "if" then
-		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "Invalid ','."))  end
+		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[%s] Invalid ','. Cannot chain '%s'.", command, command))  end
 
 		-- Get block body.
 		local trueTokens = {}
@@ -1011,12 +1056,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		-- Run block.
-		local isTrue = (command == "do")
-		if not isTrue and type(args.value) == "boolean" and args.value                                    then  isTrue = true  end
-		if not isTrue and type(args.value) == "number"  and args.value ~= 0 and args.value == args.value  then  isTrue = true  end
-		if not isTrue and type(args.value) == "string"  and args.value ~= ""                              then  isTrue = true  end
+		local passes = false
 
-		local bodyTokens = isTrue and trueTokens or falseTokens
+		if     command == "do"               then  passes = true
+		elseif type(args.value) == "boolean" then  passes = args.value
+		elseif type(args.value) == "number"  then  passes = (args.value ~= 0) and (args.value == args.value)
+		elseif type(args.value) == "string"  then  passes = (args.value ~= "")
+		else
+			return (tokenError(context, visited.value, "[%s] Unsupported value type '%s'.", command, type(args.value)))
+		end
+
+		local bodyTokens = passes and trueTokens or falseTokens
 
 		if bodyTokens[1] then
 			local entry = ScopeStackEntry()
@@ -1024,7 +1074,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
 			if not bodyTokPos         then  return nil  end
-			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
+			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[%s] Unexpected token.", command))  end
 
 			table.remove(context.scopeStack)
 
@@ -1033,11 +1083,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "for" then
-		if args.var  == "" then  return (tokenError(context, startTok, "Empty variable name."))  end
-		if args.step == 0  then  return (tokenError(context, startTok, "Step is zero."))  end
-		if not validateVariableName(context, startTok, "variable name", args.var) then  return nil  end
+		if args.var  == "" then  return (tokenError(context, (visited.var  or startTok), "[for] Empty variable name."))  end
+		if not visited.to  then  return (tokenError(context, (visited.step or startTok), "[for] Missing loop range."))  end
+		if args.step == 0  then  return (tokenError(context, (visited.step or startTok), "[for] Step is zero."))  end
+		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
-		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "Invalid ','."))  end
+		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[for] Invalid ','. Cannot chain 'for'."))  end -- It'd be nice to chain loops though! @UX
 
 		-- Get loop body.
 		local bodyTokens = {}
@@ -1055,7 +1106,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			loops = loops + 1
 
 			if loops >= MAX_LOOPS then -- Maybe there should be a MAX_DRAW_OPERATIONS too? MAX_LOOPS could probably be higher then. @Incomplete
-				tokenError(context, startTok, "Max loops exceeded. Breaking.")
+				tokenError(context, startTok, "[for] Max loops exceeded. Breaking.")
 				break
 			end
 
@@ -1065,7 +1116,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			if not bodyTokPos         then  return nil              end
 			if stop == STOP_ONE       then  break                   end
 			if stop == STOP_ALL       then  stopAll = true ; break  end
-			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "Unexpected token."))  end
+			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[for] Unexpected token."))  end
 		end
 
 		table.remove(context.scopeStack)
@@ -1079,7 +1130,14 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "assert" then
-		if not args.value then  return (tokenError(context, startTok, "Assertion failed!"))  end
+		if not visited.value then  return (tokenError(context, startTok, "[assert] Missing value."))  end
+
+		if     type(args.value) == "boolean" then  if not args.value                               then  return (tokenError(context, visited.value, "Assertion failed! (False)"))  end
+		elseif type(args.value) == "string"  then  if args.value == ""                             then  return (tokenError(context, visited.value, "Assertion failed! (Empty string)"))  end
+		elseif type(args.value) == "number"  then  if args.value == 0 or args.value ~= args.value  then  return (tokenError(context, visited.value, "Assertion failed! (Zero or NaN)"))  end
+		else
+			return (tokenError(context, visited.value, "[assert] Unsupported value type '%s'.", type(args.value)))
+		end
 
 	elseif command == "print" then
 		-- @Robustness: Don't print invalid UTF-8!
@@ -1112,7 +1170,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "canvas" then
-		if context.art.canvas then  return (tokenError(context, startTok, "Cannot use '%s' after drawing commands.", command))  end
+		if context.art.canvas then  return (tokenError(context, startTok, "[canvas] Cannot use 'canvas' after drawing commands."))  end
 
 		context.canvasW = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
 		context.canvasH = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
@@ -1135,18 +1193,18 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		if status == "error" then
 			if getLast(context.gfxStack).stackType == "makemask" then
-				return (tokenError(context, startTok, "Unbalanced push and pop commands during 'makemask'."))
+				return (tokenError(context, startTok, "[pop] Unbalanced push and pop commands during 'makemask'."))
 			elseif getLast(context.gfxStack).stackType == "applymask" then
-				return (tokenError(context, startTok, "Unbalanced push and pop commands during 'mask'."))
+				return (tokenError(context, startTok, "[pop] Unbalanced push and pop commands during 'mask'."))
 			else
-				return (tokenError(context, startTok, "Unbalanced push and pop commands."))
+				return (tokenError(context, startTok, "[pop] Unbalanced push and pop commands."))
 			end
 
 		elseif status == "emptystack" then
-			tokenWarning(context, startTok, "Too many 'pop' commands. Ignoring.")
+			tokenWarning(context, startTok, "pop: Too many 'pop' commands. Ignoring.")
 
 		elseif status ~= "success" then
-			return (tokenError(context, startTok, "Internal error. (%s)", status))
+			return (tokenError(context, startTok, "[pop] Internal error. (%s)", status))
 		end
 
 	----------------------------------------------------------------
@@ -1204,11 +1262,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
 
 			local s, err = readFile(false, path)
-			if not s then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", path, err))  end
+			if not s then  return (tokenError(context, (visited.path or startTok), "[font] Could not read '%s'. (%s)", args.path, err))  end
 
 			local fileData      = LF.newFileData(s, path) -- @Speed: Cache this (though people probably don't use too many sizes of the same font per art piece).
 			local ok, fontOrErr = pcall(LG.newFont, fileData, args.size) ; fileData:release()
-			if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", path, fontOrErr))  end
+			if not ok then  return (tokenError(context, (visited.path or startTok), "[font] Could not load '%s'. (%s)", args.path, fontOrErr))  end
 			font = fontOrErr
 		end
 
@@ -1218,58 +1276,66 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "imagefont" then
+		if args.path == "" then  return (tokenError(context, (visited.path or startTok), "[imagefont] Missing path."))  end
 		local font = context.fontsByPath[args.path]
 
 		if not font then
 			local fontPath = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
 
 			local fontStr, err = readFile(false, fontPath)
-			if not fontStr then  return (tokenError(context, startTok, "Could not read '%s'. (%s)", fontPath, err))  end
+			if not fontStr then  return (tokenError(context, (visited.path or startTok), "[imagefont] Could not read '%s'. (%s)", args.path, err))  end
 
 			local fontFileData = LF.newFileData(fontStr, fontPath)
 			local ok, fontOrErr
 
+			-- LÖVE ImageFont.
+			if visited.chars then
+				ok, fontOrErr = pcall(LG.newImageFont, fontFileData, args.chars, args.spacing)
+
 			-- BMFont.
-			if args.chars == "" then
-				if args.spacing ~= 0 then  return (tokenError(context, startTok, "Cannot modify the glyph spacing for BMFonts."))  end
+			else
+				if visited.spacing then  return (tokenError(context, visited.spacing, "[imagefont] Cannot modify the glyph spacing for BMFonts."))  end
 
 				local imagePath0 = ""
 				local pos        = 1
 
 				for _pos, _imagePath in fontStr:gmatch'%f[^\n%z]()page%f[ ][^\n]- file="([^\n]-)"' do
 					if imagePath0 ~= "" then
-						return (tokenError(context, startTok,
-							"Failed loading BMFont...\n %s:%d: Font references multiple image files, which is not supported.",
+						return (tokenError(context, (visited.path or startTok),
+							"[imagefont] Failed loading BMFont...\n"
+							.." %s:%d: Font references multiple image files, which is not supported.",
 							fontPath, getLineNumber(fontStr, _pos)
 						))
 					end
 					imagePath0 = _imagePath
 					pos        = _pos
 				end
+
 				if imagePath0 == "" then
-					return (tokenError(context, startTok, "Failed loading BMFont...\n %s: Font seem to reference no image file.", fontPath))
+					return (tokenError(context, (visited.path or startTok),
+						"[imagefont] Failed loading BMFont...\n"
+						.." %s: Font seem to reference no image file. (Is this not a BMFont?)",
+						fontPath
+					))
 				end
 
 				local imagePath = makePathAbsolute(imagePath0, (fontPath:gsub("[^/\\]+$", "")))
 
 				local imageStr, err = readFile(false, imagePath)
 				if not imageStr then
-					return (tokenError(context, startTok,
-						"Failed loading BMFont...\n %s:%d: Could not read referenced image '%s'. (%s)",
+					return (tokenError(context, (visited.path or startTok),
+						"[imagefont] Failed loading BMFont...\n"
+						.." %s:%d: Could not read referenced image '%s'. (%s)",
 						fontPath, getLineNumber(fontStr, pos), imagePath0, err
 					))
 				end
 
 				local imageFileData = LF.newFileData(imageStr, imagePath)
 				ok, fontOrErr       = pcall(LG.newFont, fontFileData, imageFileData) ; imageFileData:release()
-
-			-- LÖVE ImageFont.
-			else
-				ok, fontOrErr = pcall(LG.newImageFont, fontFileData, args.chars, args.spacing)
 			end
 
 			fontFileData:release()
-			if not ok then  return (tokenError(context, startTok, "Could not load '%s'. (%s)", fontPath, fontOrErr))  end
+			if not ok then  return (tokenError(context, (visited.path or startTok), "[imagefont] Could not load '%s'. (%s)", args.path, fontOrErr))  end
 			font = fontOrErr
 		end
 
@@ -1281,7 +1347,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		ensureCanvasAndInitted(context)
 		if not maybeApplyMask(context, startTok) then  return nil  end -- 'makemask' also exits 'mask' mode.
 
-		if context.gfxState.makeMaskMode then  return (tokenError(context, startTok, "Already making a mask."))  end
+		if context.gfxState.makeMaskMode then  return (tokenError(context, startTok, "[makemask] Already making a mask."))  end
 
 		pushGfxState(context, "makemask")
 
@@ -1301,7 +1367,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		-- 'mask' also exits 'makemask' mode.
 		if context.gfxState.makeMaskMode and popGfxState(context, "makemask") ~= "success" then
-			return (tokenError(context, startTok, "Could not finish making mask. (Unbalanced push and pop commands?)"))
+			return (tokenError(context, startTok, "[mask] Could not finish making mask. (Unbalanced push and pop commands?)"))
 		end
 
 		if args.mask then
@@ -1336,41 +1402,44 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local imageOrCanvas
 
-		if args.path ~= "" then
-			imageOrCanvas = getOrLoadImage(context, startTok, args.path)
-			if not imageOrCanvas then  return nil  end
-
-			iw,ih = imageOrCanvas:getDimensions()
-		end
-
 		-- No layer.
 		if layerName == "" then
-			if args.path ~= "" then  return (tokenError(context, startTok, "Missing layer name."))  end
+			if args.path ~= "" then  return (tokenError(context, (visited.name or startTok), "[setlayer] Missing layer name to load image to."))  end
 
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetNoLayer
 
-		-- Yes layer, reuse existing canvas.
-		elseif
-			context.layers[layerName]
-			and context.layers[layerName]:getWidth () == iw
-			and context.layers[layerName]:getHeight() == ih
-			and context.layers[layerName]:getMSAA  () == args.aa
-		then
-			gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
-			LG.setCanvas(context.gfxState.canvas)
-			if args.clear then
-				LG.clear(0, 0, 0, 0)
-			end
-
-		-- Yes layer, create new canvas.
+		-- Yes layer.
 		else
-			if context.layers[layerName] then
-				LG.setCanvas(nil) -- Don't accidentally release the current canvas!
-				context.layers[layerName]:release()
+			if args.path ~= "" then
+				imageOrCanvas = getOrLoadImage(context, startTok, args.path)
+				if not imageOrCanvas then  return nil  end
+
+				iw,ih = imageOrCanvas:getDimensions()
 			end
 
-			context.layers[layerName] = LG.newCanvas(iw,ih, {format="rgba16", msaa=args.aa})
-			gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
+			-- Reuse existing canvas.
+			if
+				context.layers[layerName]
+				and context.layers[layerName]:getWidth () == iw
+				and context.layers[layerName]:getHeight() == ih
+				and context.layers[layerName]:getMSAA  () == args.aa
+			then
+				gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
+				LG.setCanvas(context.gfxState.canvas)
+				if args.clear then
+					LG.clear(0, 0, 0, 0)
+				end
+
+			-- Create new canvas.
+			else
+				if context.layers[layerName] then
+					LG.setCanvas(nil) -- Don't accidentally release the current canvas!
+					context.layers[layerName]:release()
+				end
+
+				context.layers[layerName] = LG.newCanvas(iw,ih, {format="rgba16", msaa=args.aa})
+				gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
+			end
 		end
 
 		if args.path ~= "" then
@@ -1422,7 +1491,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "rect" then
-		if not (args.mode == "fill" or args.mode == "line") then  return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))  end
+		if not (args.mode == "fill" or args.mode == "line") then
+			return (tokenError(context, (visited.mode or startTok), "[rect] Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
+		end
 
 		ensureCanvasAndInitted(context)
 
@@ -1451,7 +1522,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "circle" then
 		if not (args.mode == "fill" or args.mode == "fillclosed" or args.mode == "line" or args.mode == "linepie" or args.mode == "lineclosed") then
-			return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
+			return (tokenError(context, (visited.mode or startTok), "[circle] Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
 
 		ensureCanvasAndInitted(context)
@@ -1486,13 +1557,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "poly" then
-		if not (args.mode == "fill" or args.mode == "line") then  return (tokenError(context, startTok, "Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))  end
+		if not (args.mode == "fill" or args.mode == "line") then
+			return (tokenError(context, (visited.mode or startTok), "[poly] Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
+		end
 
-		if not context.points[1] then  return (tokenError(context, startTok, "No points added."))  end
-		if not context.points[5] then  return (tokenError(context, startTok, "Not enough points added."))  end
+		if not context.points[1] then  return (tokenError(context, startTok, "[poly] No points added."))  end
+		if not context.points[5] then  return (tokenError(context, startTok, "[poly] Not enough points added."))  end
 
 		if args.mode == "fill" and not love.math.isConvex(context.points) then
-			return (tokenError(context, startTok, "The added points form a concave shape. Filled polygons must be convex."))
+			return (tokenError(context, startTok, "[poly] The added points form a concave shape. Filled polygons must be convex."))
 		end
 
 		ensureCanvasAndInitted(context)
@@ -1535,8 +1608,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "line" or command == "bezier" then
-		if not context.points[1] then  return (tokenError(context, startTok, "No points added."))  end
-		if not context.points[3] then  return (tokenError(context, startTok, "Not enough points added."))  end
+		if not context.points[1] then  return (tokenError(context, startTok, "[%s] No points added.", command))  end
+		if not context.points[3] then  return (tokenError(context, startTok, "[%s] Not enough points added.", command))  end
 
 		local points = context.points
 
@@ -1583,7 +1656,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "text" then
 		if not (args.align == "left" or args.align == "center" or args.align == "right" or args.align == "justify") then
-			return (tokenError(context, startTok, "Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align))
+			return (tokenError(context, (visited.align or startTok), "[text] Bad alignment '%s'. Must be 'left', 'center', 'right' or 'justify'.", args.align))
 		end
 
 		ensureCanvasAndInitted(context)
@@ -1593,7 +1666,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local h            = (#textLines-1) * math.floor(font:getHeight()*args.lineh) + font:getHeight()
 
 		if not font:hasGlyphs(args.text) then
-			tokenWarning(context, startTok, "Current font is missing some glyphs for the text. Skipping those characters.")
+			tokenWarning(context, (visited.text or startTok), "[text] The current font is missing some glyphs for the text. Skipping those characters.")
 		end
 
 		font:setFilter(args.filter and "linear" or "nearest")
@@ -1615,7 +1688,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "image" then
-		if args.path == "" then  return (tokenError(context, startTok, "Missing path."))  end
+		if args.path == "" then  return (tokenError(context, (visited.path or startTok), "[image] Missing path."))  end
 
 		ensureCanvasAndInitted(context)
 
@@ -1633,21 +1706,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "layer" then
 		local layerName = args.name
-		if layerName == "" then  return (tokenError(context, startTok, "Missing name."))  end
+		if layerName == "" then  return (tokenError(context, (visited.name or startTok), "[layer] Missing name."))  end
 
 		ensureCanvasAndInitted(context)
 
 		local texture = context.layers[layerName]
-		if not texture then
-			return (tokenError(context, startTok, "No layer '%s'", layerName))
-		end
+		if not texture then  return (tokenError(context, (visited.name or startTok), "[layer] No layer '%s'", layerName))  end
 
 		if texture == context.gfxState.canvas then
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
 			-- LG.setCanvas(nil) ; texture:newImageData():encode("png", "layer.png") -- DEBUG
-			-- return (tokenError(context, startTok, "Cannot draw layer '%s' as its currently active.", layerName))
+			-- return (tokenError(context, (visited.name or startTok), "[layer] Cannot draw layer '%s' as it's currently active.", layerName))
 		elseif isCanvasReferenced(context, texture) then
-			return (tokenError(context, startTok, "Cannot draw layer '%s' at this point.", layerName))
+			return (tokenError(context, (visited.name or startTok), "[layer] Cannot draw layer '%s' at this point.", layerName))
 		end
 
 		local iw,ih = texture:getDimensions()
@@ -1661,17 +1732,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "pattern" then
 		local layerName = args.layer
-		if layerName == "" then  return (tokenError(context, startTok, "Missing layer name."))  end
+		if layerName == "" then  return (tokenError(context, (visited.layer or startTok), "[pattern] Missing layer name."))  end
 
 		ensureCanvasAndInitted(context)
 
 		local texture = context.layers[layerName]
-		if not texture then  return (tokenError(context, startTok, "No layer '%s'.", layerName))  end
+		if not texture then  return (tokenError(context, (visited.layer or startTok), "[pattern] No layer '%s'.", layerName))  end
 
 		if texture == context.gfxState.canvas then
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
 		elseif isCanvasReferenced(context, texture) then
-			return (tokenError(context, startTok, "Cannot draw layer '%s' at this point.", layerName))
+			return (tokenError(context, (visited.layer or startTok), "[pattern] Cannot draw layer '%s' at this point.", layerName))
 		end
 
 		local cw,ch = context.gfxState.canvas:getDimensions()
@@ -1883,7 +1954,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "end" or command == "else" then
 		return (tokenError(context, startTok, "Unexpected '%s'.", command))
 	else
-		return (tokenError(context, startTok, "Unimplemented command '%s'.", command))
+		return (tokenError(context, startTok, "Internal error: Unimplemented command '%s'.", command))
 	end
 	return tokPos, STOP_CONTINUE
 end

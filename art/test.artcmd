@@ -126,6 +126,7 @@ set X 0
 do
 	set X 100
 end
+assert (X==0)
 circle "line" thick4 X 250 r10
 
 # Gradients.
