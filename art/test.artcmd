@@ -357,3 +357,12 @@ push
 		color;         image "forest.png" anchor.5 rot-30deg scale.35 ky.2
 	maskFalse
 pop
+
+# Image recursion.
+push
+	move 480 420
+	rotate -5deg
+	scale xy.3
+	grey0 .2; rect 0 0 CanvasWidth CanvasHeight
+	# color .4 .9 1; image "test.artcmd" recurse3 -filter
+pop

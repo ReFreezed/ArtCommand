@@ -77,8 +77,8 @@ poly     mode="fill"  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky
 line                  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true                           xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
 bezier                x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true  depth=5                  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
 text     text=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  wrap=1/0  align="left"  lineh=1  filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-image    path=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0                                   filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-layer    name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0                                   filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+image    path=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0                                   filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  recurse=0
+layer    name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0                                   filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  recurse=0
 pattern  layer=""     x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  mirrorx=false mirrory=false      filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  mirror=mirrorx&mirrory
 
 #

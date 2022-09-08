@@ -178,6 +178,11 @@ end
 
 
 
+local artFilesBeingLoaded     = {--[[ [path1]=recursionDepth, ... ]]}
+local artFileRecursionAllowed = {--[[ [path1]=count|nil, ... ]]}
+
+
+
 local function printCallStack(context, pos)
 	local relevantEntries = {}
 
@@ -848,18 +853,34 @@ local function applyEffect(context, cb)
 	LG.pop()
 end
 
--- image|canvas|nil = getOrLoadImage( context, tokenForError, pathIdentifier )
+-- image|canvas|nil = getOrLoadImage( context, tokenForError, pathIdentifier, recursionsAllowed )
 -- Returns nil on error.
-local function getOrLoadImage(context, tokForError, pathIdent)
+local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed)
 	local imageOrCanvas = context.images[pathIdent]
 	if imageOrCanvas then  return imageOrCanvas  end
 
 	local path = makePathAbsolute(pathIdent, (context.path:gsub("[^/\\]+$", "")))
 
 	if pathIdent:find"%.artcmd$" then
+		local startRecursion = (recursionsAllowed >= 1 and not artFileRecursionAllowed[path])
+
+		if
+			(artFileRecursionAllowed[path] and artFilesBeingLoaded[path] > artFileRecursionAllowed[path]) or
+			(startRecursion                and artFilesBeingLoaded[path] > recursionsAllowed            )
+		then
+			local imageData = love.image.newImageData(1,1, "rgba8", ("\0"):rep(1*1*4)) -- @Incomplete: Use the size of the image being loaded.
+			imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
+
+			context.images[pathIdent] = imageOrCanvas
+			return imageOrCanvas
+		end
+
 		pushGfxState(context, "user") -- @Cleanup
 
+		if startRecursion then  artFileRecursionAllowed[path] = recursionsAllowed  end
 		local art = loadArtFile(path, context.isLocal)
+		if startRecursion then  artFileRecursionAllowed[path] = nil  end
+
 		if not art then  return (tokenError(context, tokForError, "Could not load .artcmd image."))  end
 		imageOrCanvas = art.canvas
 
@@ -1411,7 +1432,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		-- Yes layer.
 		else
 			if args.path ~= "" then
-				imageOrCanvas = getOrLoadImage(context, startTok, args.path)
+				imageOrCanvas = getOrLoadImage(context, startTok, args.path, args.recurse)
 				if not imageOrCanvas then  return nil  end
 
 				iw,ih = imageOrCanvas:getDimensions()
@@ -1692,7 +1713,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		local imageOrCanvas = getOrLoadImage(context, startTok, args.path)
+		local imageOrCanvas = getOrLoadImage(context, startTok, args.path, args.recurse)
 		if not imageOrCanvas then  return nil  end
 
 		local iw,ih = imageOrCanvas:getDimensions()
@@ -2014,17 +2035,17 @@ local function cleanup(context, loveGfxStackDepth, success)
 	end
 end
 
-local artFilesBeingLoaded = {}
-
 -- art|nil = loadArtFile( path, isLocal )
 -- Note: art.canvas has premultiplied alpha.
 function _G.loadArtFile(path, isLocal)
-	if artFilesBeingLoaded[path] then
+	artFilesBeingLoaded[path] = artFilesBeingLoaded[path] or 0
+
+	if artFilesBeingLoaded[path] > (artFileRecursionAllowed[path] or 0) then
 		print("Error: File is already being loaded: "..path)
 		return nil
 	end
 
-	printf("Loading %s...", path)
+	if artFilesBeingLoaded[path] == 0 then  printf("Loading %s...", path)  end
 	local startTime = love.timer.getTime()
 	LG.reset()
 
@@ -2106,9 +2127,9 @@ function _G.loadArtFile(path, isLocal)
 	table.insert(context.scopeStack, entry)
 	local loveGfxStackDepth = LG.getStackDepth()
 
-	artFilesBeingLoaded[path] = true
+	artFilesBeingLoaded[path] = artFilesBeingLoaded[path] + 1
 	local tokPos              = runBlock(context, tokens, 1) -- Now things will happen!
-	artFilesBeingLoaded[path] = nil
+	artFilesBeingLoaded[path] = artFilesBeingLoaded[path] - 1
 
 	if not tokPos then
 		cleanup(context, loveGfxStackDepth, false)
@@ -2134,7 +2155,7 @@ function _G.loadArtFile(path, isLocal)
 		print("Nothing was rendered!") -- Should we call ensureCanvasAndInitted()? Especially if an art file loads another.
 	end
 
-	printf("Loading %s... done in %.2f seconds!", path, love.timer.getTime()-startTime)
+	if artFilesBeingLoaded[path] == 0 then  printf("Loading %s... done in %.2f seconds!", path, love.timer.getTime()-startTime)  end
 	return context.art.canvas and context.art
 end
 
