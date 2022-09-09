@@ -9,52 +9,12 @@
 *
 ***************************************************************/
 
+#include "_main.gl"
+
 uniform bool textBlendFix;
-
-uniform bool makeMaskMode;
-
-uniform bool useColorTexture;
-uniform bool colorTextureRadial;
-uniform Image colorTexture;
-uniform vec4 colorTextureLayout; // {scaleX,scaleY, directionX,directionY} // If colorTextureRadial is set, directionX is offsetX.
-
-// vec2 rotate(vec2 v, vec2 angle) {
-// 	return vec2(v.x*angle.x-v.y*angle.y, v.x*angle.y+v.y*angle.x);
-// }
-vec2 rotateCcw(vec2 v, vec2 angle) {
-	return vec2(v.x*angle.x+v.y*angle.y, -v.x*angle.y+v.y*angle.x);
-}
 
 vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 	vec4 color = Texel(tex, texUv);
 	if (textBlendFix)  color.rgb = vec3(color.a);
-
-	if (useColorTexture) {
-		vec2 colorTexUv = texUv;
-		colorTexUv      = colorTexUv*2 - 1; // Center.
-
-		if (colorTextureRadial) {
-			colorTexUv   /= colorTextureLayout.xy; // Scale.
-			vec2 angle    = colorTexUv / length(colorTexUv);
-			colorTexUv    = rotateCcw(colorTexUv, angle); // Make radial.
-			colorTexUv.x += colorTextureLayout.z; // Offset. (Should be half a pixel.)
-			colorTexUv.x  = (colorTexUv.x - .5) * 2;
-
-		} else {
-			colorTexUv  = rotateCcw(colorTexUv, colorTextureLayout.zw); // Rotate.
-			colorTexUv /= colorTextureLayout.xy; // Scale.
-		}
-
-		colorTexUv  = (colorTexUv+1) * .5; // Uncenter.
-		color      *= Texel(colorTexture, colorTexUv);
-
-	} else {
-		color *= loveColor;
-	}
-
-	if (makeMaskMode) {
-		return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
-	} else {
-		return color;
-	}
+	return applyMainEffect(color, texUv, loveColor);
 }

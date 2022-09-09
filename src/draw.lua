@@ -84,17 +84,17 @@ end
 local vertices = {}
 local mesh     = nil
 
-local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
-	if not points[connected and 6 or 4] then  return  end
+local function _drawLine(connected, coords, lw, circleMode, circleX,circleY)
+	if not coords[connected and 6 or 4] then  return  end
 
 	-- Prepare vertices.
-	local pointCount      = .5 * #points
+	local coordCount      = .5 * #coords
 	local additionalCount = connected and 2 or 0
 
-	if not vertices[2*pointCount+additionalCount] then
+	if not vertices[2*coordCount+additionalCount] then
 		local allocationSize = math.max(#vertices, 2*16)
 
-		while allocationSize < 2*pointCount+additionalCount do
+		while allocationSize < 2*coordCount+additionalCount do
 			allocationSize = 2*allocationSize
 		end
 
@@ -113,17 +113,17 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 	-- Make polygon line.
 	local lwHalf = .5 * lw
 
-	for pointI = 1, pointCount do
-		local i     = 2 * pointI
-		local prevI = 2 * ((pointI-2) % pointCount + 1)
-		local nextI = 2 * ((pointI  ) % pointCount + 1)
+	for coordI = 1, coordCount do
+		local i     = 2 * coordI
+		local prevI = 2 * ((coordI-2) % coordCount + 1)
+		local nextI = 2 * ((coordI  ) % coordCount + 1)
 
-		local x     = points[i    -1]
-		local y     = points[i      ]
-		local prevX = points[prevI-1]
-		local prevY = points[prevI  ]
-		local nextX = points[nextI-1]
-		local nextY = points[nextI  ]
+		local x     = coords[i    -1]
+		local y     = coords[i      ]
+		local prevX = coords[prevI-1]
+		local prevY = coords[prevI  ]
+		local nextX = coords[nextI-1]
+		local nextY = coords[nextI  ]
 
 		local dir1X,dir1Y   = mathv.normalize(x-prevX,y-prevY)
 		local dir2X,dir2Y   = mathv.normalize(nextX-x,nextY-y)
@@ -144,16 +144,16 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 
 	-- Correct line edges if not polygon.
 	if not connected then
-		local lastI = 2 * pointCount
+		local lastI = 2 * coordCount
 
-		local x11 = points[1      ]
-		local y11 = points[2      ]
-		local x12 = points[3      ]
-		local y12 = points[4      ]
-		local x21 = points[lastI-3]
-		local y21 = points[lastI-2]
-		local x22 = points[lastI-1]
-		local y22 = points[lastI  ]
+		local x11 = coords[1      ]
+		local y11 = coords[2      ]
+		local x12 = coords[3      ]
+		local y12 = coords[4      ]
+		local x21 = coords[lastI-3]
+		local y21 = coords[lastI-2]
+		local x22 = coords[lastI-1]
+		local y22 = coords[lastI  ]
 
 		local dir1X,dir1Y   = mathv.normalize(x12-x11,y12-y11)
 		local dir2X,dir2Y   = mathv.normalize(x22-x21,y22-y21)
@@ -170,14 +170,14 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 	if circleMode then
 		local maxDistSq = 0
 
-		for i = 1, 2*pointCount do
+		for i = 1, 2*coordCount do
 			local distSq = math.distanceSq(circleX,circleY, vertices[i][1],vertices[i][2])
 			maxDistSq    = math.max(maxDistSq, distSq)
 		end
 
 		local maxDistDouble = 2 * math.sqrt(maxDistSq)
 
-		for i = 1, 2*pointCount do
+		for i = 1, 2*coordCount do
 			vertices[i][3] = .5 + (vertices[i][1] - circleX) / maxDistDouble
 			vertices[i][4] = .5 + (vertices[i][2] - circleY) / maxDistDouble
 		end
@@ -188,7 +188,7 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 		local y1 =  1/0
 		local y2 = -1/0
 
-		for i = 1, 2*pointCount do
+		for i = 1, 2*coordCount do
 			x1 = math.min(x1, vertices[i][1])
 			x2 = math.max(x2, vertices[i][1])
 			y1 = math.min(y1, vertices[i][2])
@@ -198,7 +198,7 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 		local w = x2 - x1
 		local h = y2 - y1
 
-		for i = 1, 2*pointCount do
+		for i = 1, 2*coordCount do
 			vertices[i][3] = (vertices[i][1] - x1) / w
 			vertices[i][4] = (vertices[i][2] - y1) / h
 		end
@@ -206,29 +206,29 @@ local function _drawLine(connected, points, lw, circleMode, circleX,circleY)
 
 	-- Draw mesh.
 	if connected then
-		copyVertexXyuv(vertices, 1, 2*pointCount+1)
-		copyVertexXyuv(vertices, 2, 2*pointCount+2)
+		copyVertexXyuv(vertices, 1, 2*coordCount+1)
+		copyVertexXyuv(vertices, 2, 2*coordCount+2)
 	end
 
-	mesh:setVertices(vertices, 1, 2*pointCount+additionalCount)
-	mesh:setDrawRange(         1, 2*pointCount+additionalCount)
+	mesh:setVertices(vertices, 1, 2*coordCount+additionalCount)
+	mesh:setDrawRange(         1, 2*coordCount+additionalCount)
 	LG.draw(mesh)
 end
 
 
 
-function _G.drawLine(points, lw)
-	_drawLine(false, points, lw, false, 0,0)
+function _G.drawLine(coords, lw)
+	_drawLine(false, coords, lw, false, 0,0)
 end
 
 
 
 local corner = {}
-local points = {}
+local coords = {}
 
 local function drawRoundedRectangle(fill, x,y, w,h, rx,ry, segs, lw)
 	table.clear(corner)
-	table.clear(points)
+	table.clear(coords)
 
 	rx = math.min(rx, w/2)
 	ry = math.min(ry, h/2)
@@ -247,25 +247,25 @@ local function drawRoundedRectangle(fill, x,y, w,h, rx,ry, segs, lw)
 	local i1y         = 2*ry < h and 0 or 1
 
 	for i = i1y, segs do -- tl
-		table.insert(points, x+  corner[2*i+1])
-		table.insert(points, y+  corner[2*i+2])
+		table.insert(coords, x+  corner[2*i+1])
+		table.insert(coords, y+  corner[2*i+2])
 	end
 	for i = i1x, segs do -- tr
-		table.insert(points, x+w-corner[cornerCount-2*i-1])
-		table.insert(points, y+  corner[cornerCount-2*i  ])
+		table.insert(coords, x+w-corner[cornerCount-2*i-1])
+		table.insert(coords, y+  corner[cornerCount-2*i  ])
 	end
 	for i = i1y, segs do -- br
-		table.insert(points, x+w-corner[2*i+1])
-		table.insert(points, y+h-corner[2*i+2])
+		table.insert(coords, x+w-corner[2*i+1])
+		table.insert(coords, y+h-corner[2*i+2])
 	end
 	for i = i1x, segs do -- bl
-		table.insert(points, x+  corner[cornerCount-2*i-1])
-		table.insert(points, y+h-corner[cornerCount-2*i  ])
+		table.insert(coords, x+  corner[cornerCount-2*i-1])
+		table.insert(coords, y+h-corner[cornerCount-2*i  ])
 	end
 
 	if    fill
-	then  drawPolygonFill(points) -- @Speed: Might possibly wanna draw the mesh as a fan.
-	else  drawPolygonLine(points, lw)  end
+	then  drawPolygonFill(coords) -- @Speed: Might possibly wanna draw the mesh as a fan.
+	else  drawPolygonLine(coords, lw)  end
 end
 
 
@@ -389,7 +389,7 @@ for i = 1, 2*MAX_CIRCLE_SEGMENTS+2 do
 	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
 end
 
-local points = {}
+local coords = {}
 
 -- drawCircleLine( x,y, rx,ry, angle1,angle2, arcMode, segs, lineWidth )
 -- arcMode = "open" | "pie" | "closed"
@@ -398,20 +398,20 @@ function _G.drawCircleLine(x,y, rx,ry, angle1,angle2, arcMode, segs, lw)
 	segs            = math.clamp(segs, 3, MAX_CIRCLE_SEGMENTS)
 	local angleStep = (angle2 - angle1) / segs
 
-	table.clear(points)
+	table.clear(coords)
 
 	if arcMode == "pie" then
-		table.insert(points, x)
-		table.insert(points, y)
+		table.insert(coords, x)
+		table.insert(coords, y)
 	end
 
 	for i = 0, segs + (connected and arcMode == "open" and -1 or 0) do
 		local angle = angle1 + i*angleStep
-		table.insert(points, x+rx*math.cos(angle))
-		table.insert(points, y+ry*math.sin(angle))
+		table.insert(coords, x+rx*math.cos(angle))
+		table.insert(coords, y+ry*math.sin(angle))
 	end
 
-	_drawLine(connected, points, lw, true, x,y)
+	_drawLine(connected, coords, lw, true, x,y)
 end
 
 
@@ -419,13 +419,13 @@ end
 local vertices = {}
 local mesh     = nil
 
-function _G.drawPolygonFill(points)
-	local pointCount = .5 * #points
+function _G.drawPolygonFill(coords)
+	local coordCount = .5 * #coords
 
-	if not vertices[pointCount] then
+	if not vertices[coordCount] then
 		local allocationSize = math.max(#vertices, 16)
 
-		while allocationSize < pointCount do
+		while allocationSize < coordCount do
 			allocationSize = 2*allocationSize
 		end
 
@@ -446,32 +446,32 @@ function _G.drawPolygonFill(points)
 	local y1 =  1/0
 	local y2 = -1/0
 
-	for i = 1, #points, 2 do
-		x1 = math.min(x1, points[i  ])
-		x2 = math.max(x2, points[i  ])
-		y1 = math.min(y1, points[i+1])
-		y2 = math.max(y2, points[i+1])
+	for i = 1, #coords, 2 do
+		x1 = math.min(x1, coords[i  ])
+		x2 = math.max(x2, coords[i  ])
+		y1 = math.min(y1, coords[i+1])
+		y2 = math.max(y2, coords[i+1])
 	end
 
 	local w = x2 - x1
 	local h = y2 - y1
 
-	for i = 1, pointCount do
-		local x = points[2*i-1]
-		local y = points[2*i  ]
+	for i = 1, coordCount do
+		local x = coords[2*i-1]
+		local y = coords[2*i  ]
 
 		vertices[i][1],vertices[i][2], vertices[i][3],vertices[i][4] = x,y, (x-x1)/w,(y-y1)/h
 	end
 
-	mesh:setVertices(vertices, 1, pointCount)
-	mesh:setDrawRange(         1, pointCount)
+	mesh:setVertices(vertices, 1, coordCount)
+	mesh:setDrawRange(         1, coordCount)
 	LG.draw(mesh)
 end
 
 
 
-function _G.drawPolygonLine(points, lw)
-	_drawLine(true, points, lw, false, 0,0)
+function _G.drawPolygonLine(coords, lw)
+	_drawLine(true, coords, lw, false, 0,0)
 end
 
 

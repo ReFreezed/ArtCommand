@@ -9,6 +9,7 @@
 --=
 --==============================================================
 
+	F
 	getLast, itemWith1, indexOf
 	getLineNumber
 	makePathAbsolute
@@ -20,18 +21,22 @@
 
 
 
+_G.F = string.format
+
+
+
 function _G.printf(s, ...)
-	print(string.format(s, ...))
+	print(F(s, ...))
 end
 
 function _G.printFileMessage(pathOrContext, ln, s, ...)
-	print(string.format("%s:%d: "..s, (pathOrContext.path or pathOrContext), ln, ...))
+	printf("%s:%d: "..s, (pathOrContext.path or pathOrContext), ln, ...)
 end
 function _G.printFileError(pathOrContext, ln, s, ...)
-	print(string.format("%s:%d: Error: "..s, (pathOrContext.path or pathOrContext), ln, ...))
+	printf("%s:%d: Error: "..s, (pathOrContext.path or pathOrContext), ln, ...)
 end
 function _G.printFileWarning(pathOrContext, ln, s, ...)
-	print(string.format("%s:%d: Warning: "..s, (pathOrContext.path or pathOrContext), ln, ...))
+	printf("%s:%d: Warning: "..s, (pathOrContext.path or pathOrContext), ln, ...)
 end
 
 local function _printFileMessageAt(f, path, source, pos, s, ...)

@@ -86,7 +86,7 @@ local function Context()return{
 	fontsByPath = {--[[ [path1]=font, ... ]]}, -- Image fonts.
 	fontsBySize = {--[[ [path1]={[size1]=font,...}, ... ]]}, -- Vector fonts.
 
-	points = {},
+	points = {{x=0,y=0, a=0/0,b=0/0, s=""}},
 
 	-- Settings.
 	canvasW = DEFAULT_ART_SIZE,
@@ -255,16 +255,21 @@ end
 
 
 
-local function applyCanvas(context)
-	shaderSend(A.shaders.main.shader, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
+-- applyCanvas( context, shader=main )
+local function applyCanvas(context, shader)
+	shader = shader or A.shaders.main
+
+	shaderSend(shader.shader, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
 
 	LG.setCanvas(context.gfxState.canvas)
-	LG.setShader(A.shaders.main.shader)
+	LG.setShader(shader.shader)
 end
 
--- applyColor( context, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
+-- applyColor( context, shader=main, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
 -- shapeToDraw = "rectangle" | "circle"
-local function applyColor(context, shape, w,h)
+local function applyColor(context, shader, shape, w,h)
+	shader = shader or A.shaders.main
+
 	w = math.abs(w)
 	h = math.abs(h)
 
@@ -275,7 +280,7 @@ local function applyColor(context, shape, w,h)
 	if gfxState.colorMode == "flatcolor" then
 		local r,g,b,a = unpack(gfxState.flatColor)
 		LG.setColor(r*a, g*a, b*a, a)
-		shaderSend(A.shaders.main.shader, "useColorTexture", false)
+		shaderSend(shader.shader, "useColorTexture", false)
 		return
 	end
 
@@ -326,10 +331,10 @@ local function applyColor(context, shape, w,h)
 		error(gfxState.colorMode)
 	end
 
-	shaderSend    (A.shaders.main.shader, "useColorTexture"   , true)
-	shaderSend    (A.shaders.main.shader, "colorTextureRadial", gfxState.colorTextureRadial)
-	shaderSend    (A.shaders.main.shader, "colorTexture"      , gfxState.colorTexture)
-	shaderSendVec4(A.shaders.main.shader, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
+	shaderSend    (shader.shader, "useColorTexture"   , true)
+	shaderSend    (shader.shader, "colorTextureRadial", gfxState.colorTextureRadial)
+	shaderSend    (shader.shader, "colorTexture"      , gfxState.colorTexture)
+	shaderSendVec4(shader.shader, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
 end
 
 
@@ -351,14 +356,7 @@ local function ensureCanvasAndInitted(context)
 	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
 	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
 
-	shaderSend(A.shaders.main.shader, "textBlendFix"   , false)
-	shaderSend(A.shaders.main.shader, "makeMaskMode"   , false)
-	shaderSend(A.shaders.main.shader, "useColorTexture", false)
-
 	gfxStateSetCanvas(context, context.art.canvas, nil)
-
-	applyCanvas(context)
-	LG.setShader(A.shaders.main.shader)
 end
 
 
@@ -900,6 +898,19 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 	-- imageOrCanvas:setFilter("nearest") -- Fixes fuzziness caused by MSAA, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
 	context.images[pathIdent] = imageOrCanvas
 	return imageOrCanvas
+end
+
+local function pointsToCoords(points)
+	local coords = {}
+	for _, point in ipairs(points) do
+		table.insert(coords, point.x)
+		table.insert(coords, point.y)
+	end
+	return coords
+end
+
+local function tostringFloat(n)
+	return tostring(n):gsub("^%-?%d+$", "%0.0")
 end
 
 local runBlock
@@ -1479,8 +1490,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not isSequence then
 			table.clear(context.points)
 		end
-		table.insert(context.points, args.x)
-		table.insert(context.points, args.y)
+		table.insert(context.points, {x=args.x,y=args.y, a=args.a,b=args.b, s=args.s})
 
 	----------------------------------------------------------------
 	elseif command == "fill" then
@@ -1498,8 +1508,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		-- Fill!
 		-- Note: We don't use clear() because of shaders and stuff. This is a drawing operation!
-		applyCanvas(context)
-		applyColor(context, "rectangle", cw,ch)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", cw,ch)
 
 		LG.push()
 		LG.origin()
@@ -1518,8 +1528,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context)
-		applyColor(context, "rectangle", args.w,args.h)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", args.w,args.h)
 
 		local segs = (
 			args.segs > 0
@@ -1557,8 +1567,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			or  math.round(math.max(math.max(args.rx, args.ry) * TAU/10, 64) * math.abs(angle2-angle1)/TAU)
 		)
 
-		applyCanvas(context)
-		applyColor(context, "circle", args.rx,args.ry)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "circle", args.rx,args.ry)
 
 		LG.push()
 		LG.translate(args.x, args.y)
@@ -1582,10 +1592,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return (tokenError(context, (visited.mode or startTok), "[poly] Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
 
-		if not context.points[1] then  return (tokenError(context, startTok, "[poly] No points added."))  end
-		if not context.points[5] then  return (tokenError(context, startTok, "[poly] Not enough points added."))  end
+		if not context.points[3] then  return (tokenError(context, startTok, "[poly] Not enough points added."))  end
 
-		if args.mode == "fill" and not love.math.isConvex(context.points) then
+		local coords = pointsToCoords(context.points)
+
+		if args.mode == "fill" and not love.math.isConvex(coords) then
 			return (tokenError(context, startTok, "[poly] The added points form a concave shape. Filled polygons must be convex."))
 		end
 
@@ -1596,11 +1607,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local y1 =  1/0
 		local y2 = -1/0
 
-		for i = 1, #context.points, 2 do
-			x1 = math.min(x1, context.points[i  ])
-			x2 = math.max(x2, context.points[i  ])
-			y1 = math.min(y1, context.points[i+1])
-			y2 = math.max(y2, context.points[i+1])
+		for i = 1, #coords, 2 do
+			x1 = math.min(x1, coords[i  ])
+			x2 = math.max(x2, coords[i  ])
+			y1 = math.min(y1, coords[i+1])
+			y2 = math.max(y2, coords[i+1])
 		end
 
 		local colorW = x2 - x1
@@ -1610,8 +1621,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			x1, y1 = 0, 0
 		end
 
-		applyCanvas(context)
-		applyColor(context, "rectangle", colorW,colorH)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", colorW,colorH)
 
 		LG.push()
 		LG.translate(args.x+x1, args.y+y1)
@@ -1621,22 +1632,21 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
 		LG.translate(-x1, -y1)
 
-		if     args.mode == "fill" then  drawPolygonFill(context.points)
-		elseif args.mode == "line" then  drawPolygonLine(context.points, args.thick)
+		if     args.mode == "fill" then  drawPolygonFill(coords)
+		elseif args.mode == "line" then  drawPolygonLine(coords, args.thick)
 		else error(args.mode) end
 
 		LG.pop()
 
 	----------------------------------------------------------------
 	elseif command == "line" or command == "bezier" then
-		if not context.points[1] then  return (tokenError(context, startTok, "[%s] No points added.", command))  end
-		if not context.points[3] then  return (tokenError(context, startTok, "[%s] Not enough points added.", command))  end
+		if not context.points[2] then  return (tokenError(context, startTok, "[%s] Not enough points added.", command))  end
 
-		local points = context.points
+		local coords = pointsToCoords(context.points)
 
 		if command == "bezier" then
-			local curve = love.math.newBezierCurve(points)
-			points      = curve:render(args.depth)
+			local curve = love.math.newBezierCurve(coords)
+			coords      = curve:render(args.depth)
 			curve:release()
 		end
 
@@ -1647,11 +1657,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local y1 =  1/0
 		local y2 = -1/0
 
-		for i = 1, #points, 2 do
-			x1 = math.min(x1, points[i  ])
-			x2 = math.max(x2, points[i  ])
-			y1 = math.min(y1, points[i+1])
-			y2 = math.max(y2, points[i+1])
+		for i = 1, #coords, 2 do
+			x1 = math.min(x1, coords[i  ])
+			x2 = math.max(x2, coords[i  ])
+			y1 = math.min(y1, coords[i+1])
+			y2 = math.max(y2, coords[i+1])
 		end
 
 		local colorW = x2 - x1
@@ -1661,8 +1671,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			x1, y1 = 0, 0
 		end
 
-		applyCanvas(context)
-		applyColor(context, "rectangle", colorW,colorH)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", colorW,colorH)
 
 		LG.push()
 		LG.translate(args.x+x1, args.y+y1)
@@ -1671,7 +1681,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
 		LG.translate(-x1, -y1)
-		drawLine(points, args.thick)
+		drawLine(coords, args.thick)
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1692,8 +1702,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		font:setFilter(args.filter and "linear" or "nearest")
 		font:setLineHeight(args.lineh)
-		applyCanvas(context)
-		applyColor(context, "rectangle", 1,1) -- @Incomplete: Handle gradients for text/glyphs like the other shapes, somehow.
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", 1,1) -- @Incomplete: Handle gradients for text/glyphs like the other shapes, somehow.
 		LG.setFont(font)
 
 		LG.push()
@@ -1719,8 +1729,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local iw,ih = imageOrCanvas:getDimensions()
 
 		imageOrCanvas:setFilter(args.filter and "linear" or "nearest")
-		applyCanvas(context)
-		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", iw*args.sx,ih*args.sy)
 
 		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
@@ -1745,8 +1755,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local iw,ih = texture:getDimensions()
 
 		texture:setFilter(args.filter and "linear" or "nearest")
-		applyCanvas(context)
-		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", iw*args.sx,ih*args.sy)
 
 		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
@@ -1771,8 +1781,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		texture:setFilter(args.filter and "linear" or "nearest")
 		texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
-		applyCanvas(context)
-		applyColor(context, "rectangle", iw*args.sx,ih*args.sy)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", iw*args.sx,ih*args.sy)
 		LG.push()
 
 		LG.translate(args.x, args.y)
@@ -1792,6 +1802,140 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		LG.pop()
 		texture:setWrap("clamp")
+
+	----------------------------------------------------------------
+	elseif command == "iso" then
+		local glslInitPoints = {}
+		local initValue, defaultA,defaultB, glslDebug, glslEachPoint
+
+		if args.mode == "sdf" then
+			initValue, defaultA,defaultB, glslDebug, glslEachPoint = -999999, 0,0, ".04*(result-$threshold)", [[//GLSL
+				#define RADIUS z//a
+				float distToEdge = distance(texUv, points[i].xy) - points[i].RADIUS;
+				result           = -min(-result, distToEdge);
+			]]
+		elseif args.mode == "sdfsmooth" then
+			initValue, defaultA,defaultB, glslDebug, glslEachPoint = -999999, 0,0, ".04*(result-$threshold)", [[//GLSL
+				#define RADIUS z//a
+				float distToEdge = distance(texUv, points[i].xy) - points[i].RADIUS;
+				result           = -sdfSmoothMin(-result, distToEdge);
+			]]
+		elseif args.mode == "metaball" then
+			initValue, defaultA,defaultB, glslDebug, glslEachPoint = -1, 1,0, "result-$threshold", [[//GLSL
+				#define WEIGHT z//a
+				#define OFFSET w//b
+				float dist = max(distance(texUv, points[i].xy)-points[i].OFFSET, 0);
+				result     = result + points[i].WEIGHT / dist;
+			]]
+		elseif args.mode == "metaballramp" then
+			initValue, defaultA,defaultB, glslDebug, glslEachPoint = -1, 1,2, "result-$threshold", [[//GLSL
+				#define RADIUS z//a
+				#define HEIGHT w//b
+				#define WEIGHT w//b
+				float dist  = distance(texUv, points[i].xy);
+				float r     = max(points[i].RADIUS, 0);
+				float h     = points[i].HEIGHT;
+				float halfH = max(abs(h/2), 1.); // Without the clamping, a small height would increase the area of influence way beyond the specified radius.
+				result      = result + h * smoothstep(-r/(halfH*halfH), r/halfH, r-dist); // We want the smoothstep to happen around the radius.
+				// result      = result + 2*points[i].WEIGHT * smoothstep(-2*r, 0, -dist); // WEIGHT!=1 messes with threshold=0 in an unpredictable way. No good.
+			]]
+		else
+			return (tokenError(context, (visited.mode or startTok), "[iso] Bad mode '%s'. Must be 'sdf' or 'metaball'.", args.mode))
+		end
+
+		for i, point in ipairs(context.points) do
+			table.insert(glslInitPoints, F(
+				"points[%d] = vec4(%s,%s, %s,%s);",
+				i - 1,
+				tostringFloat(point.x),
+				tostringFloat(point.y),
+				tostringFloat((point.a == point.a) and point.a or defaultA),
+				tostringFloat((point.b == point.b) and point.b or defaultB)
+			))
+		end
+
+		local glsl = [[//GLSL
+			#include "_main.gl"
+
+			float sdfSmoothMin(float a, float b) {
+				float res = exp(-$k*a) + exp(-$k*b);
+				return -log(max(.0001, res)) / $k;
+			}
+
+			vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+				vec4 points[$pointCount];
+				$INIT_POINTS
+
+				float result = $initValue;
+
+				for (int i = 0; i < $pointCount; i++) {
+					$EACH_POINT
+				}
+
+				if ($debug) {
+					float v = $DEBUG;
+					return (v < 0) ? vec4(vec3(max(.7+.7*v,0)), 1) : vec4(1, vec2(max(1-v,0)), 1);
+				} else if (result > $threshold && result < $limit) {
+					return applyMainEffect(vec4(1), texUv, loveColor);
+				} else {
+					discard;
+				}
+
+			}
+		]]
+		glsl = (glsl
+			:gsub("%$([%a_][%w_]*)", {
+				INIT_POINTS = table.concat(glslInitPoints, "\n"),
+				EACH_POINT  = glslEachPoint,
+				DEBUG       = glslDebug,
+			})
+			:gsub("%$([%a_][%w_]*)", {
+				pointCount = "("..tostring(#context.points)..")",
+				initValue  = "("..tostringFloat(initValue)..")",
+				threshold  = "("..tostringFloat(args.thres)..")",
+				limit      = "("..tostringFloat(args.limit)..")",
+				k          = "("..tostringFloat(args.k)..")",
+				debug      = "("..tostring(args.debug)..")",
+			})
+			:gsub("%$([%a_][%w_]*)", error)
+		)
+
+		local ok, shaderOrErr = pcall(newShader, glsl, "<sdf>")
+		if not ok then
+			tokenError(context, startTok, "[iso] Internal error: Failed creating shader. (%s)", shaderOrErr)
+			if DEV then
+				local ln = 1
+				print("1: "..glsl:gsub("\n", function()
+					ln = ln + 1
+					return "\n"..ln..": "
+				end))
+			end
+			return nil
+		end
+
+		ensureCanvasAndInitted(context)
+
+		local cw,ch = context.gfxState.canvas:getDimensions()
+
+		applyCanvas(context, shaderOrErr)
+		applyColor(context, shaderOrErr, "circle", 1,1) -- @Incomplete: Handle gradients better for isolines.
+		LG.push()
+
+		LG.translate(args.x, args.y)
+		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
+
+		local u1, v1 = LG.inverseTransformPoint(0 , 0 )
+		local u2, v2 = LG.inverseTransformPoint(cw, 0 )
+		local u3, v3 = LG.inverseTransformPoint(cw, ch)
+		local u4, v4 = LG.inverseTransformPoint(0 , ch)
+
+		LG.origin()
+		drawQuad(A.images.rectangle,  0,0, cw,0, cw,ch, 0,ch,  u1,v1, u2,v2, u3,v3, u4,v4)
+
+		LG.pop()
+		shaderOrErr.shader:release()
 
 	--
 	-- Effects.
@@ -1918,7 +2062,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		shaderSendVec2(A.shaders.generateNoise.shader, "scale" , args.sx,args.sy)
 
 		if gfxState.colorMode == "gradient" then
-			applyColor(context, "rectangle", 1,1) -- Generates colorTexture.
+			applyColor(context, nil, "rectangle", 1,1) -- Generates colorTexture.
 			shaderSend(A.shaders.generateNoise.shader, "useColorTexture" , true)
 			shaderSend(A.shaders.generateNoise.shader, "colorTexture"    , gfxState.colorTexture)
 			shaderSend(A.shaders.generateNoise.shader, "colorTextureSize", gfxState.colorTexture:getWidth())
@@ -1960,8 +2104,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local image = LG.newImage(imageData)
 		image:setFilter("nearest")
 
-		applyCanvas(context)
-		applyColor(context, "rectangle", cw,ch)
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", cw,ch)
 
 		LG.push()
 		LG.origin()
@@ -2115,7 +2259,7 @@ function _G.loadArtFile(path, isLocal)
 	entry.variables.byte    = string.byte -- @Robustness: Handle the string metatable.
 	entry.variables.char    = string.char
 	entry.variables.find    = string.find
-	entry.variables.format  = string.format
+	entry.variables.format  = F
 	entry.variables.gsub    = string.gsub
 	entry.variables.lower   = string.lower
 	entry.variables.match   = string.match

@@ -10,6 +10,7 @@
 --==============================================================
 
 	fixImageDataForSaving, normalizeImageAndMultiplyAlpha
+	newShader
 
 --============================================================]]
 
@@ -40,11 +41,93 @@ local function tryLoadingTheArtFile()
 	if theArt then  theArt.canvas:release()  end
 	theArt = art
 
-	love.window.setTitle(string.format(
+	love.window.setTitle(F(
 		"%s (%dx%d) - Art Command",
 		thePathIn:gsub("^.*[/\\]", ""),
 		theArt.canvas:getWidth(), theArt.canvas:getHeight()
 	))
+end
+
+local function includeShader(paths, lines, lineFiles, lineLines, s, path)
+	if paths[path] then  return  end
+	paths[path] = true
+	table.insert(paths, path)
+
+	local ln = 0
+
+	for line in s:gsub("\n", " \n"):gmatch"[^\n]+" do
+		ln                = ln + 1
+		local includePath = line:match'^%s*#include%s+"(.-)"'
+
+		if includePath then
+			includePath = "src/shaders/"..includePath
+			includeShader(paths, lines, lineFiles, lineLines, assert(LF.read(includePath)), includePath)
+		else
+			table.insert(lines, line)
+			lineFiles[#lines] = path
+			lineLines[#lines] = ln
+		end
+	end
+end
+
+function _G.newShader(s, path)
+	local paths     = {}
+	local lines     = {}
+	local lineFiles = {}
+	local lineLines = {}
+
+	includeShader(paths, lines, lineFiles, lineLines, s, path)
+
+	local ok, loveShaderOrErr = pcall(LG.newShader, table.concat(lines, "\n"))
+	if ok then  return {shader=loveShaderOrErr, path=path, paths=paths}  end
+	local err = loveShaderOrErr
+
+	err = err:gsub("\nLine (%d+): ([^\n]*)", function(lnStr, s)
+		local ln = tonumber(lnStr)
+		s = (s
+			:gsub("^%u+: ", "")
+			:gsub("^'' : ", "")
+			:gsub(" : ", ": ")
+		)
+		if lineFiles[ln] then  return "\n\t"..lineFiles[ln]..":"..lineLines[ln]..": "..s
+		else                   return '\n\t[meta "'..path..'"]:'..lnStr..": "..s  end
+	end)
+
+	err = err:gsub("\nERROR: %d+ compilation errors.  No code generated.$", "")
+
+	error(path..": "..err, 0)
+end
+
+local onShaderPathModified
+
+local function loadShader(name, path)
+	local shader    = newShader(assert(LF.read(path)), path)
+	A.shaders[name] = shader
+
+	if DEV then
+		for _, path in ipairs(shader.paths) do
+			require"hotLoader".monitor(path, onShaderPathModified)
+		end
+	end
+end
+
+--[[local]] function onShaderPathModified(path)
+	local loadedAny = false
+
+	for name, shader in pairs(A.shaders) do
+		if indexOf(shader.paths, path) then
+			local ok, err = pcall(loadShader, name, shader.path)
+			if ok then
+				loadedAny = true
+			else
+				print(err)
+			end
+		end
+	end
+
+	if loadedAny then
+		tryLoadingTheArtFile()
+	end
 end
 
 function love.load(args, rawArgs)
@@ -98,87 +181,6 @@ function love.load(args, rawArgs)
 	require"art"
 	require"draw"
 	require"filesystem"
-
-	local function includeShader(paths, lines, lineFiles, lineLines, path)
-		if paths[path] then  return  end
-		paths[path] = true
-		table.insert(paths, path)
-
-		local ln = 0
-
-		for line in LF.lines(path) do
-			ln                = ln + 1
-			local includePath = line:match'^%s*#include%s+"(.-)"'
-
-			if includePath then
-				includeShader(paths, lines, lineFiles, lineLines, "src/shaders/"..includePath)
-			else
-				table.insert(lines, line)
-				lineFiles[#lines] = path
-				lineLines[#lines] = ln
-			end
-		end
-	end
-
-	local function newShader(path)
-		local paths     = {}
-		local lines     = {}
-		local lineFiles = {}
-		local lineLines = {}
-
-		includeShader(paths, lines, lineFiles, lineLines, path)
-
-		local ok, loveShaderOrErr = pcall(LG.newShader, table.concat(lines, "\n"))
-		if ok then  return {shader=loveShaderOrErr, path=path, paths=paths}  end
-		local err = loveShaderOrErr
-
-		err = err:gsub("\nLine (%d+): ([^\n]*)", function(lnStr, s)
-			local ln = tonumber(lnStr)
-			s = (s
-				:gsub("^%u+: ", "")
-				:gsub("^'' : ", "")
-				:gsub(" : ", ": ")
-			)
-			if lineFiles[ln] then  return "\n\t"..lineFiles[ln]..":"..lineLines[ln]..": "..s
-			else                   return '\n\t[meta "'..path..'"]:'..lnStr..": "..s  end
-		end)
-
-		err = err:gsub("\nERROR: %d+ compilation errors.  No code generated.$", "")
-
-		error(path..": "..err, 0)
-	end
-
-	local onShaderPathModified
-
-	local function loadShader(name, path)
-		local shader    = newShader(path)
-		A.shaders[name] = shader
-
-		if DEV then
-			for _, path in ipairs(shader.paths) do
-				require"hotLoader".monitor(path, onShaderPathModified)
-			end
-		end
-	end
-
-	--[[local]] function onShaderPathModified(path)
-		local loadedAny = false
-
-		for name, shader in pairs(A.shaders) do
-			if indexOf(shader.paths, path) then
-				local ok, err = pcall(loadShader, name, shader.path)
-				if ok then
-					loadedAny = true
-				else
-					print(err)
-				end
-			end
-		end
-
-		if loadedAny then
-			tryLoadingTheArtFile()
-		end
-	end
 
 	for _, filename in ipairs(LF.getDirectoryItems"src/shaders") do
 		local name = filename:match"^(%a.*)%.gl$"

@@ -366,3 +366,26 @@ push
 	grey0 .2; rect 0 0 CanvasWidth CanvasHeight
 	# color .4 .9 1; image "test.artcmd" recurse3 -filter
 pop
+
+# Isolines.
+color .7 .9 1 .8
+# grad 1 0 0, 0 0 1 scale30 rot110deg
+
+point 0 0 15, 20 20 10, 17 8 10
+iso"sdf" 510 445 limit5 #+debug
+point 0 0 10, 20 20 5, 30 -5 5
+iso"sdfsmooth" 560 445 limit4 #+debug
+
+point 0 0 20, 15 -15 -.5 20
+iso"metaball" 520 510 #+debug
+point -5 -5 -5 2, 0 0 18, 25 25 8
+iso"metaball" 550 495 limit4 #+debug
+point -3 -3 7 -2, 0 0 17, 22 22 10
+iso"metaballramp" 610 495 limit.5 #+debug
+
+point 0 0 4 2, 30 0 4 -2, 30 0 17
+iso"metaballramp" 510 560 #+debug
+point 0 0 4 2, 30 0 4 -2, 30 0 17
+iso"metaballramp" 570 560 #+debug
+point 0 0 17 2  # Increasing the height shouldn't change the radius.
+iso"metaballramp" 645 560 #+debug
