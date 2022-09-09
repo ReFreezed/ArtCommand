@@ -49,7 +49,7 @@ pop
 
 color      r=1 g=1 b=1 a=1  rgb=r&g&b
 grey       grey=1 a=1  # Short for `color rgbN`.
-grad       r=1 g=1 b=1 a=1  rot=0  scale=1  radial=false fit=true  rgb=r&g&b
+grad       r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  radial=false fit=true  rgb=r&g&b  scale=sx&sy  xy=x&y
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
 

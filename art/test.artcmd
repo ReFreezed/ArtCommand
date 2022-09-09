@@ -84,8 +84,12 @@ makemask
 
 mask
 	color 1 50% 1; rect w1000 h1000 anchor.5
+
 	TestBlobs 1 1 4
-	color; font14; text "YES" x36 y42
+
+	font14
+	grey0 .3; text "YES" x37 y43
+	grey    ; text "YES" x36 y42
 mask False
 
 TestBlobs -13 1 4
@@ -189,6 +193,9 @@ push
 	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 +radial -fit
 	rect 0 30 60 50
 	circle 70 0 r40 anchor0
+	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 +radial sy.7 x-.15 y-.15
+	rect 152 0 size24 anchor.5
+	circle 152 80 r12
 pop
 
 # State.

@@ -18,7 +18,12 @@ uniform bool makeMaskMode;
 uniform bool useColorTexture;
 uniform bool colorTextureRadial;
 uniform Image colorTexture;
-uniform vec4 colorTextureLayout; // {scaleX,scaleY, directionX,directionY} // If colorTextureRadial is set, directionX is offsetX.
+uniform vec4 colorTextureLayout; // {scaleX,scaleY, directionX,directionY} // If colorTextureRadial is set, directionX is radialOffset.
+uniform vec2 colorTextureOffset;
+
+#define SCALE         xy
+#define DIRECTION     zw
+#define RADIAL_OFFSET z
 
 // vec2 _main_rotate(vec2 v, vec2 angle) {
 // 	return vec2(v.x*angle.x-v.y*angle.y, v.x*angle.y+v.y*angle.x);
@@ -29,19 +34,20 @@ vec2 _main_rotateCcw(vec2 v, vec2 angle) {
 
 vec4 applyMainEffect(vec4 color, vec2 uv, vec4 loveColor) {
 	if (useColorTexture) {
-		vec2 colorTexUv = uv;
-		colorTexUv      = colorTexUv*2 - 1; // Center.
+		vec2 colorTexUv  = uv;
+		colorTexUv      -= colorTextureOffset;
+		colorTexUv       = colorTexUv*2 - 1; // Center.
 
 		if (colorTextureRadial) {
-			colorTexUv   /= colorTextureLayout.xy; // Scale.
+			colorTexUv   /= colorTextureLayout.SCALE; // Scale.
 			vec2 angle    = colorTexUv / length(colorTexUv);
 			colorTexUv    = _main_rotateCcw(colorTexUv, angle); // Make radial.
-			colorTexUv.x += colorTextureLayout.z; // Offset. (Should be half a pixel.)
+			colorTexUv.x += colorTextureLayout.RADIAL_OFFSET; // Offset. (Should be half a pixel.)
 			colorTexUv.x  = (colorTexUv.x - .5) * 2;
 
 		} else {
-			colorTexUv  = _main_rotateCcw(colorTexUv, colorTextureLayout.zw); // Rotate.
-			colorTexUv /= colorTextureLayout.xy; // Scale.
+			colorTexUv  = _main_rotateCcw(colorTexUv, colorTextureLayout.DIRECTION); // Rotate.
+			colorTexUv /= colorTextureLayout.SCALE; // Scale.
 		}
 
 		colorTexUv  = (colorTexUv+1) * .5; // Uncenter.

@@ -114,15 +114,17 @@ local function GfxState()return{
 
 	-- "user"
 	-- Color.
-	colorMode          = "flatcolor", -- "flatcolor" | "gradient"
-	flatColor          = {1,1,1,1},
-	gradient           = {--[[ r1,g1,b1,a1, ... ]]},
-	colorTexture       = nil,
-	colorTextureRadial = false,
-	colorTextureFit    = true, -- Used with colorTextureRadial.
-	colorTextureScaleX = 1.0,
-	colorTextureScaleY = 1.0,
-	colorTextureAngle  = 0.0,
+	colorMode           = "flatcolor", -- "flatcolor" | "gradient"
+	flatColor           = {1,1,1,1},
+	gradient            = {--[[ r1,g1,b1,a1, ... ]]},
+	colorTexture        = nil,
+	colorTextureRadial  = false,
+	colorTextureFit     = true, -- Used with colorTextureRadial.
+	colorTextureScaleX  = 1.0,
+	colorTextureScaleY  = 1.0,
+	colorTextureAngle   = 0.0,
+	colorTextureOffsetX = 0.0,
+	colorTextureOffsetY = 0.0,
 	-- Font.
 	font = LG.getFont(),
 
@@ -137,16 +139,18 @@ local function GfxState()return{
 local function copyGfxState(gfxState,stackType)return{
 	stackType = stackType or error("Missing 'stackType' argument."),
 
-	colorMode          = (stackType == "user" or nil) and gfxState.colorMode,
-	flatColor          = (stackType == "user" or nil) and {unpack(gfxState.flatColor)},
-	gradient           = (stackType == "user" or nil) and {unpack(gfxState.gradient)},
-	colorTexture       = (stackType == "user" or nil) and gfxState.colorTexture,
-	colorTextureRadial = (stackType == "user" or nil) and gfxState.colorTextureRadial,
-	colorTextureFit    = (stackType == "user" or nil) and gfxState.colorTextureFit,
-	colorTextureScaleX = (stackType == "user" or nil) and gfxState.colorTextureScaleX,
-	colorTextureScaleY = (stackType == "user" or nil) and gfxState.colorTextureScaleY,
-	colorTextureAngle  = (stackType == "user" or nil) and gfxState.colorTextureAngle,
-	font               = (stackType == "user" or nil) and gfxState.font,
+	colorMode           = (stackType == "user" or nil) and gfxState.colorMode,
+	flatColor           = (stackType == "user" or nil) and {unpack(gfxState.flatColor)},
+	gradient            = (stackType == "user" or nil) and {unpack(gfxState.gradient)},
+	colorTexture        = (stackType == "user" or nil) and gfxState.colorTexture,
+	colorTextureRadial  = (stackType == "user" or nil) and gfxState.colorTextureRadial,
+	colorTextureFit     = (stackType == "user" or nil) and gfxState.colorTextureFit,
+	colorTextureScaleX  = (stackType == "user" or nil) and gfxState.colorTextureScaleX,
+	colorTextureScaleY  = (stackType == "user" or nil) and gfxState.colorTextureScaleY,
+	colorTextureAngle   = (stackType == "user" or nil) and gfxState.colorTextureAngle,
+	colorTextureOffsetX = (stackType == "user" or nil) and gfxState.colorTextureOffsetX,
+	colorTextureOffsetY = (stackType == "user" or nil) and gfxState.colorTextureOffsetY,
+	font                = (stackType == "user" or nil) and gfxState.font,
 
 	canvas         = (stackType == "makemask" or stackType == "applymask" or nil) and gfxState.canvas,
 	fallbackCanvas = (stackType == "makemask" or stackType == "applymask" or nil) and gfxState.fallbackCanvas,
@@ -156,16 +160,18 @@ local function copyGfxState(gfxState,stackType)return{
 
 local function moveGfxState(fromGfxState, toGfxState)
 	if fromGfxState.stackType == "user" then
-		toGfxState.colorMode          = fromGfxState.colorMode
-		toGfxState.flatColor          = fromGfxState.flatColor
-		toGfxState.gradient           = fromGfxState.gradient
-		toGfxState.colorTexture       = fromGfxState.colorTexture
-		toGfxState.colorTextureRadial = fromGfxState.colorTextureRadial
-		toGfxState.colorTextureFit    = fromGfxState.colorTextureFit
-		toGfxState.colorTextureScaleX = fromGfxState.colorTextureScaleX
-		toGfxState.colorTextureScaleY = fromGfxState.colorTextureScaleY
-		toGfxState.colorTextureAngle  = fromGfxState.colorTextureAngle
-		toGfxState.font               = fromGfxState.font
+		toGfxState.colorMode           = fromGfxState.colorMode
+		toGfxState.flatColor           = fromGfxState.flatColor
+		toGfxState.gradient            = fromGfxState.gradient
+		toGfxState.colorTexture        = fromGfxState.colorTexture
+		toGfxState.colorTextureRadial  = fromGfxState.colorTextureRadial
+		toGfxState.colorTextureFit     = fromGfxState.colorTextureFit
+		toGfxState.colorTextureScaleX  = fromGfxState.colorTextureScaleX
+		toGfxState.colorTextureScaleY  = fromGfxState.colorTextureScaleY
+		toGfxState.colorTextureAngle   = fromGfxState.colorTextureAngle
+		toGfxState.colorTextureOffsetX = fromGfxState.colorTextureOffsetX
+		toGfxState.colorTextureOffsetY = fromGfxState.colorTextureOffsetY
+		toGfxState.font                = fromGfxState.font
 	end
 	if fromGfxState.stackType == "makemask" or fromGfxState.stackType == "applymask" then
 		toGfxState.canvas         = fromGfxState.canvas
@@ -284,10 +290,10 @@ local function applyColor(context, shader, shape, w,h)
 		return
 	end
 
-	local sx           = 1 -- For colorTextureLayout.
-	local sy           = 1
-	local dirOrOffsetX = 1
-	local dirY         = 0
+	local sx                 = 1 -- For colorTextureLayout.
+	local sy                 = 1
+	local dirXOrRadialOffset = 1
+	local dirY               = 0
 
 	if gfxState.colorMode == "gradient" then
 		if not gfxState.colorTexture then
@@ -306,11 +312,11 @@ local function applyColor(context, shader, shape, w,h)
 		end
 
 		if gfxState.colorTextureRadial then
-			local iw     = gfxState.colorTexture:getWidth()
-			local scale  = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
-			sx           = gfxState.colorTextureScaleX * iw/(iw-1) * scale -- colorTextureScaleY isn't used.
-			sy           = sx * w/h
-			dirOrOffsetX = .5/iw
+			local iw           = gfxState.colorTexture:getWidth()
+			local scale        = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
+			sx                 = gfxState.colorTextureScaleX * iw/(iw-1) * scale
+			sy                 = gfxState.colorTextureScaleY * iw/(iw-1) * scale * w/h
+			dirXOrRadialOffset = .5/iw
 
 		else
 			-- When shape="rectangle" and the gradient scale is 1, one edge of the
@@ -323,8 +329,8 @@ local function applyColor(context, shader, shape, w,h)
 			local iw = gfxState.colorTexture:getWidth()
 			sx       = gfxState.colorTextureScaleX * iw/(iw-1) * angleCompensationScale -- colorTextureScaleY isn't used.
 
-			dirOrOffsetX = math.cos(scaledAngle)
-			dirY         = math.sin(scaledAngle)
+			dirXOrRadialOffset = math.cos(scaledAngle)
+			dirY               = math.sin(scaledAngle)
 		end
 
 	else
@@ -334,7 +340,8 @@ local function applyColor(context, shader, shape, w,h)
 	shaderSend    (shader.shader, "useColorTexture"   , true)
 	shaderSend    (shader.shader, "colorTextureRadial", gfxState.colorTextureRadial)
 	shaderSend    (shader.shader, "colorTexture"      , gfxState.colorTexture)
-	shaderSendVec4(shader.shader, "colorTextureLayout", sx,sy, dirOrOffsetX,dirY)
+	shaderSendVec4(shader.shader, "colorTextureLayout", sx,sy, dirXOrRadialOffset,dirY)
+	shaderSendVec2(shader.shader, "colorTextureOffset", gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
 end
 
 
@@ -1259,12 +1266,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "grad" then
 		ensureCanvasAndInitted(context)
 
-		local gfxState              = context.gfxState
-		gfxState.colorMode          = "gradient"
-		gfxState.colorTextureRadial = args.radial
-		gfxState.colorTextureFit    = args.fit
-		gfxState.colorTextureScaleX = args.scale -- colorTextureScaleY isn't used.  @Incomplete: For radial gradients it makes sense to scale y!
-		gfxState.colorTextureAngle  = args.rot
+		local gfxState               = context.gfxState
+		gfxState.colorMode           = "gradient"
+		gfxState.colorTextureRadial  = args.radial
+		gfxState.colorTextureFit     = args.fit
+		gfxState.colorTextureScaleX  = args.sx
+		gfxState.colorTextureScaleY  = args.sy
+		gfxState.colorTextureAngle   = args.rot
+		gfxState.colorTextureOffsetX = args.x
+		gfxState.colorTextureOffsetY = args.y
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
@@ -1730,7 +1740,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		imageOrCanvas:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context, nil)
-		applyColor(context, nil, "rectangle", iw*args.sx,ih*args.sy)
+		applyColor(context, nil, "rectangle", iw,ih)
 
 		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
@@ -1756,7 +1766,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		texture:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context, nil)
-		applyColor(context, nil, "rectangle", iw*args.sx,ih*args.sy)
+		applyColor(context, nil, "rectangle", iw,ih)
 
 		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
@@ -1782,7 +1792,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		texture:setFilter(args.filter and "linear" or "nearest")
 		texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
 		applyCanvas(context, nil)
-		applyColor(context, nil, "rectangle", iw*args.sx,ih*args.sy)
+		applyColor(context, nil, "rectangle", iw,ih)
 		LG.push()
 
 		LG.translate(args.x, args.y)
