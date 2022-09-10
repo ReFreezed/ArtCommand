@@ -20,10 +20,10 @@ func Link Dir DrawLight
 	maskFalse
 
 	if DrawLight
-		setlayer"light" -clear
+		setbuf"light" -clear
 			color
 			circle (LinkFlip and 2 or -2) -20 r8
-		setlayer
+		setbuf
 	end
 
 	setx LinkFlip (not LinkFlip)
@@ -40,7 +40,7 @@ for Pass 1 2
 	origin
 end
 
-setlayer"light" -clear
+setbuf"light" -clear
 	color a.2
 	blur xy40
-layer"light"
+buf"light"

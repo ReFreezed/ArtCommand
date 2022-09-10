@@ -82,7 +82,7 @@ local function Context()return{
 	maskCanvas   = nil,
 
 	images      = {--[[ [path1]=image|canvas, ... ]]},
-	layers      = {--[[ [name1]=image, ... ]]},
+	buffers     = {--[[ [name1]=image, ... ]]},
 	fontsByPath = {--[[ [path1]=font, ... ]]}, -- Image fonts.
 	fontsBySize = {--[[ [path1]={[size1]=font,...}, ... ]]}, -- Vector fonts.
 
@@ -125,13 +125,13 @@ local function GfxState()return{
 	colorTextureAngle   = 0.0,
 	colorTextureOffsetX = 0.0,
 	colorTextureOffsetY = 0.0,
-	colorTextureLayer   = "",
+	colorTextureBuffer  = "",
 	-- Font.
 	font = LG.getFont(),
 
 	-- "makemask" & "applymask"
 	canvas         = nil,
-	fallbackCanvas = nil, -- @Cleanup: We only have this because of layers. Add a currentLayerName field instead and infer what canvas to use from gfxStack!
+	fallbackCanvas = nil, -- @Cleanup: We only have this because of buffers. Add a currentBufferName field instead and infer what canvas to use from gfxStack! (Note: Separate from colorTextureBuffer.)
 
 	-- "makemask"
 	makeMaskMode = false,
@@ -151,7 +151,7 @@ local function copyGfxState(gfxState,stackType)return{
 	colorTextureAngle   = (stackType == "user" or nil) and gfxState.colorTextureAngle,
 	colorTextureOffsetX = (stackType == "user" or nil) and gfxState.colorTextureOffsetX,
 	colorTextureOffsetY = (stackType == "user" or nil) and gfxState.colorTextureOffsetY,
-	colorTextureLayer   = (stackType == "user" or nil) and gfxState.colorTextureLayer,
+	colorTextureBuffer  = (stackType == "user" or nil) and gfxState.colorTextureBuffer,
 	font                = (stackType == "user" or nil) and gfxState.font,
 
 	canvas         = (stackType == "makemask" or stackType == "applymask" or nil) and gfxState.canvas,
@@ -173,7 +173,7 @@ local function moveGfxState(fromGfxState, toGfxState)
 		toGfxState.colorTextureAngle   = fromGfxState.colorTextureAngle
 		toGfxState.colorTextureOffsetX = fromGfxState.colorTextureOffsetX
 		toGfxState.colorTextureOffsetY = fromGfxState.colorTextureOffsetY
-		toGfxState.colorTextureLayer   = fromGfxState.colorTextureLayer
+		toGfxState.colorTextureBuffer  = fromGfxState.colorTextureBuffer
 		toGfxState.font                = fromGfxState.font
 	end
 	if fromGfxState.stackType == "makemask" or fromGfxState.stackType == "applymask" then
@@ -346,7 +346,7 @@ local function applyColor(context, shader, shape, w,h)
 		end
 
 	elseif gfxState.colorMode == "texture" then
-		texture = context.layers[gfxState.colorTextureLayer] or error(gfxState.colorTextureLayer)
+		texture = context.buffers[gfxState.colorTextureBuffer] or error(gfxState.colorTextureBuffer)
 
 		local iw,ih = texture:getDimensions()
 		local angle = gfxState.colorTextureAngle
@@ -1079,7 +1079,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	end
 
 	-- Initialize arguments (dynamic values only).
-	if command == "setlayer" then
+	if command == "setbuf" then
 		args.w  = context.canvasW
 		args.h  = context.canvasH
 		args.aa = context.msaa
@@ -1332,7 +1332,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "texture" then
-		if not context.layers[args.layer] then  return (tokenError(context, (visited.name or startTok), "[layer] No layer '%s'", args.layer))  end
+		if not context.buffers[args.buf] then  return (tokenError(context, (visited.name or startTok), "[texture] No buffer '%s'", args.buf))  end
 
 		ensureCanvasAndInitted(context)
 
@@ -1344,7 +1344,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		gfxState.colorTextureAngle   = args.rot
 		gfxState.colorTextureOffsetX = args.x
 		gfxState.colorTextureOffsetY = args.y
-		gfxState.colorTextureLayer   = args.layer
+		gfxState.colorTextureBuffer  = args.buf
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
@@ -1497,22 +1497,22 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.x, args.y)
 
 	----------------------------------------------------------------
-	elseif command == "setlayer" then
+	elseif command == "setbuf" then
 		ensureCanvasAndInitted(context)
 
-		local layerName = args.name
-		local iw        = args.w
-		local ih        = args.h
+		local bufName = args.name
+		local iw      = args.w
+		local ih      = args.h
 
 		local imageOrCanvas
 
-		-- No layer.
-		if layerName == "" then
-			if args.path ~= "" then  return (tokenError(context, (visited.name or startTok), "[setlayer] Missing layer name to load image to."))  end
+		-- Main buffer.
+		if bufName == "" then
+			if args.path ~= "" then  return (tokenError(context, (visited.name or startTok), "[setbuf] Missing buffer name to load image to."))  end
 
-			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetNoLayer
+			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetMainBuffer
 
-		-- Yes layer.
+		-- Custom buffer.
 		else
 			if args.path ~= "" then
 				imageOrCanvas = getOrLoadImage(context, startTok, args.path, args.recurse)
@@ -1523,12 +1523,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- Reuse existing canvas.
 			if
-				context.layers[layerName]
-				and context.layers[layerName]:getWidth () == iw
-				and context.layers[layerName]:getHeight() == ih
-				and context.layers[layerName]:getMSAA  () == args.aa
+				context.buffers[bufName]
+				and context.buffers[bufName]:getWidth () == iw
+				and context.buffers[bufName]:getHeight() == ih
+				and context.buffers[bufName]:getMSAA  () == args.aa
 			then
-				gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
+				gfxStateSetCanvas(context, context.buffers[bufName], context.gfxState.fallbackCanvas)
 				LG.setCanvas(context.gfxState.canvas)
 				if args.clear then
 					LG.clear(0, 0, 0, 0)
@@ -1536,13 +1536,13 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- Create new canvas.
 			else
-				if context.layers[layerName] then
+				if context.buffers[bufName] then
 					LG.setCanvas(nil) -- Don't accidentally release the current canvas!
-					context.layers[layerName]:release()
+					context.buffers[bufName]:release()
 				end
 
-				context.layers[layerName] = LG.newCanvas(iw,ih, {format="rgba16", msaa=args.aa})
-				gfxStateSetCanvas(context, context.layers[layerName], context.gfxState.fallbackCanvas)
+				context.buffers[bufName] = LG.newCanvas(iw,ih, {format="rgba16", msaa=args.aa})
+				gfxStateSetCanvas(context, context.buffers[bufName], context.gfxState.fallbackCanvas)
 			end
 		end
 
@@ -1807,21 +1807,21 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
 	----------------------------------------------------------------
-	elseif command == "layer" then
-		local layerName = args.name
-		if layerName == "" then  return (tokenError(context, (visited.name or startTok), "[layer] Missing name."))  end
+	elseif command == "buf" then
+		local bufName = args.name
+		if bufName == "" then  return (tokenError(context, (visited.name or startTok), "[buf] Missing name."))  end
 
 		ensureCanvasAndInitted(context)
 
-		local texture = context.layers[layerName]
-		if not texture then  return (tokenError(context, (visited.name or startTok), "[layer] No layer '%s'", layerName))  end
+		local texture = context.buffers[bufName]
+		if not texture then  return (tokenError(context, (visited.name or startTok), "[buf] No buffer '%s'", bufName))  end
 
 		if texture == context.gfxState.canvas then
-			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
-			-- LG.setCanvas(nil) ; texture:newImageData():encode("png", "layer.png") -- DEBUG
-			-- return (tokenError(context, (visited.name or startTok), "[layer] Cannot draw layer '%s' as it's currently active.", layerName))
+			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setbuf""`. :SetMainBuffer
+			-- LG.setCanvas(nil) ; texture:newImageData():encode("png", "buffer.png") -- DEBUG
+			-- return (tokenError(context, (visited.name or startTok), "[buf] Cannot draw buffer '%s' as it's currently active.", bufName))
 		elseif isCanvasReferenced(context, texture) then
-			return (tokenError(context, (visited.name or startTok), "[layer] Cannot draw layer '%s' at this point.", layerName))
+			return (tokenError(context, (visited.name or startTok), "[buf] Cannot draw buffer '%s' at this point.", bufName))
 		end
 
 		local iw,ih = texture:getDimensions()
@@ -1834,18 +1834,18 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "pattern" then
-		local layerName = args.layer
-		if layerName == "" then  return (tokenError(context, (visited.layer or startTok), "[pattern] Missing layer name."))  end
+		local bufName = args.buf
+		if bufName == "" then  return (tokenError(context, (visited.buf or startTok), "[pattern] Missing buffer name."))  end
 
 		ensureCanvasAndInitted(context)
 
-		local texture = context.layers[layerName]
-		if not texture then  return (tokenError(context, (visited.layer or startTok), "[pattern] No layer '%s'.", layerName))  end
+		local texture = context.buffers[bufName]
+		if not texture then  return (tokenError(context, (visited.buf or startTok), "[pattern] No buffer '%s'.", bufName))  end
 
 		if texture == context.gfxState.canvas then
-			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setlayer""`. :SetNoLayer
+			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setbuf""`. :SetMainBuffer
 		elseif isCanvasReferenced(context, texture) then
-			return (tokenError(context, (visited.layer or startTok), "[pattern] Cannot draw layer '%s' at this point.", layerName))
+			return (tokenError(context, (visited.buf or startTok), "[pattern] Cannot draw buffer '%s' at this point.", bufName))
 		end
 
 		local cw,ch = context.gfxState.canvas:getDimensions()
@@ -2243,7 +2243,7 @@ local function cleanup(context, loveGfxStackDepth, success)
 	if context.maskCanvas   then  context.maskCanvas  :release()  end
 
 	for _, texture in pairs(context.images     ) do  texture:release()  end
-	for _, canvas  in pairs(context.layers     ) do  canvas :release()  end
+	for _, canvas  in pairs(context.buffers    ) do  canvas :release()  end
 	for _, font    in pairs(context.fontsByPath) do  font   :release()  end
 
 	for _, fonts in pairs(context.fontsBySize) do
