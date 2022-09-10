@@ -103,7 +103,7 @@ local function FunctionInfo()return{
 
 local function ScopeStackEntry()return{
 	functions = {--[[ [funcName1]=functionInfo, ... ]]},
-	variables = {--[[ [varName1 ]=value       , ... ]]},
+	variables = {--[[ [varName1 ]=variable    , ... ]]}, -- variable = {token=declaredAtToken, value=value}
 
 	callerToken    = nil,
 	calledFunction = nil, -- FunctionInfo
@@ -245,11 +245,11 @@ end
 
 
 
--- value|nil, stackIndex = findInStack( context, member, key )
-local function findInStack(context, member, k)
+-- object|nil, stackIndex = findInStack( context, member, currentPosition, key )
+local function findInStack(context, member, pos, k)
 	for i = #context.scopeStack, 1, -1 do
-		local v = context.scopeStack[i][member][k]
-		if v ~= nil then  return v, i  end
+		local obj = context.scopeStack[i][member][k]
+		if obj and obj.token.position < pos then  return obj, i  end
 	end
 	return nil -- Not found!
 end
@@ -603,9 +603,9 @@ local function isToken(tok, tokType, tokValue)
 	return tok ~= nil and tok.type == tokType and (tokValue == nil or tok.value == tokValue)
 end
 
-local function validateVariableName(context, tokForError, term, var)
-	if not var:find"^%w+$" then  tokenError(context, tokForError, "Bad %s '%s'. Must only contain alphanumeric characters.", term, var) ; return false  end
-	if not var:find"^%u"   then  tokenError(context, tokForError, "Bad %s '%s'. Must start with an uppercase letter."      , term, var) ; return false  end
+local function validateVariableName(context, tokForError, term, varName)
+	if not varName:find"^%w+$" then  tokenError(context, tokForError, "Bad %s '%s'. Must only contain alphanumeric characters.", term, varName) ; return false  end
+	if not varName:find"^%u"   then  tokenError(context, tokForError, "Bad %s '%s'. Must start with an uppercase letter."      , term, varName) ; return false  end
 	return true
 end
 
@@ -658,12 +658,13 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			v = tokens[tokPos].value
 
 		elseif isToken(tokens[tokPos], "username") then
-			local var = tokens[tokPos].value
-			v         = findInStack(context, "variables", var) -- @Incomplete: Proper upvalues (which require lexical scope).
-			if v == nil then  return (tokenError(context, tokens[tokPos], "No variable '%s'.", var))  end
+			local varName = tokens[tokPos].value
+			local var     = findInStack(context, "variables", tokens[tokPos].position, varName)
+			if not var then  return (tokenError(context, tokens[tokPos], "No variable '%s'.", varName))  end
+			v = var.value
 
 			if tokens[tokPos].negated then
-				if type(v) ~= "number" then  return (parseError(context, tokens[tokPos].position-1, "Cannot negate value. ('%s' contains a %s)", var, type(v)))  end
+				if type(v) ~= "number" then  return (parseError(context, tokens[tokPos].position-1, "Cannot negate value. ('%s' contains a %s)", varName, type(v)))  end
 				v = -v
 			end
 
@@ -671,9 +672,9 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			local expr = tokens[tokPos].value
 
 			local env = setmetatable({}, {
-				__index = function(_, k, v)
-					local v = findInStack(context, "variables", k) -- @Incomplete: Proper upvalues (which require lexical scope).
-					if v ~= nil then  return v  end
+				__index = function(_, k)
+					local var = findInStack(context, "variables", tokens[tokPos].position, k)
+					if var then  return var.value  end
 					error("No variable '"..tostring(k).."'.", 0)
 				end,
 			})
@@ -976,7 +977,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not commandTok and tokens[tokPos].negated then  return (parseError(context, tokens[tokPos].position-1, "Unexpected character."))  end
 
 		local funcName = (commandTok or tokens[tokPos]).value
-		local funcInfo = findInStack(context, "functions", funcName)
+		local funcInfo = findInStack(context, "functions", (commandTok or tokens[tokPos]).position, funcName)
 		if not funcInfo   then  return (tokenError(context, startTok, "[Call] No function '%s'.", funcName))  end
 		if not commandTok then  tokPos = tokPos + 1  end -- username
 
@@ -1003,7 +1004,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		for i, argInfo in ipairs(argInfos) do
 			if not visited[argInfo[1]] then  return (tokenError(context, startTok, "[Call] Missing argument '%s' for '%s'.", argInfo[1], funcName))  end
-			entry.variables[funcInfo.arguments[i]] = args[argInfo[1]]
+			entry.variables[funcInfo.arguments[i]] = {token=funcInfo.token, value=args[argInfo[1]]}
 		end
 
 		table.insert(context.scopeStack, entry)
@@ -1108,7 +1109,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if args.value == nil then  return (tokenError(context, (visited.value or startTok), "[set] Missing value to assign to '%s'.", args.var))  end
 		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
-		getLast(context.scopeStack).variables[args.var] = args.value
+		local vars           = getLast(context.scopeStack).variables
+		vars[args.var]       = vars[args.var] or {token=startTok, value=nil}
+		vars[args.var].value = args.value
 
 	----------------------------------------------------------------
 	elseif command == "setx" then
@@ -1116,10 +1119,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if args.value == nil then  return (tokenError(context, (visited.value or startTok), "[setx] Missing value to assign to '%s'.", args.var))  end
 		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
-		local oldV, stackIndex = findInStack(context, "variables", args.var) -- @Incomplete: Proper upvalues (which require lexical scope).
-		if oldV == nil then  return (tokenError(context, (visited.var or startTok), "[setx] No existing variable '%s'.", args.var))  end
-
-		context.scopeStack[stackIndex].variables[args.var] = args.value
+		local var = findInStack(context, "variables", tokens[tokPos].position, args.var)
+		if not var then  return (tokenError(context, (visited.var or startTok), "[setx] No existing variable '%s'.", args.var))  end
+		var.value = args.value
 
 	----------------------------------------------------------------
 	elseif command == "do" or command == "if" then
@@ -1180,18 +1182,20 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local entry = ScopeStackEntry()
 		table.insert(context.scopeStack, entry)
 
+		local var                 = {token=startTok, value=0}
+		entry.variables[args.var] = var
+
 		local loops   = 0
 		local stopAll = false
 
 		for n = args.from, args.to, args.step do
-			loops = loops + 1
+			loops     = loops + 1
+			var.value = n
 
 			if loops >= MAX_LOOPS then -- Maybe there should be a MAX_DRAW_OPERATIONS too? MAX_LOOPS could probably be higher then. @Incomplete
 				tokenError(context, startTok, "[for] Max loops exceeded. Breaking.")
 				break
 			end
-
-			entry.variables[args.var] = n
 
 			local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
 			if not bodyTokPos         then  return nil              end
@@ -1257,8 +1261,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.canvasH = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
 		context.msaa    = args.aa^2
 
-		context.scopeStack[1].variables.CanvasWidth  = context.canvasW
-		context.scopeStack[1].variables.CanvasHeight = context.canvasH
+		context.scopeStack[1].variables.CanvasWidth .value = context.canvasW
+		context.scopeStack[1].variables.CanvasHeight.value = context.canvasH
 
 	--
 	-- State.
@@ -2280,65 +2284,65 @@ function _G.loadArtFile(path, isLocal)
 
 	local entry = ScopeStackEntry()
 
-	entry.variables.True  = true -- @Robustness: Make these constant.
-	entry.variables.False = false
-	entry.variables.Huge  = 1/0
-	entry.variables.Nan   = 0/0
-	entry.variables.Pi    = math.pi
-	entry.variables.Tau   = TAU
+	entry.variables.True  = {token=tokens[1], value=true} -- @Robustness: Make these constant.
+	entry.variables.False = {token=tokens[1], value=false}
+	entry.variables.Huge  = {token=tokens[1], value=1/0}
+	entry.variables.Nan   = {token=tokens[1], value=0/0}
+	entry.variables.Pi    = {token=tokens[1], value=math.pi}
+	entry.variables.Tau   = {token=tokens[1], value=TAU}
 
-	entry.variables.WindowWidth  = LG.getWidth()
-	entry.variables.WindowHeight = LG.getHeight()
-	entry.variables.CanvasWidth  = context.canvasW
-	entry.variables.CanvasHeight = context.canvasH
+	entry.variables.WindowWidth  = {token=tokens[1], value=LG.getWidth()}
+	entry.variables.WindowHeight = {token=tokens[1], value=LG.getHeight()}
+	entry.variables.CanvasWidth  = {token=tokens[1], value=context.canvasW}
+	entry.variables.CanvasHeight = {token=tokens[1], value=context.canvasH}
 
 	-- There are just for the Lua expressions.  @Robustness: Make these constant (although their names already make them).
-	entry.variables.num     = tonumber
-	entry.variables.str     = tostring
-	entry.variables.type    = type
-	entry.variables.abs     = math.abs
-	entry.variables.acos    = math.acos
-	entry.variables.asin    = math.asin
-	entry.variables.atan    = function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end -- atan( y [, x=1 ] )
-	entry.variables.ceil    = math.ceil
-	entry.variables.cos     = math.cos
-	entry.variables.cosh    = math.cosh
-	entry.variables.deg     = math.deg
-	entry.variables.exp     = math.exp
-	entry.variables.floor   = math.floor
-	entry.variables.fmod    = math.fmod
-	entry.variables.frac    = function(n)  local int, frac = math.modf(n) ; return frac  end
-	entry.variables.frexpe  = function(n)  local m, e = math.frexp(n) ; return e  end
-	entry.variables.frexpm  = function(n)  return (math.frexp(n))  end
-	entry.variables.int     = function(n)  return (math.modf(n))  end
-	entry.variables.ldexp   = math.ldexp
-	entry.variables.log     = math.log -- log( n [, base=e ] )
-	entry.variables.max     = math.max
-	entry.variables.min     = math.min
-	entry.variables.rad     = math.rad
-	entry.variables.rand    = love.math.random
-	entry.variables.randf   = function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or n1*love.math.random()  end -- randomf( [ n1=0, ] n2 )
-	entry.variables.round   = math.round
-	entry.variables.sin     = math.sin
-	entry.variables.sinh    = math.sinh
-	entry.variables.sqrt    = math.sqrt
-	entry.variables.tan     = math.tan
-	entry.variables.tanh    = math.tanh
-	entry.variables.clock   = os.clock
-	entry.variables.date    = os.date
-	entry.variables.env     = os.getenv
-	entry.variables.time    = os.time
-	entry.variables.byte    = string.byte -- @Robustness: Handle the string metatable.
-	entry.variables.char    = string.char
-	entry.variables.find    = string.find
-	entry.variables.format  = F
-	entry.variables.gsub    = string.gsub
-	entry.variables.lower   = string.lower
-	entry.variables.match   = string.match
-	entry.variables.rep     = string.rep
-	entry.variables.reverse = string.reverse
-	entry.variables.sub     = string.sub
-	entry.variables.upper   = string.upper
+	entry.variables.num     = {token=tokens[1], value=tonumber}
+	entry.variables.str     = {token=tokens[1], value=tostring}
+	entry.variables.type    = {token=tokens[1], value=type}
+	entry.variables.abs     = {token=tokens[1], value=math.abs}
+	entry.variables.acos    = {token=tokens[1], value=math.acos}
+	entry.variables.asin    = {token=tokens[1], value=math.asin}
+	entry.variables.atan    = {token=tokens[1], value=function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
+	entry.variables.ceil    = {token=tokens[1], value=math.ceil}
+	entry.variables.cos     = {token=tokens[1], value=math.cos}
+	entry.variables.cosh    = {token=tokens[1], value=math.cosh}
+	entry.variables.deg     = {token=tokens[1], value=math.deg}
+	entry.variables.exp     = {token=tokens[1], value=math.exp}
+	entry.variables.floor   = {token=tokens[1], value=math.floor}
+	entry.variables.fmod    = {token=tokens[1], value=math.fmod}
+	entry.variables.frac    = {token=tokens[1], value=function(n)  local int, frac = math.modf(n) ; return frac  end}
+	entry.variables.frexpe  = {token=tokens[1], value=function(n)  local m, e = math.frexp(n) ; return e  end}
+	entry.variables.frexpm  = {token=tokens[1], value=function(n)  return (math.frexp(n))  end}
+	entry.variables.int     = {token=tokens[1], value=function(n)  return (math.modf(n))  end}
+	entry.variables.ldexp   = {token=tokens[1], value=math.ldexp}
+	entry.variables.log     = {token=tokens[1], value=math.log} -- log( n [, base=e ] )
+	entry.variables.max     = {token=tokens[1], value=math.max}
+	entry.variables.min     = {token=tokens[1], value=math.min}
+	entry.variables.rad     = {token=tokens[1], value=math.rad}
+	entry.variables.rand    = {token=tokens[1], value=love.math.random}
+	entry.variables.randf   = {token=tokens[1], value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or n1*love.math.random()  end} -- randomf( [ n1=0, ] n2 )
+	entry.variables.round   = {token=tokens[1], value=math.round}
+	entry.variables.sin     = {token=tokens[1], value=math.sin}
+	entry.variables.sinh    = {token=tokens[1], value=math.sinh}
+	entry.variables.sqrt    = {token=tokens[1], value=math.sqrt}
+	entry.variables.tan     = {token=tokens[1], value=math.tan}
+	entry.variables.tanh    = {token=tokens[1], value=math.tanh}
+	entry.variables.clock   = {token=tokens[1], value=os.clock}
+	entry.variables.date    = {token=tokens[1], value=os.date}
+	entry.variables.env     = {token=tokens[1], value=os.getenv}
+	entry.variables.time    = {token=tokens[1], value=os.time}
+	entry.variables.byte    = {token=tokens[1], value=string.byte} -- @Robustness: Handle the string metatable.
+	entry.variables.char    = {token=tokens[1], value=string.char}
+	entry.variables.find    = {token=tokens[1], value=string.find}
+	entry.variables.format  = {token=tokens[1], value=F}
+	entry.variables.gsub    = {token=tokens[1], value=string.gsub}
+	entry.variables.lower   = {token=tokens[1], value=string.lower}
+	entry.variables.match   = {token=tokens[1], value=string.match}
+	entry.variables.rep     = {token=tokens[1], value=string.rep}
+	entry.variables.reverse = {token=tokens[1], value=string.reverse}
+	entry.variables.sub     = {token=tokens[1], value=string.sub}
+	entry.variables.upper   = {token=tokens[1], value=string.upper}
 
 	table.insert(context.scopeStack, entry)
 	local loveGfxStackDepth = LG.getStackDepth()
