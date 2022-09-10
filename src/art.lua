@@ -114,7 +114,7 @@ local function GfxState()return{
 
 	-- "user"
 	-- Color.
-	colorMode           = "flatcolor", -- "flatcolor" | "gradient"
+	colorMode           = "flatcolor", -- "flatcolor" | "gradient" | "texture"
 	flatColor           = {1,1,1,1},
 	gradient            = {--[[ r1,g1,b1,a1, ... ]]},
 	colorTexture        = nil,
@@ -125,6 +125,7 @@ local function GfxState()return{
 	colorTextureAngle   = 0.0,
 	colorTextureOffsetX = 0.0,
 	colorTextureOffsetY = 0.0,
+	colorTextureLayer   = "",
 	-- Font.
 	font = LG.getFont(),
 
@@ -150,6 +151,7 @@ local function copyGfxState(gfxState,stackType)return{
 	colorTextureAngle   = (stackType == "user" or nil) and gfxState.colorTextureAngle,
 	colorTextureOffsetX = (stackType == "user" or nil) and gfxState.colorTextureOffsetX,
 	colorTextureOffsetY = (stackType == "user" or nil) and gfxState.colorTextureOffsetY,
+	colorTextureLayer   = (stackType == "user" or nil) and gfxState.colorTextureLayer,
 	font                = (stackType == "user" or nil) and gfxState.font,
 
 	canvas         = (stackType == "makemask" or stackType == "applymask" or nil) and gfxState.canvas,
@@ -171,6 +173,7 @@ local function moveGfxState(fromGfxState, toGfxState)
 		toGfxState.colorTextureAngle   = fromGfxState.colorTextureAngle
 		toGfxState.colorTextureOffsetX = fromGfxState.colorTextureOffsetX
 		toGfxState.colorTextureOffsetY = fromGfxState.colorTextureOffsetY
+		toGfxState.colorTextureLayer   = fromGfxState.colorTextureLayer
 		toGfxState.font                = fromGfxState.font
 	end
 	if fromGfxState.stackType == "makemask" or fromGfxState.stackType == "applymask" then
@@ -265,7 +268,7 @@ end
 local function applyCanvas(context, shader)
 	shader = shader or A.shaders.main
 
-	shaderSend(shader.shader, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
+	shaderSend(shader, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
 
 	LG.setCanvas(context.gfxState.canvas)
 	LG.setShader(shader.shader)
@@ -286,17 +289,24 @@ local function applyColor(context, shader, shape, w,h)
 	if gfxState.colorMode == "flatcolor" then
 		local r,g,b,a = unpack(gfxState.flatColor)
 		LG.setColor(r*a, g*a, b*a, a)
-		shaderSend(shader.shader, "useColorTexture", false)
+		shaderSend(shader, "useColorTexture", false)
 		return
 	end
 
-	local sx                 = 1 -- For colorTextureLayout.
-	local sy                 = 1
-	local dirXOrRadialOffset = 1
-	local dirY               = 0
+	local texture      = gfxState.colorTexture
+	local radial       = false
+	local sx           = 1 -- colorTextureLayout
+	local sy           = 1 -- colorTextureLayout
+	local dirX         = 1 -- colorTextureLayout
+	local dirY         = 0 -- colorTextureLayout
+	local radialOffset = 1
+	local preSx        = 1
+	local preSy        = 1
+	local postSx       = 1
+	local postSy       = 1
 
 	if gfxState.colorMode == "gradient" then
-		if not gfxState.colorTexture then
+		if not texture then
 			local grad          = gfxState.gradient
 			local pixelRowChars = {}
 			local palette       = {}
@@ -308,15 +318,17 @@ local function applyColor(context, shader, shape, w,h)
 			end
 
 			local pixelRows       = {table.concat(pixelRowChars)}
-			gfxState.colorTexture = newImageUsingPalette(pixelRows, palette)
+			texture               = newImageUsingPalette(pixelRows, palette)
+			gfxState.colorTexture = texture
 		end
 
 		if gfxState.colorTextureRadial then
-			local iw           = gfxState.colorTexture:getWidth()
-			local scale        = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
-			sx                 = gfxState.colorTextureScaleX * iw/(iw-1) * scale
-			sy                 = gfxState.colorTextureScaleY * iw/(iw-1) * scale * w/h
-			dirXOrRadialOffset = .5/iw
+			local iw     = texture:getWidth()
+			local scale  = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
+			radial       = true
+			sx           = gfxState.colorTextureScaleX * iw/(iw-1) * scale
+			sy           = gfxState.colorTextureScaleY * iw/(iw-1) * scale * w/h
+			radialOffset = .5/iw
 
 		else
 			-- When shape="rectangle" and the gradient scale is 1, one edge of the
@@ -326,22 +338,52 @@ local function applyColor(context, shader, shape, w,h)
 			local scaledAngle            = math.atan2(math.sin(angle)*h/w, math.cos(angle))
 			local angleCompensationScale = (shape == "rectangle") and math.abs(math.sin(scaledAngle))+math.abs(math.cos(scaledAngle)) or 1
 
-			local iw = gfxState.colorTexture:getWidth()
+			local iw = texture:getWidth()
 			sx       = gfxState.colorTextureScaleX * iw/(iw-1) * angleCompensationScale -- colorTextureScaleY isn't used.
 
-			dirXOrRadialOffset = math.cos(scaledAngle)
-			dirY               = math.sin(scaledAngle)
+			dirX = math.cos(scaledAngle)
+			dirY = math.sin(scaledAngle)
 		end
+
+	elseif gfxState.colorMode == "texture" then
+		texture = context.layers[gfxState.colorTextureLayer] or error(gfxState.colorTextureLayer)
+
+		local iw,ih = texture:getDimensions()
+		local angle = gfxState.colorTextureAngle
+		local scale = math.max((h/w)*(iw/ih), 1) -- Make the texture fill the shape (unrotated) by default.
+
+		if gfxState.colorTextureFit then
+			-- Consider the rotation when filling.
+			-- @Incomplete: Handle shape=="circle".
+			local normalizedW  = 1 -- The base unit.
+			local normalizedH  = h/w
+			local normalizedIw = scale
+			local normalizedIh = scale * ih/iw
+			local boundsW      = normalizedW*math.abs(math.cos(angle)) + normalizedH*math.abs(math.sin(angle))
+			local boundsH      = normalizedW*math.abs(math.sin(angle)) + normalizedH*math.abs(math.cos(angle))
+			scale              = scale * math.max(boundsW/normalizedIw, boundsH/normalizedIh)
+		end
+
+		dirX = math.cos(angle)
+		dirY = math.sin(angle)
+
+		preSx = scale
+		preSy = scale * w/h
+
+		postSx = gfxState.colorTextureScaleX
+		postSy = gfxState.colorTextureScaleY * ih/iw
 
 	else
 		error(gfxState.colorMode)
 	end
 
-	shaderSend    (shader.shader, "useColorTexture"   , true)
-	shaderSend    (shader.shader, "colorTextureRadial", gfxState.colorTextureRadial)
-	shaderSend    (shader.shader, "colorTexture"      , gfxState.colorTexture)
-	shaderSendVec4(shader.shader, "colorTextureLayout", sx,sy, dirXOrRadialOffset,dirY)
-	shaderSendVec2(shader.shader, "colorTextureOffset", gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
+	shaderSend    (shader, "useColorTexture"         , true)
+	shaderSend    (shader, "colorTexture"            , texture)
+	shaderSend    (shader, "colorTextureRadial"      , radial)
+	shaderSendVec4(shader, "colorTextureLayout"      , sx,sy, dirX,dirY)
+	shaderSend    (shader, "colorTextureRadialOffset", radialOffset)
+	shaderSendVec2(shader, "colorTextureOffset"      , gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
+	shaderSendVec4(shader, "colorTextureScale"       , preSx,preSy, postSx,postSy)
 end
 
 
@@ -767,7 +809,7 @@ local function popGfxState(context, stackType)
 		gfxStateSetCanvas(context, gfxState.canvas, gfxState.fallbackCanvas)
 
 	elseif stackType == "applymask" then
-		shaderSend(A.shaders.applyMask.shader, "mask", context.maskCanvas)
+		shaderSend(A.shaders.applyMask, "mask", context.maskCanvas)
 
 		LG.setCanvas(nil) -- Before push/pop. Not sure it affects canvas switching. Probably doesn't matter.
 		pushTransformAndReset("alpha")
@@ -1252,7 +1294,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local gfxState     = context.gfxState
 		gfxState.colorMode = "flatcolor"
-		table.clear(gfxState.gradient)
 
 		if command == "color" then  updateVec4(gfxState.flatColor, args.r,args.g,args.b,args.a)
 		else                        updateVec4(gfxState.flatColor, args.grey,args.grey,args.grey,args.a)  end
@@ -1288,6 +1329,27 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		table.insert(gfxState.gradient, args.g)
 		table.insert(gfxState.gradient, args.b)
 		table.insert(gfxState.gradient, args.a)
+
+	----------------------------------------------------------------
+	elseif command == "texture" then
+		if not context.layers[args.layer] then  return (tokenError(context, (visited.name or startTok), "[layer] No layer '%s'", args.layer))  end
+
+		ensureCanvasAndInitted(context)
+
+		local gfxState               = context.gfxState
+		gfxState.colorMode           = "texture"
+		gfxState.colorTextureFit     = args.fit
+		gfxState.colorTextureScaleX  = args.sx
+		gfxState.colorTextureScaleY  = args.sy
+		gfxState.colorTextureAngle   = args.rot
+		gfxState.colorTextureOffsetX = args.x
+		gfxState.colorTextureOffsetY = args.y
+		gfxState.colorTextureLayer   = args.layer
+
+		if gfxState.colorTexture then
+			-- @Memory: Release image. (Consider gfxStack!)
+			gfxState.colorTexture = nil
+		end
 
 	----------------------------------------------------------------
 	elseif command == "font" then
@@ -1722,9 +1784,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.scale(args.sx, args.sy)
 		LG.shear(args.kx, args.ky)
 		LG.translate(math.round(-args.ax*w), math.round(-args.ay*h)) -- Note: Text is the only thing we round the origin for.
-		shaderSend(A.shaders.main.shader, "textBlendFix", true)
+		shaderSend(A.shaders.main, "textBlendFix", true)
 		LG.printf(args.text, 0,0, w, args.align)
-		shaderSend(A.shaders.main.shader, "textBlendFix", false)
+		shaderSend(A.shaders.main, "textBlendFix", false)
 		LG.pop()
 
 	----------------------------------------------------------------
@@ -1955,13 +2017,13 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyEffect(context, function(context, canvasRead, canvasWrite)
 			LG.setShader(A.shaders.fxBlurBox.shader)
 
-			shaderSend    (A.shaders.fxBlurBox.shader, "radius"   , math.clamp(args.x, 0, 1000))
-			shaderSendVec2(A.shaders.fxBlurBox.shader, "direction", .5, 0)
+			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.x, 0, 1000))
+			shaderSendVec2(A.shaders.fxBlurBox, "direction", .5, 0)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 
-			shaderSend    (A.shaders.fxBlurBox.shader, "radius"   , math.clamp(args.y, 0, 1000))
-			shaderSendVec2(A.shaders.fxBlurBox.shader, "direction", 0, .5)
+			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.y, 0, 1000))
+			shaderSendVec2(A.shaders.fxBlurBox, "direction", 0, .5)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 
@@ -1976,12 +2038,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			-- @Incomplete: These loops are probably not exactly correct. I think we wanna
 			-- double the radius each iteration (and iterate fewer times).
 			LG.setShader(A.shaders.fxBlurGaussian.shader)
-			shaderSendVec2(A.shaders.fxBlurGaussian.shader, "direction", BLUR_REACH,0)
+			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
 			for _ = 1, math.clamp(args.x, 0, 1000) do
 				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 				canvasRead, canvasWrite = canvasWrite, canvasRead
 			end
-			shaderSendVec2(A.shaders.fxBlurGaussian.shader, "direction", 0,BLUR_REACH)
+			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,BLUR_REACH)
 			for _ = 1, math.clamp(args.y, 0, 1000) do
 				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 				canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -1993,7 +2055,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "contrast" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxContrast.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxContrast, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
 			LG.setShader(A.shaders.fxContrast.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2002,7 +2064,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "brightness" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxBrightness.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxBrightness, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
 			LG.setShader(A.shaders.fxBrightness.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2011,7 +2073,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "saturation" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxSaturation.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxSaturation, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
 			LG.setShader(A.shaders.fxSaturation.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2020,7 +2082,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "gamma" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxGamma.shader, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxGamma, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
 			LG.setShader(A.shaders.fxGamma.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2029,9 +2091,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "levels" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec2(A.shaders.fxLevels.shader, "rangeIn" , args.rangeinfrom,args.rangeinto)
-			shaderSendVec2(A.shaders.fxLevels.shader, "rangeOut", args.rangeoutfrom,args.rangeoutto)
-			shaderSend    (A.shaders.fxLevels.shader, "middle"  , args.mid)
+			shaderSendVec2(A.shaders.fxLevels, "rangeIn" , args.rangeinfrom,args.rangeinto)
+			shaderSendVec2(A.shaders.fxLevels, "rangeOut", args.rangeoutfrom,args.rangeoutto)
+			shaderSend    (A.shaders.fxLevels, "middle"  , args.mid)
 			LG.setShader(A.shaders.fxLevels.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2040,7 +2102,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "overlay" then -- Fade pixels toward color.
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxOverlay.shader, "params", args.r,args.g,args.b,args.a)
+			shaderSendVec4(A.shaders.fxOverlay, "params", args.r,args.g,args.b,args.a)
 			LG.setShader(A.shaders.fxOverlay.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2049,7 +2111,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "tint" then -- Change hue and saturation, leave brighness.
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxTint.shader, "params", args.r,args.g,args.b,args.a)
+			shaderSendVec4(A.shaders.fxTint, "params", args.r,args.g,args.b,args.a)
 			LG.setShader(A.shaders.fxTint.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
@@ -2068,19 +2130,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local cw,ch    = canvas:getDimensions()
 		local iw,ih    = A.images.rectangle:getDimensions()
 
-		shaderSendVec3(A.shaders.generateNoise.shader, "offset", args.x,args.y,args.z)
-		shaderSendVec2(A.shaders.generateNoise.shader, "scale" , args.sx,args.sy)
+		shaderSendVec3(A.shaders.generateNoise, "offset", args.x,args.y,args.z)
+		shaderSendVec2(A.shaders.generateNoise, "scale" , args.sx,args.sy)
 
 		if gfxState.colorMode == "gradient" then
 			applyColor(context, nil, "rectangle", 1,1) -- Generates colorTexture.
-			shaderSend(A.shaders.generateNoise.shader, "useColorTexture" , true)
-			shaderSend(A.shaders.generateNoise.shader, "colorTexture"    , gfxState.colorTexture)
-			shaderSend(A.shaders.generateNoise.shader, "colorTextureSize", gfxState.colorTexture:getWidth())
+			shaderSend(A.shaders.generateNoise, "useColorTexture" , true)
+			shaderSend(A.shaders.generateNoise, "colorTexture"    , gfxState.colorTexture)
+			shaderSend(A.shaders.generateNoise, "colorTextureSize", gfxState.colorTexture:getWidth())
 		else
 			local r,g,b,a = unpack(gfxState.flatColor)
-			shaderSend    (A.shaders.generateNoise.shader, "useColorTexture", false)
-			shaderSendVec4(A.shaders.generateNoise.shader, "color0"         , 0,0,0,a)
-			shaderSendVec4(A.shaders.generateNoise.shader, "color1"         , r*a, g*a, b*a, a)
+			shaderSend    (A.shaders.generateNoise, "useColorTexture", false)
+			shaderSendVec4(A.shaders.generateNoise, "color0"         , 0,0,0,a)
+			shaderSendVec4(A.shaders.generateNoise, "color1"         , r*a, g*a, b*a, a)
 		end
 
 		pushTransformAndReset("alpha")

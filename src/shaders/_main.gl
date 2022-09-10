@@ -15,15 +15,19 @@
 
 uniform bool makeMaskMode;
 
-uniform bool useColorTexture;
-uniform bool colorTextureRadial;
+uniform bool  useColorTexture;
+uniform bool  colorTextureRadial;
 uniform Image colorTexture;
-uniform vec4 colorTextureLayout; // {scaleX,scaleY, directionX,directionY} // If colorTextureRadial is set, directionX is radialOffset.
-uniform vec2 colorTextureOffset;
+uniform vec4  colorTextureLayout; // {scaleX,scaleY, directionX,directionY}  @Cleanup: Split scale and direction. (Is scale needed with colorTextureScale? Probably not.)
+uniform float colorTextureRadialOffset;
+uniform vec2  colorTextureOffset;
+uniform vec4  colorTextureScale; // {preScaleX,preScaleY, postScaleX,postScaleY}
 
-#define SCALE         xy
-#define DIRECTION     zw
-#define RADIAL_OFFSET z
+#define LAYOUT_SCALE     colorTextureLayout.xy
+#define LAYOUT_DIRECTION colorTextureLayout.zw
+
+#define PRE_SCALE  colorTextureScale.xy
+#define POST_SCALE colorTextureScale.zw
 
 // vec2 _main_rotate(vec2 v, vec2 angle) {
 // 	return vec2(v.x*angle.x-v.y*angle.y, v.x*angle.y+v.y*angle.x);
@@ -32,34 +36,48 @@ vec2 _main_rotateCcw(vec2 v, vec2 angle) {
 	return vec2(v.x*angle.x+v.y*angle.y, -v.x*angle.y+v.y*angle.x);
 }
 
-vec4 applyMainEffect(vec4 color, vec2 uv, vec4 loveColor) {
+vec4 applyMainEffect(vec4 sample, vec2 uv, vec4 loveColor) {
 	if (useColorTexture) {
 		vec2 colorTexUv  = uv;
 		colorTexUv      -= colorTextureOffset;
 		colorTexUv       = colorTexUv*2 - 1; // Center.
 
+		colorTexUv /= PRE_SCALE;
+
 		if (colorTextureRadial) {
-			colorTexUv   /= colorTextureLayout.SCALE; // Scale.
+			colorTexUv   /= LAYOUT_SCALE; // Scale.
 			vec2 angle    = colorTexUv / length(colorTexUv);
 			colorTexUv    = _main_rotateCcw(colorTexUv, angle); // Make radial.
-			colorTexUv.x += colorTextureLayout.RADIAL_OFFSET; // Offset. (Should be half a pixel.)
+			colorTexUv.x += colorTextureRadialOffset; // Offset. (Should be half a pixel.)
 			colorTexUv.x  = (colorTexUv.x - .5) * 2;
 
 		} else {
-			colorTexUv  = _main_rotateCcw(colorTexUv, colorTextureLayout.DIRECTION); // Rotate.
-			colorTexUv /= colorTextureLayout.SCALE; // Scale.
+			colorTexUv  = _main_rotateCcw(colorTexUv, LAYOUT_DIRECTION); // Rotate.
+			colorTexUv /= LAYOUT_SCALE; // Scale.
 		}
 
+		colorTexUv /= POST_SCALE;
+
 		colorTexUv  = (colorTexUv+1) * .5; // Uncenter.
-		color      *= Texel(colorTexture, colorTexUv);
+		sample     *= Texel(colorTexture, colorTexUv);
+
+		/* DEBUG * /
+		if (colorTexUv.x < 0 || colorTexUv.x > 1 || colorTexUv.y < 0 || colorTexUv.y > 1) {
+			sample.rgb = vec3(1, 0, 0);
+		} else if (colorTexUv.x < .02 || colorTexUv.x > 1-.02 || colorTexUv.y < .02*200./118 || colorTexUv.y > 1-.02*200./118) {
+			sample.rgb = vec3(0, 0, 1);
+		} else if (colorTexUv.x < .10 || colorTexUv.x > 1-.10 || colorTexUv.y < .10*200./118 || colorTexUv.y > 1-.10*200./118) {
+			sample.rgb = vec3(0, 1, 0);
+		}
+		//*/
 
 	} else {
-		color *= loveColor;
+		sample *= loveColor;
 	}
 
 	if (makeMaskMode) {
-		return vec4((color.r+color.g+color.b)/3, 0, 0, color.a); // One way of doing it.
+		return vec4((sample.r+sample.g+sample.b)/3, 0, 0, sample.a); // One way of doing it.
 	} else {
-		return color;
+		return sample;
 	}
 }
