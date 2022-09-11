@@ -289,15 +289,39 @@ Arc (195+3*33) 520 "fillclosed" "lineclosed" -90deg 135deg 5
 Arc (195+4*33) 520 "fill"       "linepie"    90deg  135deg 3
 
 # Rounded rectangles.
-grad .9 .4 1, .9 .1 1 1 45deg
-rect"fill" (340+0*50) (390+0*50) size40 thick4 segs2
-rect"fill" (340+0*50) (390+1*50) size40 thick4 segs2 r10
-rect"fill" (340+0*50) (390+2*50) size40 thick4 segs2 r999
-rect"fill" (340+0*50) (390+3*50) size40 thick4 segs2 rx17 ry9
-rect"line" (340+1*50) (390+0*50) size40 thick4 segs2
-rect"line" (340+1*50) (390+1*50) size40 thick4 segs2 r10
-rect"line" (340+1*50) (390+2*50) size40 thick4 segs2 r999
-rect"line" (340+1*50) (390+3*50) size40 thick4 segs2 rx999 ry10
+push
+	move 340 390
+	grad .9 .4 1, .9 .1 1 1 45deg
+
+	rect"fill" (0*50) (0*50) size40 thick4 segs2
+	rect"fill" (0*50) (1*50) size40 thick4 segs2 r10
+	rect"fill" (0*50) (2*50) size40 thick4 segs2 r999
+	rect"fill" (0*50) (3*50) size40 thick4 segs2 rx17 ry9
+
+	rect"line" (1*50) (0*50) size40 thick4 segs2
+	rect"line" (1*50) (1*50) size40 thick4 segs2 r10
+	rect"line" (1*50) (2*50) size40 thick4 segs2 r999
+	rect"line" (1*50) (3*50) size40 thick4 segs2 rx999 ry10
+pop
+
+push
+	move 490 360
+	grey .9
+
+	rect"fill" (0*32) (0*32) size24 thick4 tlr10  brr10
+	rect"line" (1*32) (0*32) size24 thick4 tlr10  brr10
+	rect"fill" (2*32) (0*32) size24 thick4 tlr999 brr999
+	rect"line" (3*32) (0*32) size24 thick4 tlr999 brr999
+	rect"fill" (4*32) (0*32) size24 thick4 tlrx99 tlry10 brrx99 brry10
+	rect"line" (5*32) (0*32) size24 thick4 tlrx99 tlry10 brrx99 brry10
+
+	rect"fill" (0*32) (1*32) size24 thick4 trr10  blr10
+	rect"line" (1*32) (1*32) size24 thick4 trr10  blr10
+	rect"fill" (2*32) (1*32) size24 thick4 trr999 blr999
+	rect"line" (3*32) (1*32) size24 thick4 trr999 blr999
+	rect"fill" (4*32) (1*32) size24 thick4 trrx99 trry10 blrx99 blry10
+	rect"line" (5*32) (1*32) size24 thick4 trrx99 trry10 blrx99 blry10
+pop
 
 # Effect: blur.
 setbuf"fx"

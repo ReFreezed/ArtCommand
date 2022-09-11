@@ -1610,7 +1610,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local segs = (
 			args.segs > 0
 			and args.segs
-			or  math.round(math.max(math.max(args.rx, args.ry) * TAU/10, 64) * .25)
+			or  math.round(math.max(math.max(args.tlrx,args.tlry, args.trrx,args.trry, args.brrx,args.brry, args.blrx,args.blry) * TAU/10, 64) * .25)
 		)
 
 		LG.push()
@@ -1620,8 +1620,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.shear(args.kx, args.ky)
 		LG.translate(-args.ax*args.w, -args.ay*args.h)
 
-		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h, args.rx,args.ry, segs)
-		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.rx,args.ry, segs, args.thick)
+		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h, args.tlrx,args.tlry, args.trrx,args.trry, args.brrx,args.brry, args.blrx,args.blry, segs)
+		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.tlrx,args.tlry, args.trrx,args.trry, args.brrx,args.brry, args.blrx,args.blry, segs, args.thick)
 		else error(args.mode) end
 
 		LG.pop()

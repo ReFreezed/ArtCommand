@@ -85,6 +85,7 @@ local vertices = {}
 local mesh     = nil
 
 local function _drawLine(connected, coords, lw, circleMode, circleX,circleY)
+	-- @Incomplete @Robustness: Handle overlapping coords.
 	if not coords[connected and 6 or 4] then  return  end
 
 	-- Prepare vertices.
@@ -223,44 +224,67 @@ end
 
 
 
-local corner = {}
 local coords = {}
 
-local function drawRoundedRectangle(fill, x,y, w,h, rx,ry, segs, lw)
-	table.clear(corner)
+local function maybeAddCoords(x,y, lastX,lastY, offsetX,offsetY)
+	x = x + offsetX
+	y = y + offsetY
+
+	if math.abs(x-lastX)+math.abs(y-lastY) > 1e-10 then
+		table.insert(coords, x)
+		table.insert(coords, y)
+	end
+
+	return x,y
+end
+
+local function drawRoundedRectangle(fill, x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs, lw)
 	table.clear(coords)
 
-	rx = math.min(rx, w/2)
-	ry = math.min(ry, h/2)
+	local ratioTx = w / (tlx+trx)
+	local ratioBx = w / (blx+brx)
+	local ratioLy = h / (tly+bly)
+	local ratioRy = h / (try+bry)
+	if ratioTx < 1 then  tlx,trx = tlx*ratioTx,trx*ratioTx  end
+	if ratioBx < 1 then  blx,brx = blx*ratioBx,brx*ratioBx  end
+	if ratioLy < 1 then  tly,bly = tly*ratioLy,bly*ratioLy  end
+	if ratioRy < 1 then  try,bry = try*ratioRy,bry*ratioRy  end
 
-	segs            = math.max(segs, 1)
-	local angleStep = .25*TAU / segs
+	segs              = math.max(segs, 1)
+	local angleStep   = .25*TAU / segs
+	local lastX,lastY = 1/0, 1/0
 
-	for i = 0, segs do
-		local angle = i*angleStep
-		table.insert(corner, rx*(1-math.cos(angle)))
-		table.insert(corner, ry*(1-math.sin(angle)))
+	if tlx > 0 and tly > 0 then
+		for i = 0, segs do
+			local angle = i*angleStep --+ .00*TAU
+			lastX,lastY = maybeAddCoords(x,y, lastX,lastY,   tlx*(1-math.cos(angle)),  tly*(1-math.sin(angle)))
+		end
+	else
+		lastX,lastY = maybeAddCoords(x,y, lastX,lastY, 0,0)
 	end
-
-	local cornerCount = #corner
-	local i1x         = 2*rx < w and 0 or 1
-	local i1y         = 2*ry < h and 0 or 1
-
-	for i = i1y, segs do -- tl
-		table.insert(coords, x+  corner[2*i+1])
-		table.insert(coords, y+  corner[2*i+2])
+	if trx > 0 and try > 0 then
+		for i = 0, segs do
+			local angle = i*angleStep + .25*TAU
+			lastX,lastY = maybeAddCoords(x,y, lastX,lastY, w-trx*(1+math.cos(angle)),  try*(1-math.sin(angle)))
+		end
+	else
+		lastX,lastY = maybeAddCoords(x,y, lastX,lastY, w,0)
 	end
-	for i = i1x, segs do -- tr
-		table.insert(coords, x+w-corner[cornerCount-2*i-1])
-		table.insert(coords, y+  corner[cornerCount-2*i  ])
+	if brx > 0 and bry > 0 then
+		for i = 0, segs do
+			local angle = i*angleStep + .50*TAU
+			lastX,lastY = maybeAddCoords(x,y, lastX,lastY, w-brx*(1+math.cos(angle)),h-bry*(1+math.sin(angle)))
+		end
+	else
+		lastX,lastY = maybeAddCoords(x,y, lastX,lastY, w,h)
 	end
-	for i = i1y, segs do -- br
-		table.insert(coords, x+w-corner[2*i+1])
-		table.insert(coords, y+h-corner[2*i+2])
-	end
-	for i = i1x, segs do -- bl
-		table.insert(coords, x+  corner[cornerCount-2*i-1])
-		table.insert(coords, y+h-corner[cornerCount-2*i  ])
+	if blx > 0 and bly > 0 then
+		for i = 0, segs do
+			local angle = i*angleStep + .75*TAU
+			lastX,lastY = maybeAddCoords(x,y, lastX,lastY,   blx*(1-math.cos(angle)),h-bly*(1+math.sin(angle)))
+		end
+	else
+		lastX,lastY = maybeAddCoords(x,y, lastX,lastY, 0,h)
 	end
 
 	if    fill
@@ -270,13 +294,12 @@ end
 
 
 
-function _G.drawRectangleFill(x,y, w,h, rx,ry, segs)
+function _G.drawRectangleFill(x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs)
 	if w < 0 then  x, w = x+w, -w  end
 	if h < 0 then  y, h = y+h, -h  end
 
-	if rx > 0 and ry > 0 then
-		drawRoundedRectangle(true, x,y, w,h, rx,ry, segs, 0)
-
+	if (tlx > 0 and tly > 0) or (trx > 0 and try > 0) or (brx > 0 and bry > 0) or (blx > 0 and bly > 0) then
+		drawRoundedRectangle(true, x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs, 0)
 	else
 		local iw,ih = A.images.rectangle:getDimensions()
 		LG.draw(A.images.rectangle, x,y, 0, w/iw,h/ih)
@@ -298,12 +321,12 @@ local mesh, vertices = nil, {
 	{0,0, 0,0, 1,1,1,1},
 }
 
-function _G.drawRectangleLine(x,y, w,h, rx,ry, segs, lw)
+function _G.drawRectangleLine(x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs, lw)
 	if w < 0 then  x, w = x+w, -w  end
 	if h < 0 then  y, h = y+h, -h  end
 
-	if rx > 0 and ry > 0 then
-		drawRoundedRectangle(false, x,y, w,h, rx,ry, segs, lw)
+	if (tlx > 0 and tly > 0) or (trx > 0 and try > 0) or (brx > 0 and bry > 0) or (blx > 0 and bly > 0) then
+		drawRoundedRectangle(false, x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs, lw)
 		return
 	end
 
@@ -457,6 +480,7 @@ function _G.drawPolygonFill(coords)
 	local h = y2 - y1
 
 	for i = 1, coordCount do
+		-- @Incomplete @Robustness: Handle overlapping coords.
 		local x = coords[2*i-1]
 		local y = coords[2*i  ]
 
