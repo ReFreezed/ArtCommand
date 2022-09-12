@@ -449,3 +449,11 @@ do
 	assert (Bar=="a")
 end
 assert (Bar==4)
+
+# Conditions.
+if  False; print "Bad 1"; assertFalse
+elseif  0; print "Bad 2"; assertFalse
+elseif ""; print "Bad 3"; assertFalse
+elseif  1; print "Good"
+elseif  0; print "Bad 4"; assertFalse
+else     ; print "Bad 5"; assertFalse; end

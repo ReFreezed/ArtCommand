@@ -721,7 +721,7 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 	end
 end
 
-local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens, lookForElse)
+local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens, lookForElseOrElseif)
 	local depth         = 1
 	local stack         = {}
 	local expectCommand = true
@@ -745,13 +745,13 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 			table.remove(stack)
 			if depth == 0 then  return tokPos+1  end
 
-		elseif isToken(tok, "name", "else") then
-			if lookForElse and depth == 1 then
+		elseif isToken(tok, "name", "else") or isToken(tok, "name", "elseif") then
+			if lookForElseOrElseif and depth == 1 then
 				return tokPos+1
-			elseif isToken(stack[#stack], "name", "if") then
-				stack[#stack] = tok -- Exit if-block and enter else-block.
+			elseif isToken(stack[#stack], "name", "if") or isToken(stack[#stack], "name", "elseif") then
+				stack[#stack] = tok -- Exit if-block and enter else/elseif-block.
 			else
-				tokenError(context, tok, "Unexpected 'else'.")
+				tokenError(context, tok, "Unexpected '%s'.", tok.value)
 				if stack[1] then  tokenMessage(context, stack[#stack], "...block started here.")  end
 				return nil
 			end
@@ -901,7 +901,7 @@ local function applyEffect(context, cb)
 	LG.pop()
 end
 
--- image|canvas|nil = getOrLoadImage( context, tokenForError, pathIdentifier, recursionsAllowed )
+-- image|canvas = getOrLoadImage( context, tokenForError, pathIdentifier, recursionsAllowed )
 -- Returns nil on error.
 local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed)
 	local imageOrCanvas = context.images[pathIdent]
@@ -961,6 +961,23 @@ end
 
 local function tostringFloat(n)
 	return tostring(n):gsub("^%-?%d+$", "%0.0")
+end
+
+local function setArgumentsToDefault(args, commandInfo)
+	for _, argInfo in ipairs(commandInfo) do
+		args[argInfo[1]] = argInfo[2]
+	end
+end
+
+-- passes = evaluateCondition( context, command, tokenForError, conditionValue )
+-- Returns nil on error.
+local function evaluateCondition(context, command, tokForError, v)
+	if     type(v) == "boolean" then  return v
+	elseif type(v) == "number"  then  return (v ~= 0) and (v == v)
+	elseif type(v) == "string"  then  return (v ~= "")
+	else
+		return (tokenError(context, tokForError, "[%s] Unsupported value type '%s'.", command, type(v)))
+	end
 end
 
 local runBlock
@@ -1074,10 +1091,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	local args    = {}
 	local visited = {}
-
-	for _, argInfo in ipairs(commandInfo) do
-		args[argInfo[1]] = argInfo[2] -- Fill with default values.  @Speed: This is not necessary, just convenient.
-	end
+	setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
 
 	-- Initialize arguments (dynamic values only).
 	if command == "setbuf" then
@@ -1124,44 +1138,112 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		var.value = args.value
 
 	----------------------------------------------------------------
-	elseif command == "do" or command == "if" then
-		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[%s] Invalid ','. Cannot chain '%s'.", command, command))  end
+	elseif command == "do" then
+		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[do] Invalid ','. Cannot chain 'do'."))  end
 
 		-- Get block body.
-		local trueTokens = {}
-		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, trueTokens, true)
+		local bodyTokens = {}
+		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, true)
 		if not tokPos then  return nil  end
 
-		local falseTokens = {}
-		if isToken(tokens[tokPos-1], "name", "else") then
-			tokPos = collectBodyTokens(context, tokens, tokens[tokPos-1], tokPos, falseTokens, false)
-			if not tokPos then  return nil  end
-		end
-
 		-- Run block.
-		local passes = false
+		table.insert(context.scopeStack, ScopeStackEntry())
 
-		if     command == "do"               then  passes = true
-		elseif type(args.value) == "boolean" then  passes = args.value
-		elseif type(args.value) == "number"  then  passes = (args.value ~= 0) and (args.value == args.value)
-		elseif type(args.value) == "string"  then  passes = (args.value ~= "")
-		else
-			return (tokenError(context, visited.value, "[%s] Unsupported value type '%s'.", command, type(args.value)))
-		end
+		local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
+		if not bodyTokPos         then  return nil  end
+		if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[%s] Unexpected token.", command))  end
 
-		local bodyTokens = passes and trueTokens or falseTokens
+		table.remove(context.scopeStack)
+		if stop == STOP_ALL then  return 1/0, STOP_ALL  end
 
-		if bodyTokens[1] then
-			local entry = ScopeStackEntry()
-			table.insert(context.scopeStack, entry)
+	----------------------------------------------------------------
+	elseif command == "if" then
+		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[if] Invalid ','. Cannot chain 'if'."))  end
+		if not visited.value            then  return (tokenError(context, (commandTok or startTok), "[if] Missing value."))  end
+
+		local executedSomeBlock = false
+
+		-- if
+		local bodyTokens = {}
+		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, true)
+		if not tokPos then  return nil  end
+
+		local passes = evaluateCondition(context, command, visited.value, args.value)
+		if passes == nil then  return nil  end
+
+		if passes then
+			-- Run block.
+			table.insert(context.scopeStack, ScopeStackEntry())
 
 			local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
 			if not bodyTokPos         then  return nil  end
-			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[%s] Unexpected token.", command))  end
+			if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[if] Unexpected token."))  end
 
 			table.remove(context.scopeStack)
-
 			if stop == STOP_ALL then  return 1/0, STOP_ALL  end
+			executedSomeBlock = true
+		end
+
+		-- elseif
+		while isToken(tokens[tokPos-1], "name", "elseif") do
+			startTok = tokens[tokPos-1]
+
+			-- @Copypaste from above.
+			table.clear(args)
+			table.clear(visited)
+			setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
+
+			-- @Incomplete @Speed: Don't evaluate arguments if executedSomeBlock=true. (Low priority because evaluating expressions currently has no side effects.)
+			tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
+			if not tokPos then  return nil  end
+
+			if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[elseif] Invalid ','. Cannot chain 'elseif' using ','."))  end
+			if not visited.value            then  return (tokenError(context, startTok, "[elseif] Missing value."))  end
+			--
+
+			table.clear(bodyTokens)
+			tokPos = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, true)
+			if not tokPos then  return nil  end
+
+			if not executedSomeBlock then
+				passes = evaluateCondition(context, "elseif", visited.value, args.value)
+				if passes == nil then  return nil  end
+
+				if passes then
+					-- Run block.
+					table.insert(context.scopeStack, ScopeStackEntry())
+
+					local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
+					if not bodyTokPos         then  return nil  end
+					if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[elseif] Unexpected token."))  end
+
+					table.remove(context.scopeStack)
+					if stop == STOP_ALL then  return 1/0, STOP_ALL  end
+					executedSomeBlock = true
+				end
+			end
+		end
+
+		-- else
+		if isToken(tokens[tokPos-1], "name", "else") then
+			startTok = tokens[tokPos-1]
+			if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[else] Invalid ','. Cannot chain 'else'."))  end
+
+			table.clear(bodyTokens)
+			tokPos = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, false)
+			if not tokPos then  return nil  end
+
+			if not executedSomeBlock then
+				-- Run block.
+				table.insert(context.scopeStack, ScopeStackEntry())
+
+				local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
+				if not bodyTokPos         then  return nil  end
+				if bodyTokens[bodyTokPos] then  return (tokenError(context, bodyTokens[bodyTokPos], "[else] Unexpected token."))  end
+
+				table.remove(context.scopeStack)
+				if stop == STOP_ALL then  return 1/0, STOP_ALL  end
+			end
 		end
 
 	----------------------------------------------------------------
@@ -1205,7 +1287,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		table.remove(context.scopeStack)
-
 		if stopAll then  return 1/0, STOP_ALL  end
 
 	----------------------------------------------------------------
@@ -2192,7 +2273,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		imageData:release()
 
 	----------------------------------------------------------------
-	elseif command == "end" or command == "else" then
+	elseif command == "end" or command == "else" or command == "elseif" then
 		return (tokenError(context, startTok, "Unexpected '%s'.", command))
 	else
 		return (tokenError(context, startTok, "Internal error: Unimplemented command '%s'.", command))
