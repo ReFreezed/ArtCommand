@@ -277,16 +277,17 @@ color 1 .6 .8; bezier 30 375 thick2
 
 # Arcs.
 func Arc X Y Mode1 Mode2 From To Segs
-	circle Mode1 X (Y   ) r15 fromFrom toTo segsSegs thick4
-	circle Mode2 X (Y+38) r15 fromFrom toTo segsSegs thick4
+	circle Mode1 X (Y   ) r15  fromFrom toTo segsSegs thick4
+	circle Mode2 X (Y+38) r15  fromFrom toTo segsSegs thick4
+	circle Mode2 X (Y+70) 15 5 fromFrom toTo segsSegs thick4
 end
 
 grad .3 .5 1, rgb1 +radial
-Arc (195+0*33) 520 "fill"       "line"       0deg   999deg 8
-Arc (195+1*33) 520 "fill"       "line"       -90deg 135deg 5
-Arc (195+2*33) 520 "fill"       "linepie"    -90deg 135deg 5
-Arc (195+3*33) 520 "fillclosed" "lineclosed" -90deg 135deg 5
-Arc (195+4*33) 520 "fill"       "linepie"    90deg  135deg 3
+Arc (195+0*33) 515 "fill"       "line"       0deg   999deg 8
+Arc (195+1*33) 515 "fill"       "line"       -90deg 135deg 5
+Arc (195+2*33) 515 "fill"       "linepie"    -90deg 135deg 5
+Arc (195+3*33) 515 "fillclosed" "lineclosed" -90deg 135deg 5
+Arc (195+4*33) 515 "fill"       "linepie"    90deg  135deg 3
 
 # Rounded rectangles.
 push

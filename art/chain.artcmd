@@ -15,7 +15,7 @@ func Link Dir DrawLight
 		grey0
 		rect (LinkFlip and 1 or -1) 0 1000 1000 ax(LinkFlip and 0 or 1) ay.5
 	mask
-		grad rgb1, rgb.35, rgb.25, rgb.1, rgb.05 rot90deg
+		grad rgb1, rgb.35, rgb.25, rgb.1, rgb.05 +radial y-.43 scale3.2
 		circle"line" 0 0 10 20 thick7
 	maskFalse
 

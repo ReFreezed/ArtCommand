@@ -1685,8 +1685,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
+		local lw = (args.mode == "fill") and 0 or args.thick
+
 		applyCanvas(context, nil)
-		applyColor(context, nil, "rectangle", args.w,args.h)
+		applyColor(context, nil, "rectangle", args.w+lw,args.h+lw)
 
 		local segs = (
 			args.segs > 0
@@ -1702,7 +1704,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.translate(-args.ax*args.w, -args.ay*args.h)
 
 		if     args.mode == "fill" then  drawRectangleFill(0,0, args.w,args.h, args.tlrx,args.tlry, args.trrx,args.trry, args.brrx,args.brry, args.blrx,args.blry, segs)
-		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.tlrx,args.tlry, args.trrx,args.trry, args.brrx,args.brry, args.blrx,args.blry, segs, args.thick)
+		elseif args.mode == "line" then  drawRectangleLine(0,0, args.w,args.h, args.tlrx,args.tlry, args.trrx,args.trry, args.brrx,args.brry, args.blrx,args.blry, segs, lw)
 		else error(args.mode) end
 
 		LG.pop()
@@ -1715,6 +1717,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
+		local lw = (args.mode == "fill" or args.mode == "fillclosed") and 0 or args.thick
+
 		local angle1 = args.from
 		local angle2 = math.clamp(args.to, args.from-TAU, args.from+TAU)
 
@@ -1725,7 +1729,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		)
 
 		applyCanvas(context, nil)
-		applyColor(context, nil, "circle", args.rx,args.ry)
+		applyColor(context, nil, "circle", args.rx+.5*lw,args.ry+.5*lw)
 
 		LG.push()
 		LG.translate(args.x, args.y)
@@ -1736,9 +1740,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		if     args.mode == "fill"       then  drawCircleFill(0,0, args.rx,args.ry, angle1,angle2, false   , segs)
 		elseif args.mode == "fillclosed" then  drawCircleFill(0,0, args.rx,args.ry, angle1,angle2, true    , segs)
-		elseif args.mode == "line"       then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "open"  , segs, args.thick)
-		elseif args.mode == "linepie"    then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "pie"   , segs, args.thick)
-		elseif args.mode == "lineclosed" then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "closed", segs, args.thick)
+		elseif args.mode == "line"       then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "open"  , segs, lw)
+		elseif args.mode == "linepie"    then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "pie"   , segs, lw)
+		elseif args.mode == "lineclosed" then  drawCircleLine(0,0, args.rx,args.ry, angle1,angle2, "closed", segs, lw)
 		else error(args.mode) end
 
 		LG.pop()
@@ -1759,6 +1763,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
+		local lw = (args.mode == "fill") and 0 or args.thick
+
 		local x1 =  1/0
 		local x2 = -1/0
 		local y1 =  1/0
@@ -1771,8 +1777,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			y2 = math.max(y2, coords[i+1])
 		end
 
-		local colorW = x2 - x1
-		local colorH = y2 - y1
+		local colorW = x2 - x1 + lw
+		local colorH = y2 - y1 + lw
 
 		if not args.shift then
 			x1, y1 = 0, 0
@@ -1790,7 +1796,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.translate(-x1, -y1)
 
 		if     args.mode == "fill" then  drawPolygonFill(coords)
-		elseif args.mode == "line" then  drawPolygonLine(coords, args.thick)
+		elseif args.mode == "line" then  drawPolygonLine(coords, lw)
 		else error(args.mode) end
 
 		LG.pop()
@@ -1821,8 +1827,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			y2 = math.max(y2, coords[i+1])
 		end
 
-		local colorW = x2 - x1
-		local colorH = y2 - y1
+		local colorW = x2 - x1 + args.thick -- Note: We assume the line extends by the thickness in both directions from the coords
+		local colorH = y2 - y1 + args.thick --       which isn't exactly correct, but it's good enough. That's art, baby!
 
 		if not args.shift then
 			x1, y1 = 0, 0

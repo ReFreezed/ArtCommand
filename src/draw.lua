@@ -84,7 +84,7 @@ end
 local vertices = {}
 local mesh     = nil
 
-local function _drawLine(connected, coords, lw, circleMode, circleX,circleY)
+local function _drawLine(connected, coords, lw, circleMode, circleX,circleY, circleRx,circleRy)
 	-- @Incomplete @Robustness: Handle overlapping coords.
 	if not coords[connected and 6 or 4] then  return  end
 
@@ -169,18 +169,12 @@ local function _drawLine(connected, coords, lw, circleMode, circleX,circleY)
 
 	-- Set UVs.
 	if circleMode then
-		local maxDistSq = 0
+		local denomX = 2 * (circleRx + lw/2)
+		local denomY = 2 * (circleRy + lw/2)
 
 		for i = 1, 2*coordCount do
-			local distSq = math.distanceSq(circleX,circleY, vertices[i][1],vertices[i][2])
-			maxDistSq    = math.max(maxDistSq, distSq)
-		end
-
-		local maxDistDouble = 2 * math.sqrt(maxDistSq)
-
-		for i = 1, 2*coordCount do
-			vertices[i][3] = .5 + (vertices[i][1] - circleX) / maxDistDouble
-			vertices[i][4] = .5 + (vertices[i][2] - circleY) / maxDistDouble
+			vertices[i][3] = .5 + (vertices[i][1] - circleX) / denomX
+			vertices[i][4] = .5 + (vertices[i][2] - circleY) / denomY
 		end
 
 	else
@@ -219,7 +213,7 @@ end
 
 
 function _G.drawLine(coords, lw)
-	_drawLine(false, coords, lw, false, 0,0)
+	_drawLine(false, coords, lw, false, 0,0, 0,0)
 end
 
 
@@ -434,7 +428,7 @@ function _G.drawCircleLine(x,y, rx,ry, angle1,angle2, arcMode, segs, lw)
 		table.insert(coords, y+ry*math.sin(angle))
 	end
 
-	_drawLine(connected, coords, lw, true, x,y)
+	_drawLine(connected, coords, lw, true, x,y, rx,ry)
 end
 
 
@@ -495,7 +489,7 @@ end
 
 
 function _G.drawPolygonLine(coords, lw)
-	_drawLine(true, coords, lw, false, 0,0)
+	_drawLine(true, coords, lw, false, 0,0, 0,0)
 end
 
 
