@@ -1264,20 +1264,22 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local entry = ScopeStackEntry()
 		table.insert(context.scopeStack, entry)
 
-		local var                 = {token=startTok, value=0}
-		entry.variables[args.var] = var
-
 		local loops   = 0
+		local iterVar = {token=startTok, value=0}
 		local stopAll = false
 
 		for n = args.from, args.to, args.step do
-			loops     = loops + 1
-			var.value = n
-
+			loops = loops + 1
 			if loops >= MAX_LOOPS then -- Maybe there should be a MAX_DRAW_OPERATIONS too? MAX_LOOPS could probably be higher then. @Incomplete
 				tokenError(context, startTok, "[for] Max loops exceeded. Breaking.")
 				break
 			end
+
+			table.clear(entry.functions)
+			table.clear(entry.variables)
+
+			iterVar.value             = n
+			entry.variables[args.var] = iterVar
 
 			local bodyTokPos, stop = runBlock(context, bodyTokens, 1)
 			if not bodyTokPos         then  return nil              end
@@ -1644,7 +1646,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "point" then
-		if not isSequence then
+		if args.clear and not isSequence then
 			table.clear(context.points)
 		end
 		table.insert(context.points, {x=args.x,y=args.y, a=args.a,b=args.b, s=args.s})
@@ -2177,8 +2179,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "levels" then
 		applyEffect(context, function(context, canvasRead, canvasWrite)
-			shaderSendVec2(A.shaders.fxLevels, "rangeIn" , args.rangeinfrom,args.rangeinto)
-			shaderSendVec2(A.shaders.fxLevels, "rangeOut", args.rangeoutfrom,args.rangeoutto)
+			shaderSendVec2(A.shaders.fxLevels, "rangeIn" , args.infrom,args.into)
+			shaderSendVec2(A.shaders.fxLevels, "rangeOut", args.outfrom,args.outto)
 			shaderSend    (A.shaders.fxLevels, "middle"  , args.mid)
 			LG.setShader(A.shaders.fxLevels.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
@@ -2399,11 +2401,12 @@ function _G.loadArtFile(path, isLocal)
 	entry.variables.int     = {token=tokens[1], value=function(n)  return (math.modf(n))  end}
 	entry.variables.ldexp   = {token=tokens[1], value=math.ldexp}
 	entry.variables.log     = {token=tokens[1], value=math.log} -- log( n [, base=e ] )
+	entry.variables.lerp    = {token=tokens[1], value=math.lerp}
 	entry.variables.max     = {token=tokens[1], value=math.max}
 	entry.variables.min     = {token=tokens[1], value=math.min}
 	entry.variables.rad     = {token=tokens[1], value=math.rad}
 	entry.variables.rand    = {token=tokens[1], value=love.math.random}
-	entry.variables.randf   = {token=tokens[1], value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or n1*love.math.random()  end} -- randomf( [ n1=0, ] n2 )
+	entry.variables.randf   = {token=tokens[1], value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [ n1=0, ] n2 )
 	entry.variables.round   = {token=tokens[1], value=math.round}
 	entry.variables.sin     = {token=tokens[1], value=math.sin}
 	entry.variables.sinh    = {token=tokens[1], value=math.sinh}

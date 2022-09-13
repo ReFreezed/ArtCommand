@@ -438,8 +438,17 @@ local mesh     = nil
 
 function _G.drawPolygonFill(coords)
 	local isConvex  = love.math.isConvex(coords)
-	local triangles = not isConvex and love.math.triangulate(coords) or nil
-	local vertCount = not isConvex and 3*#triangles                  or .5*#coords
+	local triangles = nil
+
+	if not isConvex then
+		local ok; ok, triangles = pcall(love.math.triangulate, coords)
+		if not ok then
+			print("Error: "..triangles) -- @UX: Alert the user.
+			isConvex = true -- Fallback. Visual errors may appear.
+		end
+	end
+
+	local vertCount = isConvex and .5*#coords or 3*#triangles
 
 	if not vertices[vertCount] then
 		local allocationSize = math.max(#vertices, 16)

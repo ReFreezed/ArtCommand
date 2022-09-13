@@ -70,7 +70,7 @@ setbuf  name=""  path=""  w=0(context.canvasW) h=0(context.canvasH)  aa=0(contex
 #
 # Drawing.
 #
-point  x=0 y=0  a=0/0 b=0/0  s=""  xy=x&y
+point  x=0 y=0  a=0/0 b=0/0  s=""  clear=true  xy=x&y
 
 fill  r=0 g=0 b=0 a=1  rgb=r&g&b  # A rectangle that covers the whole screen.
 
@@ -95,7 +95,7 @@ contrast    amount=1  r=1 g=1 b=1
 brightness  amount=1  r=1 g=1 b=1
 saturation  amount=1  r=1 g=1 b=1
 gamma       amount=1  r=1 g=1 b=1
-levels      rangeinfrom=0 rangeinto=1  rangeoutfrom=0 rangeoutto=1  mid=.5
+levels      infrom=0 into=1  outfrom=0 outto=1  mid=.5
 
 overlay  r=0 g=0 b=0 a=1  rgb=r&g&b
 tint     r=0 g=0 b=0 a=1  rgb=r&g&b
