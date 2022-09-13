@@ -465,3 +465,15 @@ setbuf"self"
 	pat scale.5
 setbuf
 buf"self" 0 85 ay1 rot90deg scale.075
+
+# Arrays.
+set Arr {58,21}
+add Arr "foo", Arr 133, Arr "bar"
+
+rem Arr #bar
+rem Arr -2 #foo
+
+print (sort(Arr)), Arr
+fori V Arr
+	set X (2*V)
+end
