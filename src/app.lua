@@ -162,7 +162,7 @@ function love.load(args, rawArgs)
 	end
 
 	if thePathIn == "" then
-		thePathIn     = "art/test.artcmd"
+		thePathIn     = "tests/all.artcmd"
 		thePathOut    = ""
 		thePathIsTest = true
 	end
