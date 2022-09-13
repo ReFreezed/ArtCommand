@@ -1683,9 +1683,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return (tokenError(context, (visited.mode or startTok), "[rect] Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
 
-		ensureCanvasAndInitted(context)
-
 		local lw = (args.mode == "fill") and 0 or args.thick
+
+		ensureCanvasAndInitted(context)
 
 		applyCanvas(context, nil)
 		applyColor(context, nil, "rectangle", args.w+lw,args.h+lw)
@@ -1715,8 +1715,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return (tokenError(context, (visited.mode or startTok), "[circle] Bad draw mode '%s'. Must be 'fill' or 'line'.", args.mode))
 		end
 
-		ensureCanvasAndInitted(context)
-
 		local lw = (args.mode == "fill" or args.mode == "fillclosed") and 0 or args.thick
 
 		local angle1 = args.from
@@ -1727,6 +1725,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			and args.segs
 			or  math.round(math.max(math.max(args.rx, args.ry) * TAU/10, 64) * math.abs(angle2-angle1)/TAU)
 		)
+
+		ensureCanvasAndInitted(context)
 
 		applyCanvas(context, nil)
 		applyColor(context, nil, "circle", args.rx+.5*lw,args.ry+.5*lw)
@@ -1756,14 +1756,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not context.points[3] then  return (tokenError(context, startTok, "[poly] Not enough points added."))  end
 
 		local coords = pointsToCoords(context.points)
-
-		if args.mode == "fill" and not love.math.isConvex(coords) then
-			return (tokenError(context, startTok, "[poly] The added points form a concave shape. Filled polygons must be convex."))
-		end
-
-		ensureCanvasAndInitted(context)
-
-		local lw = (args.mode == "fill") and 0 or args.thick
+		local lw     = (args.mode == "fill") and 0 or args.thick
 
 		local x1 =  1/0
 		local x2 = -1/0
@@ -1783,6 +1776,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not args.shift then
 			x1, y1 = 0, 0
 		end
+
+		ensureCanvasAndInitted(context)
 
 		applyCanvas(context, nil)
 		applyColor(context, nil, "rectangle", colorW,colorH)
@@ -1813,8 +1808,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			curve:release()
 		end
 
-		ensureCanvasAndInitted(context)
-
 		local x1 =  1/0
 		local x2 = -1/0
 		local y1 =  1/0
@@ -1833,6 +1826,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not args.shift then
 			x1, y1 = 0, 0
 		end
+
+		ensureCanvasAndInitted(context)
 
 		applyCanvas(context, nil)
 		applyColor(context, nil, "rectangle", colorW,colorH)

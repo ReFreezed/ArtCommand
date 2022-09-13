@@ -437,12 +437,14 @@ local vertices = {}
 local mesh     = nil
 
 function _G.drawPolygonFill(coords)
-	local coordCount = .5 * #coords
+	local isConvex  = love.math.isConvex(coords)
+	local triangles = not isConvex and love.math.triangulate(coords) or nil
+	local vertCount = not isConvex and 3*#triangles                  or .5*#coords
 
-	if not vertices[coordCount] then
+	if not vertices[vertCount] then
 		local allocationSize = math.max(#vertices, 16)
 
-		while allocationSize < coordCount do
+		while allocationSize < vertCount do
 			allocationSize = 2*allocationSize
 		end
 
@@ -473,16 +475,35 @@ function _G.drawPolygonFill(coords)
 	local w = x2 - x1
 	local h = y2 - y1
 
-	for i = 1, coordCount do
-		-- @Incomplete @Robustness: Handle overlapping coords.
-		local x = coords[2*i-1]
-		local y = coords[2*i  ]
+	if isConvex then
+		mesh:setDrawMode("fan")
 
-		vertices[i][1],vertices[i][2], vertices[i][3],vertices[i][4] = x,y, (x-x1)/w,(y-y1)/h
+		for vertI = 1, vertCount do
+			-- @Incomplete @Robustness: Handle overlapping coords.
+			local x = coords[2*vertI-1]
+			local y = coords[2*vertI  ]
+
+			vertices[vertI][1],vertices[vertI][2], vertices[vertI][3],vertices[vertI][4] = x,y, (x-x1)/w,(y-y1)/h
+		end
+
+	else
+		mesh:setDrawMode("triangles")
+		local vertI = 0
+
+		for _, tri in ipairs(triangles) do
+			for i = 1, 5, 2 do
+				-- @Incomplete @Robustness: Handle overlapping coords.
+				vertI   = vertI + 1
+				local x = tri[i  ]
+				local y = tri[i+1]
+
+				vertices[vertI][1],vertices[vertI][2], vertices[vertI][3],vertices[vertI][4] = x,y, (x-x1)/w,(y-y1)/h
+			end
+		end
 	end
 
-	mesh:setVertices(vertices, 1, coordCount)
-	mesh:setDrawRange(         1, coordCount)
+	mesh:setVertices(vertices, 1, vertCount)
+	mesh:setDrawRange(         1, vertCount)
 	LG.draw(mesh)
 end
 
