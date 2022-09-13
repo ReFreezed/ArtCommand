@@ -385,7 +385,7 @@ push
 	makemask
 		color; circle r80
 	mask
-		color 1 .6 .2; pattern "forest"   anchor.5 rot-30deg scale.35 ky.2 +mirror
+		color 1 .6 .2; pat   "forest"     anchor.5 rot-30deg scale.35 ky.2 +mirror
 		color;         image "forest.png" anchor.5 rot-30deg scale.35 ky.2
 	maskFalse
 pop
@@ -458,3 +458,10 @@ elseif ""; print "Bad 3"; assertFalse
 elseif  1; print "Good"
 elseif  0; print "Bad 4"; assertFalse
 else     ; print "Bad 5"; assertFalse; end
+
+# Draw canvas.
+color
+setbuf"self"
+	pat scale.5
+setbuf
+buf"self" 0 85 ay1 rot90deg scale.075
