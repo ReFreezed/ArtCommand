@@ -370,17 +370,19 @@ function love.keypressed(key)
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
 		if not theArt then  return  end
 
+		local fileType = love.keyboard.isDown("lshift","rshift") and "tga" or "png"
+
 		if thePathIsTest then
-			local pathOut = "output.png"
+			local pathOut = "output."..fileType
 			print("Saving "..pathOut.."...")
 
 			local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
-			imageData:encode("png", pathOut):release() ; imageData:release()
+			imageData:encode(fileType, pathOut):release() ; imageData:release()
 
 			print("Saving "..pathOut.."... done!")
 
 		else
-			local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "")..".png"
+			local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "").."."..fileType
 			if pathOut == thePathIn then
 				print("Error: Input and output paths are the same: "..pathOut)
 				return
@@ -389,8 +391,8 @@ function love.keypressed(key)
 			print("Saving "..pathOut.."...")
 
 			local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
-			local fileData  = imageData:encode("png") ; imageData:release()
-			local s         = fileData:getString()    ; fileData :release()
+			local fileData  = imageData:encode(fileType) ; imageData:release()
+			local s         = fileData:getString()       ; fileData :release()
 			local ok, err   = writeFile(thePathIsTest, pathOut, s)
 
 			if not ok then

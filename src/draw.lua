@@ -443,7 +443,11 @@ function _G.drawPolygonFill(coords)
 	if not isConvex then
 		local ok; ok, triangles = pcall(love.math.triangulate, coords)
 		if not ok then
-			print("Error: "..triangles) -- @UX: Alert the user.
+			if DEV then
+				print("Error: "..triangles.." ("..table.concat(coords, ", ")..")")
+			else
+				print("Error: "..triangles) -- @UX: Alert the user.
+			end
 			isConvex = true -- Fallback. Visual errors may appear.
 		end
 	end

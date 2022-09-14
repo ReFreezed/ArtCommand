@@ -1452,7 +1452,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			gfxState.colorTexture = nil
 		end
 
-		if not isSequence then
+		if args.clear and not isSequence then
 			table.clear(gfxState.gradient)
 		end
 		table.insert(gfxState.gradient, args.r)
@@ -1479,6 +1479,50 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
 			gfxState.colorTexture = nil
+		end
+
+	----------------------------------------------------------------
+	elseif command == "scalecolor" then
+		local gfxState = context.gfxState
+
+		gfxState.flatColor[1] = (gfxState.flatColor[1] - args.base) * args.r + args.base
+		gfxState.flatColor[2] = (gfxState.flatColor[2] - args.base) * args.g + args.base
+		gfxState.flatColor[3] = (gfxState.flatColor[3] - args.base) * args.b + args.base
+		gfxState.flatColor[4] = (gfxState.flatColor[4] - args.base) * args.a + args.base
+
+		for i = 1, #gfxState.gradient, 4 do
+			gfxState.gradient[i  ] = (gfxState.gradient[i  ] - args.base) * args.r + args.base
+			gfxState.gradient[i+1] = (gfxState.gradient[i+1] - args.base) * args.g + args.base
+			gfxState.gradient[i+2] = (gfxState.gradient[i+2] - args.base) * args.b + args.base
+			gfxState.gradient[i+3] = (gfxState.gradient[i+3] - args.base) * args.a + args.base
+		end
+
+	elseif command == "addcolor" then
+		local gfxState = context.gfxState
+
+		gfxState.flatColor[1] = gfxState.flatColor[1] + args.r
+		gfxState.flatColor[2] = gfxState.flatColor[2] + args.g
+		gfxState.flatColor[3] = gfxState.flatColor[3] + args.b
+		gfxState.flatColor[4] = gfxState.flatColor[4] + args.a
+
+		for i = 1, #gfxState.gradient, 4 do
+			gfxState.gradient[i  ] = gfxState.gradient[i  ] + args.r
+			gfxState.gradient[i+1] = gfxState.gradient[i+1] + args.g
+			gfxState.gradient[i+2] = gfxState.gradient[i+2] + args.b
+			gfxState.gradient[i+3] = gfxState.gradient[i+3] + args.a
+		end
+
+	elseif command == "overlaycolor" then
+		local gfxState = context.gfxState
+
+		gfxState.flatColor[1] = math.lerp(gfxState.flatColor[1], args.r, args.a)
+		gfxState.flatColor[2] = math.lerp(gfxState.flatColor[2], args.g, args.a)
+		gfxState.flatColor[3] = math.lerp(gfxState.flatColor[3], args.b, args.a)
+
+		for i = 1, #gfxState.gradient, 4 do
+			gfxState.gradient[i  ] = math.lerp(gfxState.gradient[i  ], args.r, args.a)
+			gfxState.gradient[i+1] = math.lerp(gfxState.gradient[i+1], args.g, args.a)
+			gfxState.gradient[i+2] = math.lerp(gfxState.gradient[i+2], args.b, args.a)
 		end
 
 	----------------------------------------------------------------
