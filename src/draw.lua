@@ -441,14 +441,28 @@ function _G.drawPolygonFill(coords)
 	local triangles = nil
 
 	if not isConvex then
-		local ok; ok, triangles = pcall(love.math.triangulate, coords)
+		local ok;ok, triangles = pcall(love.math.triangulate, coords)
+
 		if not ok then
-			if DEV then
-				print("Error: "..triangles.." ("..table.concat(coords, ", ")..")")
+			local points = {}
+			for i = 1, #coords, 2 do
+				table.insert(points, {x=coords[i], y=coords[i+1]})
+			end
+			triangles = require"triangulate"(points)
+
+			for _, tri in ipairs(triangles) do
+				tri[1],tri[2],     tri[3],tri[4],     tri[5],tri[6] =
+				tri[1].x,tri[1].y, tri[2].x,tri[2].y, tri[3].x,tri[3].y
+			end
+
+			--[[
+			if DEV and 1==0 then
+				print("Error: Failed triangulating polygon. ("..table.concat(coords, ", ")..")")
 			else
-				print("Error: "..triangles) -- @UX: Alert the user.
+				print("Error: Failed triangulating polygon.") -- @UX: Alert the user.
 			end
 			isConvex = true -- Fallback. Visual errors may appear.
+			--]]
 		end
 	end
 

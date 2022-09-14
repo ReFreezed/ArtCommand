@@ -44,9 +44,6 @@ set FogR (lerp(.6, 1, .5)), FogG (lerp(.8, 1, .5)), FogB (lerp(1, 1, .5))
 grad SkyR SkyG SkyB, FogR FogG FogB rot90deg
 rect 0 0 Cw SkyH
 
-# color 1 1 .87
-# circle (.7*Cw) (-.05*Ch) r(.1*Cw)
-
 # Clouds.
 func Cloud X Y Size Sx Sy
 	if (Size == 1)
