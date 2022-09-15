@@ -369,6 +369,16 @@ makemask; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2
 makemask; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale.15
 maskFalse
 
+# Generator: clouds.
+makemask
+	color
+	circle 640 240 40 30 anchor0
+	blur xy100
+mask
+	color
+	clouds scale3
+maskFalse
+
 # Generator: random noise.
 makemask
 	color

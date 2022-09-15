@@ -2285,7 +2285,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	-- Generators.
 	--
 	----------------------------------------------------------------
-	elseif command == "noise" then
+	elseif command == "noise" or command == "clouds" then
 		ensureCanvasAndInitted(context)
 
 		local gfxState = context.gfxState
@@ -2293,7 +2293,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local cw,ch    = canvas:getDimensions()
 		local iw,ih    = A.images.rectangle:getDimensions()
 
-		shaderSendVec3(A.shaders.generateNoise, "offset", args.x,args.y,args.z)
+		shaderSend    (A.shaders.generateNoise, "clouds", (command == "clouds"))
+		shaderSendVec3(A.shaders.generateNoise, "offset", args.x,args.y,(args.z or 0))
 		shaderSendVec2(A.shaders.generateNoise, "scale" , args.sx,args.sy)
 
 		if gfxState.colorMode == "gradient" then

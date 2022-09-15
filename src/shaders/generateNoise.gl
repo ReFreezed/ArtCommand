@@ -9,23 +9,49 @@
 *
 ***************************************************************/
 
+// #include "_noise2D.gl"
 #include "_noise3D.gl"
+// #include "_noise4D.gl"
 
 uniform vec3 offset;
 uniform vec2 scale;
 
-uniform bool useColorTexture;
-uniform vec4 color0;
-uniform vec4 color1;
+uniform bool  useColorTexture;
+uniform vec4  color0;
+uniform vec4  color1;
 uniform Image colorTexture;
-uniform int colorTextureSize;
+uniform int   colorTextureSize;
+
+uniform bool clouds;
 
 vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 	vec2 pos = (screenPos + offset.xy) * scale;
+	float v  = 0;
 
-	// float v = .5 + .5*snoise(pos); // 2D
-	float v = .5 + .5*snoise(vec3(pos, offset.z)); // 3D
-	// float v = .5 + .5*snoise(vec4(pos, offset.z, .5315)); // 4D
+	if (clouds) {
+		const int   layers     = 12;
+		const float posMulInit = .005;
+		const float posMulAdd  = .003 * sqrt(2.);
+		const float weightMul  = .8;
+
+		float posMul    = posMulInit;
+		float weightSum = 0;
+		float weight    = 1;
+
+		for (int layer = 0; layer < layers; layer++) {
+			v         += weight * snoise(vec3(posMul*pos+.171*layer*layer, 1.1453*layer));
+			weightSum += weight;
+
+			posMul  = posMul + posMulAdd;
+			weight *= weightMul;
+		}
+		v = .5 + .5*v/weightSum;
+
+	} else {
+		// v = .5 + .5*snoise(pos); // 2D
+		v = .5 + .5*snoise(vec3(pos, offset.z)); // 3D
+		// v = .5 + .5*snoise(vec4(pos, offset.z, .5315)); // 4D
+	}
 
 	if (useColorTexture) {
 		float inset = .5 / colorTextureSize;
