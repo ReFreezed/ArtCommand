@@ -363,6 +363,12 @@ setbuf"forest" "forest.png"
 	levels .5 1  .25 .75  mid.25
 color; buf"forest" 450 80 -filter rot5deg
 
+# Effect: threshold.
+setbuf"b&w" "forest.png"
+	thres .53
+	levels 0 1 .25 1
+color .95 .9 .8; buf"b&w" 320 60 scale.45 anchor.5 rot-15deg
+
 # Generator: noise.
 color
 makemask; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2

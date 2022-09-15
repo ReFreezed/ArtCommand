@@ -27,7 +27,10 @@ vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 	vec3 hsp    = toHsp(pixel.rgb);
 	float power = pow(10, middle*2-1);
 
-	hsp.P = max((hsp.P-rangeIn.x) / (rangeIn.y-rangeIn.x), 0); // Normalize from old range.
+	float rangeInDelta = rangeIn.y - rangeIn.x;
+	rangeInDelta       = (rangeInDelta >= 0) ? max(rangeInDelta, 1e-6) : min(rangeInDelta, -1e-6);
+
+	hsp.P = max((hsp.P-rangeIn.x)/rangeInDelta, 0); // Normalize from old range.
 	hsp.P = pow(hsp.P, power); // Apply curve.
 	hsp.P = mix(rangeOut.x, rangeOut.y, hsp.P); // Map to new range.
 

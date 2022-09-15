@@ -1,6 +1,6 @@
 /***************************************************************
 *
-*  Effect: Saturation
+*  Effect: Threshold
 *
 *---------------------------------------------------------------
 *
@@ -11,7 +11,7 @@
 
 #include "_colorSpaces.gl"
 
-uniform vec4 params; // {filterR, filterG, filterB, saturation}
+uniform float threshold;
 
 #define P z
 
@@ -19,12 +19,8 @@ vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 	vec4 color  = Texel(tex, texUv);
 	color.rgb  /= color.a;
 
-	float brightness = toHsp(color.rgb).P;
+	color.rgb = vec3((toHsp(color.rgb).P < threshold) ? 0 : 1);
 
-	color     -= brightness;
-	color.rgb  = mix(color.rgb, color.rgb*params.a, params.rgb);
-	color     += brightness;
-
-	color.rgb = clamp(color.rgb, vec3(0), vec3(1)) * color.a;
+	color.rgb *= color.a;
 	return color;
 }

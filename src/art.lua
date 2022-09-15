@@ -2263,6 +2263,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return canvasRead
 		end)
 
+	elseif command == "thres" then
+		applyEffect(context, function(context, canvasRead, canvasWrite)
+			shaderSend(A.shaders.fxThreshold, "threshold", args.thres)
+			LG.setShader(A.shaders.fxThreshold.shader)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
+
 	elseif command == "overlay" then -- Fade pixels toward color.
 		applyEffect(context, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxOverlay, "params", args.r,args.g,args.b,args.a)
