@@ -39,7 +39,7 @@ print   value=nil
 #
 
 # App. (Doesn't affect the image.)
-backdrop  r=0 g=0 b=0 a=1  rgb=r&g&b
+backdrop  r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 zoom      zoom=1  # There is also autoZoom!
 
 # Init.
@@ -51,14 +51,14 @@ canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
 push 
 pop  
 
-color    r=1 g=1 b=1 a=1  rgb=r&g&b
+color    r=1 g=1 b=1 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 grey     grey=1      a=1  # Short for `color rgbN`.
-grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  radial=false fit=true  clear=true  rgb=r&g&b  scale=sx&sy  xy=x&y
-texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0               fit=true              rgb=r&g&b  scale=sx&sy  xy=x&y
+grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  radial=false fit=true  clear=true  rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
+texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0               fit=true              rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
 
-scalecolor    r=1 g=1 b=1 a=1  base=0  rgb=r&g&b
-addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b
-overlaycolor  r=0 g=0 b=0 a=1          rgb=r&g&b
+scalecolor    r=1 g=1 b=1 a=1  base=0  rgb=r&g&b rg=r&g rb=r&b gb=g&b
+addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b rg=r&g rb=r&b gb=g&b
+overlaycolor  r=0 g=0 b=0 a=1          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
@@ -77,9 +77,10 @@ setbuf  name=""  path=""  w=0(context.canvasW) h=0(context.canvasH)  aa=0(contex
 #
 # Drawing.
 #
-point  x=0 y=0  a=0/0 b=0/0  s=""  clear=true  xy=x&y
+point     x=0 y=0  a=0/0 b=0/0  s=""  clear=true  xy=x&y
+relpoint  x=0 y=0  a=0/0 b=0/0  s=""  clear=true  xy=x&y
 
-fill  r=0 g=0 b=0 a=1  rgb=r&g&b  # A rectangle that covers the whole screen.
+fill  r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b  # A rectangle that covers the whole screen.
 
 rect    mode="fill"  x=0 y=0  w=10 h=10  ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  tlrx=0 tlry=0 trrx=0 trry=0 brrx=0 brry=0 blrx=0 blry=0  segs=0(auto)  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=tlrx&tlry&trrx&trry&brrx&brry&blrx&blry  rx=tlrx&trrx&brrx&blrx ry=tlry&trry&brry&blry  tlr=tlrx&tlry trr=trrx&trry brr=brrx&brry blr=blrx&blry  trx=tlrx&trrx try=tlry&trry brx=blrx&brrx bry=blry&brry  size=w&h
 circle  mode="fill"  x=0 y=0  rx=5 ry=5  ax=.5 ay=.5  sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  from=0 to=tau                                            segs=0(auto)  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=rx&ry
@@ -105,8 +106,8 @@ gamma       amount=1  r=1 g=1 b=1
 levels      infrom=0 into=1  outfrom=0 outto=1  mid=.5
 thres       thres=.5
 
-overlay  r=0 g=0 b=0 a=1  rgb=r&g&b
-tint     r=0 g=0 b=0 a=1  rgb=r&g&b
+overlay  r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
+tint     r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 #
 # Generators.

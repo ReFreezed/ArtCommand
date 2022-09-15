@@ -445,8 +445,8 @@ local function tokenize(context, path)
 				tokens[#tokens].hasAttachment = true
 				table.insert(tokens, {position=startPos, type="literal", value=(mod=="+")})
 
-				if s:find("^[^%s,;#]", pos) then
-					parseWarning(context, pos, "Value right after '%s%s' does not belong to it.", mod, name)
+				if s:find("^[^%s,;#]", pos) and not s:find("^[-+]%l", pos) then
+					parseWarning(context, pos, "Value right after '%s%s' does not belong to the argument.", mod, name)
 				end
 			end
 
@@ -1732,11 +1732,20 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	-- Drawing.
 	--
 	----------------------------------------------------------------
-	elseif command == "point" then
+	elseif command == "point" or command == "relpoint" then
 		if args.clear and not isSequence then
 			table.clear(context.points)
 		end
-		table.insert(context.points, {x=args.x,y=args.y, a=args.a,b=args.b, s=args.s})
+
+		local point = {x=args.x,y=args.y, a=args.a,b=args.b, s=args.s}
+
+		if command == "relpoint" then
+			local prevPoint = getLast(context.points)
+			point.x         = prevPoint.x + point.x
+			point.y         = prevPoint.y + point.y
+		end
+
+		table.insert(context.points, point)
 
 	----------------------------------------------------------------
 	elseif command == "fill" then
@@ -1838,14 +1847,14 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "poly" then
-		if not (args.mode == "fill" or args.mode == "line") then
+		if not (args.mode == "fill" or args.mode == "strip" or args.mode == "line") then
 			return (tokenError(context, (visited.mode or startTok), "[%s] Bad draw mode '%s'. Must be 'fill' or 'line'.", command, args.mode))
 		end
 
 		if not context.points[3] then  return (tokenError(context, startTok, "[%s] Not enough points added.", command))  end
 
 		local coords = pointsToCoords(context.points)
-		local lw     = (args.mode == "fill") and 0 or args.thick
+		local lw     = (args.mode == "line") and args.thick or 0
 
 		local x1 =  1/0
 		local x2 = -1/0
@@ -1879,8 +1888,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
 		LG.translate(-x1, -y1)
 
-		if     args.mode == "fill" then  drawPolygonFill(coords)
-		elseif args.mode == "line" then  drawPolygonLine(coords, lw)
+		if     args.mode == "fill"  then  drawPolygonFill(coords, false)
+		elseif args.mode == "strip" then  drawPolygonFill(coords, true)
+		elseif args.mode == "line"  then  drawPolygonLine(coords, lw)
 		else error(args.mode) end
 
 		LG.pop()

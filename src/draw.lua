@@ -282,7 +282,7 @@ local function drawRoundedRectangle(fill, x,y, w,h, tlx,tly, trx,try, brx,bry, b
 	end
 
 	if    fill
-	then  drawPolygonFill(coords) -- @Speed: Might possibly wanna draw the mesh as a fan.
+	then  drawPolygonFill(coords, false) -- @Speed: Might possibly wanna draw the mesh as a fan.
 	else  drawPolygonLine(coords, lw)  end
 end
 
@@ -436,8 +436,8 @@ end
 local vertices = {}
 local mesh     = nil
 
-function _G.drawPolygonFill(coords)
-	local isConvex  = love.math.isConvex(coords)
+function _G.drawPolygonFill(coords, asStrip)
+	local isConvex  = asStrip or love.math.isConvex(coords)
 	local triangles = nil
 
 	if not isConvex then
@@ -503,7 +503,7 @@ function _G.drawPolygonFill(coords)
 	local h = y2 - y1
 
 	if isConvex then
-		mesh:setDrawMode("fan")
+		mesh:setDrawMode(asStrip and "strip" or "fan")
 
 		for vertI = 1, vertCount do
 			-- @Incomplete @Robustness: Handle overlapping coords.
