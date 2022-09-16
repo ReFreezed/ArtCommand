@@ -5,10 +5,15 @@ setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)
 setFoo +value; setFoo value True ; setFoo valueTrue ; setFoo value(true )
 setFoo -value; setFoo value False; setFoo valueFalse; setFoo value(false)
 
+Foo=False
+Foo^=False
+Foo  = False
+Foo ^= False
+
 func TestBlobs X Y Size
-	set Col -1
+	Col = -1
 	func TestBlobColumn R G B
-		setx Col (Col+1)
+		Col ^= (Col+1)
 		color R G B 1  ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) r(Size/2)
 		color R G B .75; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) r(Size/2)
 		color R G B .50; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) r(Size/2)
@@ -66,7 +71,7 @@ push
 	color 1 1 1
 	rect 0 0 10 10 ax.5 ay.5
 
-	set X 16
+	X = 16
 	circle -X 0 3
 pop
 
@@ -151,8 +156,8 @@ push
 pop
 
 push
-	setR1 .5; setG1 .2; setB1 .2
-	setR2 .7; setG2 .7; setB2 1
+	R1=.5; G1=.2; B1=.2
+	R2=.7; G2=.7; B2=1
 
 	move 360 210
 	color R1 G1 B1; rect 0 0 120 160
@@ -235,7 +240,7 @@ grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 +filter sx.3 sy.2
 color rgb1 .13
 image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5
 
-set Circles "circles.artcmd"
+Circles = "circles.artcmd"
 color rgb1  1                 ; imageCircles (185+0*50) 230
 color rgb1 .5                 ; imageCircles (185+1*50) 230
 grad a.5,a1,a0,a1,a.5 rot90deg; imageCircles (185+2*50) 230
@@ -258,13 +263,13 @@ assert (1 < 5)
 print Circles, (3^7), (rep("Hey",3))
 
 # Lines, curves, and polygons.
-set O -40  # Offset.
+O = -40  # Offset.
 point xyO, (70+O)(20+O), (30+O)(50+O), (40+O)(80+O)
 color 0 1 .5 1 ; line (70-O)(395-O) thick4
 color 0 1 .5 .5; line (70-O)(395-O) thick4 rot20deg
 color 0 1 .5 .2; line (70-O)(395-O) thick4 rot20deg -shift
 
-set O -10  # Offset.
+O = -10  # Offset.
 point xyO, (20+O)O, (40+O)(15+O), xy(40+O), (15+O)(40+O), O(20+O)
 color 1 .7 .8 1 ; poly"fill" (30-O)(435-O)
 color 1 .7 .8 .5; poly"fill" (30-O)(435-O) sx3 rot15deg
@@ -461,13 +466,13 @@ push
 pop
 
 # Lexical scopes.
-set Bar 1
+Bar = 1
 func F
-	setx Bar (Bar*2)
+	Bar ^= (Bar*2)
 end
-set Bar (Bar*2)
+Bar = (Bar*2)
 do
-	set Bar "a"
+	Bar = "a"
 	F
 	assert (Bar=="a")
 end
@@ -489,7 +494,7 @@ setbuf
 buf"self" 0 85 ay1 rot90deg scale.075 +filter
 
 # Arrays.
-set Arr {58,21}
+Arr = {58,21}
 add Arr "foo", Arr 133, Arr "bar"
 
 rem Arr #bar
@@ -497,7 +502,7 @@ rem Arr -2 #foo
 
 print (sort(Arr)), Arr
 fori V Arr
-	set X (2*V)
+	X = (2*V)
 end
 
 # Blend modes.

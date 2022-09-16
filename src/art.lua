@@ -439,7 +439,9 @@ local function tokenize(context, path)
 
 		-- Name: name OR +name OR -name
 		elseif s:find("^[-+]?%l", pos) then
-			local mod,namePos,name; mod, namePos, name, pos = s:match("^([-+]?)()(%l+)()", pos)
+			local mod, namePos,name, _pos = s:match("^([-+]?)()(%l+)()", pos)
+			pos = _pos
+
 			table.insert(tokens, {position=namePos, type="name", value=name, hasAttachment=false})
 
 			if mod == "" then
@@ -454,17 +456,31 @@ local function tokenize(context, path)
 				end
 			end
 
+		-- Declaration: Name=
+		-- Assignment:  Name^=
+		-- (Declaration is same as `set  Name`.)
+		-- (Assignment  is same as `setx Name`.)
+		elseif s:find("^%u%w*[ \t]*^?=", pos) then
+			local namePos,name, punctPos,punct, _pos = s:match("^()(%u%w*)%s*()(^?=)()", pos)
+			pos = _pos
+
+			table.insert(tokens, {position=punctPos, type="name"    , value=(punct == "^=" and "setx" or "set"), hasAttachment=false}) -- @UX: Fix error messages mentioning 'set' or 'setx'.
+			table.insert(tokens, {position=namePos , type="username", value=name, negated=false})
+
 		-- Username: Name OR -Name
 		-- @Incomplete: +Name
 		elseif s:find("^%-?%u", pos) then
-			local negate,namePos,name; negate, namePos, name, pos = s:match("^(%-?)()(%u[%w]*)()", pos)
+			local negate, namePos,name, _pos = s:match("^(%-?)()(%u%w*)()", pos)
+			pos = _pos
+
 			table.insert(tokens, {position=namePos, type="username", value=name, negated=(negate=="-")})
 
 			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
 		-- Number: N OR +N OR -N
 		elseif s:find("^[-+]?%.?%d", pos) then
-			local nStr; nStr, pos = s:match("^%+?([-+.%w]*%%?)()", pos)
+			local nStr, _pos = s:match("^%+?([-+.%w]*%%?)()", pos)
+			pos = _pos
 			local n
 
 			if     nStr:find"%%$"    then  n = tonumber(nStr:sub(1, -2)) ; n = n and n/100
@@ -549,9 +565,9 @@ local function tokenize(context, path)
 
 				elseif s:find("^%[", pos) then -- Maybe a long-form string.
 					if s:find("^=*%[", pos+1) then -- String.
-						local _; _, pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+1)
-						if not pos then  return (parseError(context, luaPos, "Missing end of Lua string."))  end
-						pos = pos - 1
+						local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+1)
+						if not _pos then  return (parseError(context, luaPos, "Missing end of Lua string."))  end
+						pos = _pos - 1
 					else
 						-- void
 					end
@@ -560,8 +576,9 @@ local function tokenize(context, path)
 					if not s:find("^%-", pos+1) then
 						-- void
 					elseif s:find("^%[=*%[", pos+2) then -- Long-form comment.
-						local _; _, pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+3)
-						if not pos then  return (parseError(context, startPos, "Missing end bracket."))  end
+						local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+3)
+						if not _pos then  return (parseError(context, startPos, "Missing end bracket."))  end
+						pos = _pos
 					else -- Line comment.
 						return (parseError(context, startPos, "Missing end bracket."))
 					end
