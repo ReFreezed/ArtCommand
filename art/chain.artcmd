@@ -31,7 +31,7 @@ end
 
 for Pass 1 2
 	setx LinkFlip (Pass==1)
-	move (CanvasWidth/2) -25
+	move (CanvasW/2) -25
 
 	for 1 3; Link  1 (Pass==1); end
 	for 1 7; Link -1 (Pass==1); end

@@ -26,8 +26,8 @@ func Straw X Y
 	poly X Y
 end
 
-for Y -Dy (CanvasHeight+H+Dy) Dy
-	for X -Dx (CanvasWidth+Dx) Dx
+for Y -Dy (CanvasH+H+Dy) Dy
+	for X -Dx (CanvasW+Dx) Dx
 		set X (X+Dx*randf(-.45, .45))
 		set Y (Y+Dy*randf(-.45, .45))
 		Straw X Y
@@ -36,7 +36,7 @@ end
 
 # Post-processing.
 grad rgb0 .15, rgb0 .02, rgb0 0 rot90deg
-rect 0 0 CanvasWidth CanvasHeight
+rect 0 0 CanvasW CanvasH
 
 gamma .6
 brightness 1.15

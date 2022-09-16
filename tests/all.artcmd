@@ -39,7 +39,7 @@ default "buf"   "filter" False
 # Draw stuff.
 color 1 1 1 .1
 font 62  # Big boy!
-text (CanvasWidth-5) -5 ax1 kx-.15 wrap(CanvasWidth-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST
+text (CanvasW-5) -5 ax1 kx-.15 wrap(CanvasW-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 r10
@@ -422,7 +422,7 @@ push
 	move 480 420
 	rotate -5deg
 	scale xy.3
-	grey0 .2; rect 0 0 CanvasWidth CanvasHeight
+	grey0 .2; rect 0 0 CanvasW CanvasH
 	# color .4 .9 1; image "all.artcmd" recurse3
 pop
 

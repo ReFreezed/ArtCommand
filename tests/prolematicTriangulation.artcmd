@@ -36,4 +36,4 @@ point-clear -.62453833281334  13.049837571454
 point-clear -.15613458320333  15.062158184183
 point-clear -.31226916640667  15.132158184183
 
-poly (CanvasWidth/2) (CanvasHeight/2) sx26 sy-26 anchor.5
+poly (CanvasW/2) (CanvasH/2) sx26 sy-26 anchor.5

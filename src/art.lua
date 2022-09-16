@@ -1464,8 +1464,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.canvasHeight = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
 		context.canvasMsaa   = args.aa^2
 
-		context.readonly.CanvasWidth .value = context.canvasWidth
-		context.readonly.CanvasHeight.value = context.canvasHeight
+		context.readonly.CanvasW.value = context.canvasWidth
+		context.readonly.CanvasH.value = context.canvasHeight
 
 	--
 	-- State.
@@ -2568,10 +2568,10 @@ function _G.loadArtFile(path, isLocal)
 	vars.Pi    = {token=dummyTok, value=math.pi}
 	vars.Tau   = {token=dummyTok, value=TAU}
 
-	vars.WindowWidth  = {token=dummyTok, value=LG.getWidth()}
-	vars.WindowHeight = {token=dummyTok, value=LG.getHeight()}
-	vars.CanvasWidth  = {token=dummyTok, value=context.canvasWidth}
-	vars.CanvasHeight = {token=dummyTok, value=context.canvasHeight}
+	vars.WindowW = {token=dummyTok, value=LG.getWidth()}
+	vars.WindowH = {token=dummyTok, value=LG.getHeight()}
+	vars.CanvasW = {token=dummyTok, value=context.canvasWidth}
+	vars.CanvasH = {token=dummyTok, value=context.canvasHeight}
 
 	-- These are just for the Lua/bracket expressions.  @Incomplete @Robustness: Argument validation.
 	vars.num     = {token=dummyTok, value=tonumber}
