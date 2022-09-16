@@ -60,6 +60,8 @@ scalecolor    r=1 g=1 b=1 a=1  base=0  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 overlaycolor  r=0 g=0 b=0 a=1          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
+blend  mode="alpha"
+
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
 

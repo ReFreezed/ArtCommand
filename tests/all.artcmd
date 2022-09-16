@@ -66,8 +66,7 @@ push
 pop
 
 # Masks.
-makemask
-	color
+makemask; color
 	rect w20 h20
 	rect w30 h50 y35
 	circle 50 50 r10
@@ -211,7 +210,7 @@ push
 	move 60 300; color 1 .2 .2; rect
 	push
 		move 0 10; color 0 .9 0; rect
-		makemask
+		makemask; color
 			move 0 10; circle r5 anchor0
 			push
 				move 0 10; circle r5 anchor0
@@ -375,13 +374,12 @@ color .95 .9 .8; buf"b&w" 320 60 scale.45 anchor.5 rot-15deg
 
 # Generator: noise.
 color
-makemask; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2
-makemask; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale.15
+makemask; color; rect 440 (390+2*50) 40 40 r10; mask; color;             noise scale.2
+makemask; color; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale.15
 maskFalse
 
 # Generator: clouds.
-makemask
-	color
+makemask; color
 	circle 640 240 40 30 anchor0
 	blur xy100
 mask
@@ -390,8 +388,7 @@ mask
 maskFalse
 
 # Generator: random noise.
-makemask
-	color
+makemask; color
 	rect 100 270 50 -50
 	blur xy10
 mask
@@ -402,8 +399,8 @@ maskFalse
 # Patterns.
 push
 	move 555 270
-	makemask
-		color; circle r80
+	makemask; color
+		circle r80
 	mask
 		color 1 .6 .2; pat   "forest"     anchor.5 rot-30deg scale.35 ky.2 +mirror
 		color;         image "forest.png" anchor.5 rot-30deg scale.35 ky.2
@@ -416,7 +413,7 @@ push
 	rotate -5deg
 	scale xy.3
 	grey0 .2; rect 0 0 CanvasWidth CanvasHeight
-	# color .4 .9 1; image "test.artcmd" recurse3 -filter
+	# color .4 .9 1; image "all.artcmd" recurse3 -filter
 pop
 
 # Isolines.
@@ -497,3 +494,7 @@ print (sort(Arr)), Arr
 fori V Arr
 	set X (2*V)
 end
+
+# Blend modes.
+blend"add"     ; color a.50; image"face.png" 510 145 scale.5 anchor.5 rot-5deg -filter
+blend"subtract"; color a.45; image"face.png" 580 145 scale.5 anchor.5 rot10deg -filter

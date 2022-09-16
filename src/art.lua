@@ -74,7 +74,7 @@ local function Context()return{
 	callStack  = {--[[ [funcInfo1]=true, ... ]]}, -- @Cleanup: Bad name. Not a stack - just bookkeeping.
 	gfxStack   = {--[[ gfxState1, ... ]]},
 
-	gfxState = nil, -- (including love.graphics)
+	gfxState = nil, -- (including love.graphics transform)
 
 	workCanvas1  = nil,
 	workCanvas2  = nil,
@@ -115,6 +115,7 @@ local function GfxState()return{
 	-- "user"
 	-- Color.
 	colorMode           = "flatcolor", -- "flatcolor" | "gradient" | "texture"
+	blendMode           = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
 	flatColor           = {1,1,1,1},
 	gradient            = {--[[ r1,g1,b1,a1, ... ]]},
 	colorTexture        = nil,
@@ -141,6 +142,7 @@ local function copyGfxState(gfxState,stackType)return{
 	stackType = stackType or error("Missing 'stackType' argument."),
 
 	colorMode           = (stackType == "user" or nil) and gfxState.colorMode,
+	blendMode           = (stackType == "user" or nil) and gfxState.blendMode,
 	flatColor           = (stackType == "user" or nil) and {unpack(gfxState.flatColor)},
 	gradient            = (stackType == "user" or nil) and {unpack(gfxState.gradient)},
 	colorTexture        = (stackType == "user" or nil) and gfxState.colorTexture,
@@ -163,6 +165,7 @@ local function copyGfxState(gfxState,stackType)return{
 local function moveGfxState(fromGfxState, toGfxState)
 	if fromGfxState.stackType == "user" then
 		toGfxState.colorMode           = fromGfxState.colorMode
+		toGfxState.blendMode           = fromGfxState.blendMode
 		toGfxState.flatColor           = fromGfxState.flatColor
 		toGfxState.gradient            = fromGfxState.gradient
 		toGfxState.colorTexture        = fromGfxState.colorTexture
@@ -278,13 +281,12 @@ end
 -- shapeToDraw = "rectangle" | "circle"
 local function applyColor(context, shader, shape, w,h)
 	shader = shader or A.shaders.main
-
-	w = math.abs(w)
-	h = math.abs(h)
-
-	LG.setBlendMode("alpha", "premultiplied")
+	w      = math.abs(w)
+	h      = math.abs(h)
 
 	local gfxState = context.gfxState
+
+	LG.setBlendMode(gfxState.blendMode, "premultiplied")
 
 	if gfxState.colorMode == "flatcolor" then
 		local r,g,b,a = unpack(gfxState.flatColor)
@@ -814,7 +816,7 @@ local function popGfxState(context, stackType)
 		shaderSend(A.shaders.applyMask, "mask", context.maskCanvas)
 
 		LG.setCanvas(nil) -- Before push/pop. Not sure it affects canvas switching. Probably doesn't matter.
-		pushTransformAndReset("alpha")
+		pushTransformAndReset("alpha") -- Should we use gfxState.blendMode (probably not), and/or maybe warn if gfxState.blendMode~="alpha"?
 		LG.setCanvas(gfxState.canvas)
 		LG.setShader(A.shaders.applyMask.shader)
 		LG.draw(context.canvasToMask)
@@ -914,8 +916,8 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 		local startRecursion = (recursionsAllowed >= 1 and not artFileRecursionAllowed[path])
 
 		if
-			(artFileRecursionAllowed[path] and artFilesBeingLoaded[path] > artFileRecursionAllowed[path]) or
-			(startRecursion                and artFilesBeingLoaded[path] > recursionsAllowed            )
+			(artFileRecursionAllowed[path] and  artFilesBeingLoaded[path]       > artFileRecursionAllowed[path]) or
+			(startRecursion                and (artFilesBeingLoaded[path] or 0) > recursionsAllowed            )
 		then
 			local imageData = love.image.newImageData(1,1, "rgba8", ("\0"):rep(1*1*4)) -- @Incomplete: Use the size of the image being loaded.
 			imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
@@ -1526,6 +1528,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 	----------------------------------------------------------------
+	elseif command == "blend" then
+		if not (
+			args.mode == "alpha" or args.mode == "replace" or args.mode == "screen" or args.mode == "add" or args.mode == "subtract"
+			or args.mode == "multiply" or args.mode == "lighten" or args.mode == "darken"
+		) then
+			return (tokenError(context, (visited.mode or startTok),
+				"[%s] Bad blend mode '%s'. Must be 'alpha', 'replace', 'screen', 'add', 'subtract', 'multiply', 'lighten' or 'darken'.",
+				command, args.mode
+			))
+		end
+		context.gfxState.blendMode = args.mode
+
+	----------------------------------------------------------------
 	elseif command == "font" then
 		local fonts = context.fontsBySize[args.path] or {}
 		local font  = fonts[args.size]
@@ -1636,7 +1651,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		context.gfxState.makeMaskMode = true
-		updateVec4(context.gfxState.flatColor, 1,1,1,1) -- Should we undo this when we exit makemask mode? Probably not as other things, like font, don't. (Should we also update colorMode? Is this line even a good idea?)
 
 	----------------------------------------------------------------
 	elseif command == "mask" then
@@ -2328,7 +2342,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			shaderSendVec4(A.shaders.generateNoise, "color1"         , r*a, g*a, b*a, a)
 		end
 
-		pushTransformAndReset("alpha")
+		pushTransformAndReset(gfxState.blendMode)
 		LG.setCanvas(canvas)
 		LG.setShader(A.shaders.generateNoise.shader)
 		LG.draw(A.images.rectangle, 0,0, 0, cw/iw,ch/ih)
