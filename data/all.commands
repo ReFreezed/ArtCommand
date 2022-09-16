@@ -76,7 +76,7 @@ rotate  rot=0
 scale   x=1 y=1  xy=x&y
 shear   x=1 y=1  xy=x&y
 
-setbuf  name=""  path=""  w=0(context.canvasW) h=0(context.canvasH)  aa=0(context.msaa)  clear=true  size=w&h
+setbuf  name=""  path=""  w=0(context.canvasWidth) h=0(context.canvasHeight)  aa=0(context.canvasMsaa)  clear=true  size=w&h
 
 #
 # Drawing.

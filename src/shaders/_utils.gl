@@ -1,0 +1,16 @@
+/***************************************************************
+*
+*  Utilities
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+uniform vec2 texelClamp;
+
+vec4 texelClamped(Image tex, vec2 texUv) {
+	return Texel(tex, min(texUv, texelClamp));
+}

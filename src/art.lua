@@ -95,9 +95,9 @@ local function Context()return{
 	points = {{x=0,y=0, a=0/0,b=0/0, s=""}},
 
 	-- Settings.
-	canvasW = DEFAULT_ART_SIZE,
-	canvasH = DEFAULT_ART_SIZE,
-	msaa    = 1,
+	canvasWidth  = DEFAULT_ART_SIZE,
+	canvasHeight = DEFAULT_ART_SIZE,
+	canvasMsaa   = 1,
 }end
 
 local function FunctionInfo()return{
@@ -401,13 +401,13 @@ local function ensureCanvasAndInitted(context)
 
 	local settingsCanvas = {
 		format = "rgba16",
-		msaa   = (context.msaa > 1 and context.msaa or nil),
+		msaa   = (context.canvasMsaa > 1 and context.canvasMsaa or nil),
 	}
-	context.art.canvas   = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
-	context.workCanvas1  = LG.newCanvas(context.canvasW,context.canvasH, {format="rgba16"})
-	context.workCanvas2  = LG.newCanvas(context.canvasW,context.canvasH, {format="rgba16"})
-	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
-	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r16", msaa=settingsCanvas.msaa})
+	context.art.canvas   = LG.newCanvas(context.canvasWidth,context.canvasHeight, settingsCanvas)
+	context.workCanvas1  = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="rgba16"}) -- No MSAA!
+	context.workCanvas2  = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="rgba16"})
+	context.canvasToMask = LG.newCanvas(context.canvasWidth,context.canvasHeight, settingsCanvas)
+	context.maskCanvas   = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="r16", msaa=settingsCanvas.msaa})
 
 	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
 	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
@@ -907,13 +907,22 @@ local function initWorkCanvas(canvas, workCanvas)
 	canvas:setFilter(filter)
 end
 
--- applyEffect( context, callback )
+-- applyEffect( context, shader|current, callback )
 -- outputCanvas = callback( context, readCanvas, writeCanvas )
-local function applyEffect(context, cb)
+local function applyEffect(context, shader, cb)
 	ensureCanvasAndInitted(context)
 
+	local w , h  = context.gfxState.canvas:getDimensions()
+	local cw, ch = context.workCanvas1:getDimensions()
+
 	pushTransformAndReset("replace")
-	initWorkCanvas(context.gfxState.canvas, context.workCanvas1) -- @Incomplete: Handle canvas not being the same size as workCanvas.
+	LG.setScissor(0,0, cw,ch) -- @Incomplete: Properly test if this improves performance. (It doesn't seem to.) 2022-09-16
+	initWorkCanvas(context.gfxState.canvas, context.workCanvas1)
+
+	if shader then
+		shaderSendVec2(shader, "texelClamp", (w-.5)/cw,(h-.5)/ch)
+		LG.setShader(shader.shader)
+	end
 
 	local canvasOut = cb(context, context.workCanvas1, context.workCanvas2)
 
@@ -924,6 +933,7 @@ local function applyEffect(context, cb)
 	LG.draw(canvasOut)
 	canvasOut:setFilter("linear")
 	LG.pop()
+	LG.setScissor()
 end
 
 -- image|canvas = getOrLoadImage( context, tokenForError, pathIdentifier, recursionsAllowed )
@@ -1137,9 +1147,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	-- Initialize arguments (dynamic values only).
 	if command == "setbuf" then
-		args.w  = context.canvasW
-		args.h  = context.canvasH
-		args.aa = context.msaa
+		args.w  = context.canvasWidth
+		args.h  = context.canvasHeight
+		args.aa = context.canvasMsaa
 	end
 
 	-- Special cases.
@@ -1450,12 +1460,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "canvas" then
 		if context.art.canvas then  return (tokenError(context, startTok, "[%s] Cannot use 'canvas' after drawing commands.", command))  end
 
-		context.canvasW = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
-		context.canvasH = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
-		context.msaa    = args.aa^2
+		context.canvasWidth  = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
+		context.canvasHeight = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
+		context.canvasMsaa   = args.aa^2
 
-		context.readonly.CanvasWidth .value = context.canvasW
-		context.readonly.CanvasHeight.value = context.canvasH
+		context.readonly.CanvasWidth .value = context.canvasWidth
+		context.readonly.CanvasHeight.value = context.canvasHeight
 
 	--
 	-- State.
@@ -1759,9 +1769,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local imageOrCanvas
 
-		-- Main buffer.
+		-- Main buffer (the "canvas").
 		if bufName == "" then
-			if args.path ~= "" then  return (tokenError(context, (visited.name or startTok), "[%s] Missing buffer name to load image to.", command))  end
+			if args.path ~= ""        then  return (tokenError(context, (visited.name           or startTok), "[%s] Missing buffer name to load image to.", command))  end
+			if visited.w or visited.h then  return (tokenError(context, (visited.w or visited.h or startTok), "[%s] Cannot set the size of the main buffer. Use the 'canvas' command instead.", command))  end
 
 			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetMainBuffer
 
@@ -1789,6 +1800,13 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- Create new canvas.
 			else
+				if args.w > context.canvasWidth or args.h > context.canvasHeight then
+					return (tokenError(context, (args.w > context.canvasWidth and visited.w or visited.h or startTok),
+						"[%s] Buffer size cannot currently be larger than the canvas. (%dx%d)",
+						command, context.canvasWidth, context.canvasHeight
+					))
+				end
+
 				if context.buffers[bufName] then
 					LG.setCanvas(nil) -- Don't accidentally release the current canvas!
 					context.buffers[bufName]:release()
@@ -2266,9 +2284,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "boxblur" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
-			LG.setShader(A.shaders.fxBlurBox.shader)
-
+		applyEffect(context, A.shaders.fxBlurBox, function(context, canvasRead, canvasWrite)
 			shaderSend    (A.shaders.fxBlurBox, "radius"   , math.clamp(args.x, 0, 1000))
 			shaderSendVec2(A.shaders.fxBlurBox, "direction", .5, 0)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
@@ -2283,13 +2299,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end)
 
 	elseif command == "blur" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxBlurGaussian, function(context, canvasRead, canvasWrite)
 			local BLUR_SIZE  = 13 -- 5|9|13 (See fxBlurGaussian.gl)
 			local BLUR_REACH = ((BLUR_SIZE==5 and 2.5) or (BLUR_SIZE==13 and 3.5) or 3) / BLUR_SIZE -- Magic inaccurate numbers... @Cleanup
 
 			-- @Incomplete: These loops are probably not exactly correct. I think we wanna
 			-- double the radius each iteration (and iterate fewer times).
-			LG.setShader(A.shaders.fxBlurGaussian.shader)
 			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
 			for _ = 1, math.clamp(args.x, 0, 1000) do
 				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
@@ -2306,74 +2321,66 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "contrast" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxContrast, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxContrast, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
-			LG.setShader(A.shaders.fxContrast.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "brightness" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxBrightness, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxBrightness, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
-			LG.setShader(A.shaders.fxBrightness.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "saturation" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxSaturation, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxSaturation, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
-			LG.setShader(A.shaders.fxSaturation.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "gamma" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxGamma, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxGamma, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
-			LG.setShader(A.shaders.fxGamma.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "levels" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxLevels, function(context, canvasRead, canvasWrite)
 			shaderSendVec2(A.shaders.fxLevels, "rangeIn" , args.infrom,args.into)
 			shaderSendVec2(A.shaders.fxLevels, "rangeOut", args.outfrom,args.outto)
 			shaderSend    (A.shaders.fxLevels, "middle"  , args.mid)
-			LG.setShader(A.shaders.fxLevels.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "thres" then
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxThreshold, function(context, canvasRead, canvasWrite)
 			shaderSend(A.shaders.fxThreshold, "threshold", args.thres)
-			LG.setShader(A.shaders.fxThreshold.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "overlay" then -- Fade pixels toward color.
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxOverlay, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxOverlay, "params", args.r,args.g,args.b,args.a)
-			LG.setShader(A.shaders.fxOverlay.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
 		end)
 
 	elseif command == "tint" then -- Change hue and saturation, leave brighness.
-		applyEffect(context, function(context, canvasRead, canvasWrite)
+		applyEffect(context, A.shaders.fxTint, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxTint, "params", args.r,args.g,args.b,args.a)
-			LG.setShader(A.shaders.fxTint.shader)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2563,8 +2570,8 @@ function _G.loadArtFile(path, isLocal)
 
 	vars.WindowWidth  = {token=dummyTok, value=LG.getWidth()}
 	vars.WindowHeight = {token=dummyTok, value=LG.getHeight()}
-	vars.CanvasWidth  = {token=dummyTok, value=context.canvasW}
-	vars.CanvasHeight = {token=dummyTok, value=context.canvasH}
+	vars.CanvasWidth  = {token=dummyTok, value=context.canvasWidth}
+	vars.CanvasHeight = {token=dummyTok, value=context.canvasHeight}
 
 	-- These are just for the Lua/bracket expressions.  @Incomplete @Robustness: Argument validation.
 	vars.num     = {token=dummyTok, value=tonumber}

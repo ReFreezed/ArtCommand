@@ -11,14 +11,16 @@
 *
 ***************************************************************/
 
+#include "_utils.gl"
+
 uniform vec2 direction;
 
 vec4 blur5(Image tex, vec2 texUv) {
 	vec4 color    = vec4(0);
 	vec2 offset1  = vec2(1.3333333333333333) * direction;
-	color        += Texel(tex, texUv                           ) * .29411764705882354;
-	color        += Texel(tex, texUv-offset1/love_ScreenSize.xy) * .35294117647058826;
-	color        += Texel(tex, texUv+offset1/love_ScreenSize.xy) * .35294117647058826;
+	color        += texelClamped(tex, texUv                           ) * .29411764705882354;
+	color        += texelClamped(tex, texUv-offset1/love_ScreenSize.xy) * .35294117647058826;
+	color        += texelClamped(tex, texUv+offset1/love_ScreenSize.xy) * .35294117647058826;
 	return color;
 }
 
@@ -26,11 +28,11 @@ vec4 blur9(Image tex, vec2 texUv) {
 	vec4 color    = vec4(0);
 	vec2 offset1  = vec2(1.3846153846) * direction;
 	vec2 offset2  = vec2(3.2307692308) * direction;
-	color        += Texel(tex, texUv                           ) * .2270270270;
-	color        += Texel(tex, texUv-offset1/love_ScreenSize.xy) * .3162162162;
-	color        += Texel(tex, texUv+offset1/love_ScreenSize.xy) * .3162162162;
-	color        += Texel(tex, texUv-offset2/love_ScreenSize.xy) * .0702702703;
-	color        += Texel(tex, texUv+offset2/love_ScreenSize.xy) * .0702702703;
+	color        += texelClamped(tex, texUv                           ) * .2270270270;
+	color        += texelClamped(tex, texUv-offset1/love_ScreenSize.xy) * .3162162162;
+	color        += texelClamped(tex, texUv+offset1/love_ScreenSize.xy) * .3162162162;
+	color        += texelClamped(tex, texUv-offset2/love_ScreenSize.xy) * .0702702703;
+	color        += texelClamped(tex, texUv+offset2/love_ScreenSize.xy) * .0702702703;
 	return color;
 }
 
@@ -39,13 +41,13 @@ vec4 blur13(Image tex, vec2 texUv) {
 	vec2 offset1  = vec2(1.4117647058823530) * direction;
 	vec2 offset2  = vec2(3.2941176470588234) * direction;
 	vec2 offset3  = vec2(5.1764705882352940) * direction;
-	color        += Texel(tex, texUv                           ) * .196482550151140400;
-	color        += Texel(tex, texUv-offset1/love_ScreenSize.xy) * .296906964672834400;
-	color        += Texel(tex, texUv+offset1/love_ScreenSize.xy) * .296906964672834400;
-	color        += Texel(tex, texUv-offset2/love_ScreenSize.xy) * .094470397850447320;
-	color        += Texel(tex, texUv+offset2/love_ScreenSize.xy) * .094470397850447320;
-	color        += Texel(tex, texUv-offset3/love_ScreenSize.xy) * .010381362401148057;
-	color        += Texel(tex, texUv+offset3/love_ScreenSize.xy) * .010381362401148057;
+	color        += texelClamped(tex, texUv                           ) * .196482550151140400;
+	color        += texelClamped(tex, texUv-offset1/love_ScreenSize.xy) * .296906964672834400;
+	color        += texelClamped(tex, texUv+offset1/love_ScreenSize.xy) * .296906964672834400;
+	color        += texelClamped(tex, texUv-offset2/love_ScreenSize.xy) * .094470397850447320;
+	color        += texelClamped(tex, texUv+offset2/love_ScreenSize.xy) * .094470397850447320;
+	color        += texelClamped(tex, texUv-offset3/love_ScreenSize.xy) * .010381362401148057;
+	color        += texelClamped(tex, texUv+offset3/love_ScreenSize.xy) * .010381362401148057;
 	return color;
 }
 

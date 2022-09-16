@@ -10,9 +10,9 @@ circle 20 48 r6
 circle 80 48 r6
 
 # Mouth.
-makemask
-	rect 0 60 100 100
+makemask; color
+	rect 0 60 size999
 mask
 	color rgb0
 	circle 50 55 r30
-mask False
+maskFalse

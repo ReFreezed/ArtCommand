@@ -488,6 +488,23 @@ function love.draw()
 		LG.print(text, x,y)
 	end
 
+	if love.keyboard.isDown"tab" then
+		LG.setBlendMode("alpha")
+		LG.setColor(0, 0, 0)
+		LG.rectangle("fill", 0,0, ww,4*LG.getFont():getHeight())
+		LG.setColor(1, 1, 1)
+		LG.print(F(
+			"Art: %s"
+			.."\nSize: %dx%d (%.1f megapixels)"
+			.."\nLuaMem: %.2f MiB"
+			.."\nTexMem: %d MiB"
+			, thePathIn
+			, (theArt and theArt.canvas:getWidth() or 0), (theArt and theArt.canvas:getHeight() or 0), (theArt and theArt.canvas:getWidth()*theArt.canvas:getHeight() or 0)/1000^2
+			, collectgarbage"count"/1024
+			, LG.getStats().texturememory/1024^2
+		))
+	end
+
 	LG.present()
 end
 
