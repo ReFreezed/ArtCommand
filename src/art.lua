@@ -58,9 +58,12 @@ end
 
 
 local function Art()return{
-	canvas   = nil,
+	canvas = nil,
+
 	backdrop = {0,0,0,0},
-	zoom     = 1.0,
+
+	zoom       = 1.0,
+	zoomFilter = false,
 }end
 
 local function Context()return{
@@ -406,7 +409,6 @@ local function ensureCanvasAndInitted(context)
 	context.canvasToMask = LG.newCanvas(context.canvasW,context.canvasH, settingsCanvas)
 	context.maskCanvas   = LG.newCanvas(context.canvasW,context.canvasH, {format="r16", msaa=settingsCanvas.msaa})
 
-	-- context.art.canvas:setFilter("nearest") -- Maybe there should be an app setting for this. @Incomplete
 	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
 	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
 
@@ -1438,7 +1440,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "zoom" then
-		context.art.zoom = args.zoom
+		context.art.zoom       = args.zoom
+		context.art.zoomFilter = args.filter
 
 	--
 	-- Settings, init.

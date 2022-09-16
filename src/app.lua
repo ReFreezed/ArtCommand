@@ -29,8 +29,7 @@ local thePathOut    = "" -- Empty means auto.
 local thePathIsTest = false -- @Cleanup: Make this into _G.isLocal or something.
 local theArt        = nil
 
-local autoZoom  = false
-local pixelated = false
+local autoZoom = 0 --  0 (use art zoom)  |  1 (zoom, linear)  |  2 (zoom, pixelated)
 
 
 
@@ -363,9 +362,7 @@ function love.keypressed(key)
 		love.event.quit()
 
 	elseif key == "space" then
-		autoZoom = not autoZoom
-	elseif key == "f" then
-		pixelated = not pixelated
+		autoZoom = (autoZoom + 1) % 3
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
 		if not theArt then  return  end
@@ -448,7 +445,7 @@ function love.draw()
 		local x  = math.floor((ww - cw) / 2)
 		local y  = math.floor((wh - ch) / 2)
 
-		if not autoZoom then
+		if autoZoom == 0 then
 			x = math.max(x, 0)
 			y = math.max(y, 0)
 		end
@@ -459,7 +456,7 @@ function love.draw()
 		end
 
 		LG.translate(math.floor(ww/2),math.floor(wh/2))
-		LG.scale(autoZoom and math.min(ww/cw, wh/ch) or theArt.zoom)
+		LG.scale(autoZoom > 0 and math.min(ww/cw, wh/ch) or theArt.zoom)
 		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
 
 		if theArt.backdrop[4] >= .8 and (theArt.backdrop[1] + theArt.backdrop[2] + theArt.backdrop[3]) < 3*.3 then
@@ -474,7 +471,7 @@ function love.draw()
 
 		LG.setColor(1, 1, 1)
 		LG.setBlendMode("alpha", "premultiplied")
-		theArt.canvas:setFilter(pixelated and "nearest" or "linear")
+		theArt.canvas:setFilter((autoZoom == 1 and "linear") or (autoZoom == 2 and "nearest") or (theArt.zoomFilter and "linear" or "nearest"))
 		LG.draw(theArt.canvas, x,y)
 
 	else

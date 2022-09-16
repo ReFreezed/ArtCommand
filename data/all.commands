@@ -42,7 +42,7 @@ stop  all=false
 
 # App. (Doesn't affect the image.)
 backdrop  r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
-zoom      zoom=1  # There is also autoZoom!
+zoom      zoom=1 filter=true  # There is also autoZoom!
 
 # Init.
 canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
