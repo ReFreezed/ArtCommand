@@ -23,8 +23,13 @@ end
 canvas 800 600 aa4
 backdrop0 .3 0 .5
 # backdrop (40/255) (40/255) (40/255)
-fill.4 .4 .4 .5
+fill.4 .4 .4 .6
 # zoom 2
+
+default "image" "filter" False  # MSAA+filters tend to make things blurry.
+default "pat"   "filter" False
+default "text"  "filter" False
+default "buf"   "filter" False
 
 # Draw stuff.
 color 1 1 1 .1
@@ -43,15 +48,15 @@ circle 260 110 12 25 "line" thick2
 
 font 'resources/SquadaOne.ttf' 19
 color 1 1 .7
-text 100 18 -filter 'Good? "GOOD"?! Good.'
+text 100 18 'Good? "GOOD"?! Good.'
 
 imagefont "resources/ReFreezedSmall.fnt"
 color .8 1 1
-text 100 38 -filter "Yippee ki-yay!"
+text 100 38 "Yippee ki-yay!"
 
 imagefont "resources/abc.png" spacing1 "ABC"
 color 1 1 1 .5
-text 170 39 -filter "ABCBA"
+text 170 39 "ABCBA"
 
 # Transform.
 move 50 50
@@ -72,7 +77,7 @@ makemask; color
 	circle 50 50 r10
 
 	font 24
-	text text"Hello, world!" x12 -filter
+	text text"Hello, world!" x12
 
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
@@ -224,11 +229,11 @@ push
 pop
 
 # Images.
-color rgb1           ; image "face.png" 100 250 sx.5
-grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 sx.3 sy.2
+color rgb1           ; image "face.png" 100 250 +filter sx.5
+grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 +filter sx.3 sy.2
 
 color rgb1 .13
-image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5 -filter
+image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5
 
 set Circles "circles.artcmd"
 color rgb1  1                 ; imageCircles (185+0*50) 230
@@ -364,13 +369,13 @@ buf"fx"
 
 setbuf"forest" "forest.png"
 	levels .5 1  .25 .75  mid.25
-color; buf"forest" 450 80 -filter rot5deg
+color; buf"forest" 450 80 rot5deg
 
 # Effect: threshold.
 setbuf"b&w" "forest.png"
 	thres .53
 	levels 0 1 .25 1
-color .95 .9 .8; buf"b&w" 320 60 scale.45 anchor.5 rot-15deg
+color .95 .9 .8; buf"b&w" 320 60 scale.45 anchor.5 rot-15deg +filter
 
 # Generator: noise.
 color
@@ -402,8 +407,8 @@ push
 	makemask; color
 		circle r80
 	mask
-		color 1 .6 .2; pat   "forest"     anchor.5 rot-30deg scale.35 ky.2 +mirror
-		color;         image "forest.png" anchor.5 rot-30deg scale.35 ky.2
+		color 1 .6 .2; pat   "forest"     anchor.5 rot-30deg scale.35 ky.2 +filter +mirror
+		color;         image "forest.png" anchor.5 rot-30deg scale.35 ky.2 +filter
 	maskFalse
 pop
 
@@ -413,7 +418,7 @@ push
 	rotate -5deg
 	scale xy.3
 	grey0 .2; rect 0 0 CanvasWidth CanvasHeight
-	# color .4 .9 1; image "all.artcmd" recurse3 -filter
+	# color .4 .9 1; image "all.artcmd" recurse3
 pop
 
 # Isolines.
@@ -479,9 +484,9 @@ else     ; print "Bad 5"; assertFalse; end
 # Draw canvas.
 color
 setbuf"self"
-	pat scale.5
+	pat scale.5 +filter
 setbuf
-buf"self" 0 85 ay1 rot90deg scale.075
+buf"self" 0 85 ay1 rot90deg scale.075 +filter
 
 # Arrays.
 set Arr {58,21}
@@ -496,5 +501,5 @@ fori V Arr
 end
 
 # Blend modes.
-blend"add"     ; color a.50; image"face.png" 510 145 scale.5 anchor.5 rot-5deg -filter
-blend"subtract"; color a.45; image"face.png" 580 145 scale.5 anchor.5 rot10deg -filter
+blend"add"     ; color a.50; image"face.png" 510 145 scale.5 anchor.5 rot-5deg
+blend"subtract"; color a.45; image"face.png" 580 145 scale.5 anchor.5 rot10deg

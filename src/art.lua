@@ -23,7 +23,7 @@ local STOP_ALL      = 2
 
 
 local COMMANDS = {--[[
-	command1 = { {argName1,defaultValue}, ... }, -- defaultValue=nil means the value can be any type.
+	command1 = { {name=argName1,value=defaultValue}, ... }, -- defaultValue=nil means the value can be any type.
 	...
 --]]}
 
@@ -33,10 +33,10 @@ local env = setmetatable({}, {__index=function(env, k)
 end})
 
 for line in LF.lines"data/all.commands" do
-	local command, argInfosStr = line:gsub("#.*$", ""):match"^(%a+)%s*(.*)$"
+	local protected, command, argInfosStr = line:gsub("#.*$", ""):match"^(!?)(%a+)%s*(.*)$"
 
 	if command then
-		COMMANDS[command] = {}
+		COMMANDS[command] = {protected=(protected=="!")}
 
 		for k, vStr in argInfosStr:gmatch"(%a+)=(%S+)" do
 			-- Alias.
@@ -49,7 +49,7 @@ for line in LF.lines"data/all.commands" do
 			else
 				vStr    = vStr:gsub("%b()$", "")
 				local v = assert(loadstring("return "..vStr, nil, "t", env))()
-				table.insert(COMMANDS[command], {k,v})
+				table.insert(COMMANDS[command], {name=k,value=v})
 			end
 		end
 	end
@@ -69,6 +69,8 @@ local function Context()return{
 	path    = "",
 	isLocal = false,
 	source  = "",
+
+	commands = {}, -- Initially a copy of COMMANDS.
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
 	callStack  = {--[[ [funcInfo1]=true, ... ]]}, -- @Cleanup: Bad name. Not a stack - just bookkeeping.
@@ -632,7 +634,7 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			if argInfos[argName] then -- One-to-multiple argument mapping.
 				argNames = argInfos[argName]
 				argName  = argNames[1]
-				argInfo  = itemWith1(argInfos, 1, argName) or error(argName)
+				argInfo  = itemWith1(argInfos, "name", argName) or error(argName)
 
 				for _, _argName in ipairs(argNames) do
 					if visited[_argName] then
@@ -641,7 +643,7 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 				end
 
 			else
-				argInfo = itemWith1(argInfos, 1, argName)
+				argInfo = itemWith1(argInfos, "name", argName)
 				if not argInfo then  return (tokenError(context, startTok, "No argument '%s' for '%s'.", argName, commandOrFuncName))  end
 
 				if visited[argName] then  return (tokenError(context, startTok, "Duplicate argument '%s'.", argName))  end
@@ -697,8 +699,8 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 		if argName == "" then
 			-- We use the value type to determine the argument (which might be a bit confusing).
 			for _, _argInfo in ipairs(argInfos) do
-				if not visited[_argInfo[1]] and (type(_argInfo[2]) == type(v) or _argInfo[2] == nil) then
-					argName = _argInfo[1]
+				if not visited[_argInfo.name] and (type(_argInfo.value) == type(v) or _argInfo.value == nil) then
+					argName = _argInfo.name
 					break
 				end
 			end
@@ -706,8 +708,8 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			if argName == "" then  return (tokenError(context, startTok, "Unknown argument of type '%s' for '%s'.", type(v), commandOrFuncName))  end
 
 		-- Validate value.
-		elseif not (type(v) == type(argInfo[2]) or argInfo[2] == nil) then
-			return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName0, type(argInfo[2]), type(v)))
+		elseif not (type(v) == type(argInfo.value) or argInfo.value == nil) then
+			return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName0, type(argInfo.value), type(v)))
 		end
 
 		-- Finalize argument.
@@ -968,7 +970,7 @@ end
 
 local function setArgumentsToDefault(args, commandInfo)
 	for _, argInfo in ipairs(commandInfo) do
-		args[argInfo[1]] = argInfo[2]
+		args[argInfo.name] = argInfo.value
 	end
 end
 
@@ -1024,7 +1026,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local visited  = {}
 
 		for i, argName in ipairs(funcInfo.arguments) do
-			argInfos[i] = {(argName:lower()), nil} -- Argument "FooBar" gets the name "foobar".  @Speed @Memory
+			argInfos[i] = {name=(argName:lower()), value=nil} -- Argument "FooBar" gets the name "foobar".  @Speed @Memory
 		end
 
 		tokPos = parseArguments(context, tokens, tokPos, funcName, argInfos, args, visited)
@@ -1036,8 +1038,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		entry.calledFunction = funcInfo
 
 		for i, argInfo in ipairs(argInfos) do
-			if not visited[argInfo[1]] then  return (tokenError(context, startTok, "[Call] Missing argument '%s' for '%s'.", argInfo[1], funcName))  end
-			entry.variables[funcInfo.arguments[i]] = {token=funcInfo.token, value=args[argInfo[1]]}
+			if not visited[argInfo.name] then  return (tokenError(context, startTok, "[Call] Missing argument '%s' for '%s'.", argInfo.name, funcName))  end
+			entry.variables[funcInfo.arguments[i]] = {token=funcInfo.token, value=args[argInfo.name]}
 		end
 
 		table.insert(context.scopeStack, entry)
@@ -1102,7 +1104,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	-- Normal command.
 	--
-	local commandInfo = COMMANDS[command]
+	local commandInfo = context.commands[command]
 	if not commandInfo then  return (tokenError(context, startTok, "Unknown command '%s'.", command))  end
 
 	local args    = {}
@@ -1125,7 +1127,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	end
 
 	-- Parse arguments and run command.
-	tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
+	tokPos = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited)
 	if not tokPos then  return nil  end
 
 	local isFollowedBySequence = isToken(tokens[tokPos], ",")
@@ -1204,7 +1206,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		tokPos           = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, true)
 		if not tokPos then  return nil  end
 
-		local passes = evaluateCondition(context, command, visited.value, args.value)
+		local passes = evaluateCondition(context, command, (visited.value or startTok), args.value)
 		if passes == nil then  return nil  end
 
 		if passes then
@@ -1230,7 +1232,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
 
 			-- @Incomplete @Speed: Don't evaluate arguments if executedSomeBlock=true. (Low priority because evaluating expressions currently has no side effects.)
-			tokPos = parseArguments(context, tokens, tokPos, command, COMMANDS[command], args, visited)
+			tokPos = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited)
 			if not tokPos then  return nil  end
 
 			if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[elseif] Invalid ','. Cannot chain 'elseif' using ','."))  end
@@ -1242,7 +1244,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			if not tokPos then  return nil  end
 
 			if not executedSomeBlock then
-				passes = evaluateCondition(context, "elseif", visited.value, args.value)
+				passes = evaluateCondition(context, "elseif", (visited.value or startTok), args.value)
 				if passes == nil then  return nil  end
 
 				if passes then
@@ -1345,10 +1347,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "assert" then
 		if not visited.value then  return (tokenError(context, startTok, "[%s] Missing value.", command))  end
 
-		if     type(args.value) == "boolean" then  if not args.value                               then  return (tokenError(context, visited.value, "Assertion failed! (False)"))  end
-		elseif type(args.value) == "string"  then  if args.value == ""                             then  return (tokenError(context, visited.value, "Assertion failed! (Empty string)"))  end
-		elseif type(args.value) == "number"  then  if args.value == 0 or args.value ~= args.value  then  return (tokenError(context, visited.value, "Assertion failed! (Zero or NaN)"))  end
-		elseif type(args.value) == "table"   then  if args.value[1] == nil                         then  return (tokenError(context, visited.value, "Assertion failed! (Empty array)"))  end
+		if     type(args.value) == "boolean" then  if not args.value                               then  return (tokenError(context, (visited.value or startTok), "Assertion failed! (False)"))  end
+		elseif type(args.value) == "string"  then  if args.value == ""                             then  return (tokenError(context, (visited.value or startTok), "Assertion failed! (Empty string)"))  end
+		elseif type(args.value) == "number"  then  if args.value == 0 or args.value ~= args.value  then  return (tokenError(context, (visited.value or startTok), "Assertion failed! (Zero or NaN)"))  end
+		elseif type(args.value) == "table"   then  if args.value[1] == nil                         then  return (tokenError(context, (visited.value or startTok), "Assertion failed! (Empty array)"))  end
 		else
 			return (tokenError(context, visited.value, "[%s] Unsupported value type '%s'.", command, type(args.value)))
 		end
@@ -1362,6 +1364,37 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 		if not isFollowedBySequence then
 			io.write("\n")
+		end
+
+	----------------------------------------------------------------
+	elseif command == "default" then
+		if args.cmd == "" then  return (tokenError(context, (visited.cmd or startTok), "[%s] Missing command name." , command))  end
+		if args.arg == "" then  return (tokenError(context, (visited.arg or startTok), "[%s] Missing argument name.", command))  end
+
+		if args.cmd == "func" then  return (tokenError(context, (visited.cmd or startTok), "[%s] Invalid command '%s'.", command, args.cmd))  end
+
+		local commandInfo = context.commands[args.cmd]
+		if not commandInfo then  return (tokenError(context, (visited.cmd or startTok), "[%s] No command '%s'.", command, args.cmd))  end
+
+		local defaultCommandInfo = COMMANDS[args.cmd]
+		if defaultCommandInfo.protected then
+			return (tokenError(context, (visited.cmd or startTok), "[%s] Cannot set default values for command '%s'.", command, args.cmd))
+		end
+
+		local argInfo = itemWith1(commandInfo, "name", args.arg)
+		if not argInfo then  return (tokenError(context, (visited.arg or startTok), "[%s] Command '%s' has no argument '%s'.", command, args.cmd, args.arg))  end
+		local defaultArgInfo = itemWith1(defaultCommandInfo, "name", argInfo.name)
+
+		if visited.value then
+			if not (type(args.value) == type(defaultArgInfo.value) or defaultArgInfo.value == nil) then
+				return (tokenError(context, (visited.value or startTok),
+					"[%s] Bad value for argument '%s' of command '%s'. (Expected %s, got %s)",
+					command, argInfo.name, args.cmd, type(defaultArgInfo.value), type(args.value)
+				))
+			end
+			argInfo.value = args.value
+		else
+			argInfo.value = defaultArgInfo.value
 		end
 
 	--
@@ -1587,7 +1620,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- BMFont.
 			else
-				if visited.spacing then  return (tokenError(context, visited.spacing, "[%s] Cannot modify the glyph spacing for BMFonts.", command))  end
+				if visited.spacing then  return (tokenError(context, (visited.spacing or startTok), "[%s] Cannot modify the glyph spacing for BMFonts.", command))  end
 
 				local imagePath0 = ""
 				local pos        = 1
@@ -2474,6 +2507,17 @@ function _G.loadArtFile(path, isLocal)
 
 	local tokens = tokenize(context, path)
 	if not tokens then  return nil  end
+
+	for command, commandInfo in pairs(COMMANDS) do
+		context.commands[command] = {} -- @Cleanup: Only copy the default values, not all command info!
+		for k, argInfoOrAliases in pairs(commandInfo) do
+			if type(k) == "number" then -- Argument.
+				table.insert(context.commands[command], {name=argInfoOrAliases.name, value=argInfoOrAliases.value})
+			else -- Alias.
+				context.commands[command][k] = argInfoOrAliases
+			end
+		end
+	end
 
 	local entry = ScopeStackEntry()
 	local vars  = entry.variables

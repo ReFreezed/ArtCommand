@@ -14,25 +14,27 @@
 #
 # Language.
 #
-set   var=""  value=nil  # Set variable.
-setx  var=""  value=nil  # Set existing variable.
-add   var=""  value=nil  # Add to array.
-rem   var=""  i=-1       # Remove from array.
+!set   var=""  value=nil  # Set variable.
+!setx  var=""  value=nil  # Set existing variable.
+!add   var=""  value=nil  # Add to array.
+!rem   var=""  i=-1       # Remove from array.
 
-do  
-if    value=nil
-for   var="I"  from=1 to=0 step=1
-fori  var="V"  value={}  rev=false
-else    # Dummy, for error message.
-elseif  # Dummy, for error message.
-end     # Dummy, for error message.
+!do
+!if    value=nil
+!for   var="I"  from=1 to=0 step=1
+!fori  var="V"  value={}  rev=false
+!else    # Dummy, for error message.
+!elseif  # Dummy, for error message.
+!end     # Dummy, for error message.
 
 stop  all=false
 
-assert  value=nil
-print   value=nil
+!assert  value=nil
+!print   value=nil
 
-# Special commands: `func` and user-defined functions.
+!default cmd="" arg="" value=nil(defaultDefault)
+
+# Additional commands: `func` and user-defined functions.
 
 #
 # Settings.
