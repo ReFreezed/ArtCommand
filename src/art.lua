@@ -71,6 +71,7 @@ local function Context()return{
 	source  = "",
 
 	commands = {}, -- Initially a copy of COMMANDS.
+	readonly = {--[[ [varName1]=variable, ... ]]}, -- variable = {token=declaredAtToken, value=value}
 
 	scopeStack = {--[[ scopeStackEntry1, ... ]]},
 	callStack  = {--[[ [funcInfo1]=true, ... ]]}, -- @Cleanup: Bad name. Not a stack - just bookkeeping.
@@ -681,7 +682,7 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 
 		elseif isToken(tokens[tokPos], "username") then
 			local varName = tokens[tokPos].value
-			local var     = findInStack(context, "variables", tokens[tokPos].position, varName)
+			local var     = findInStack(context, "variables", tokens[tokPos].position, varName) or context.readonly[varName]
 			if not var then  return (tokenError(context, tokens[tokPos], "No variable '%s'.", varName))  end
 			v = var.value
 
@@ -695,7 +696,7 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 
 			local env = setmetatable({}, {
 				__index = function(_, k)
-					local var = findInStack(context, "variables", tokens[tokPos].position, k)
+					local var = findInStack(context, "variables", tokens[tokPos].position, k) or context.readonly[k]
 					if var then  return var.value  end
 					error("No variable '"..tostring(k).."'.", 0)
 				end,
@@ -1085,9 +1086,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	if command == "func" then
 		if not isToken(tokens[tokPos], "username") then  return (tokenError(context, tokens[tokPos], "[%s] Expected a name for the function.", command))  end
 		if tokens[tokPos].negated                  then  return (parseError(context, tokens[tokPos].position-1, "[%s] Unexpected character.", command))  end
-		local funcName = tokens[tokPos].value
-		local entry    = getLast(context.scopeStack)
 
+		local funcName = tokens[tokPos].value
+		if context.readonly[funcName] then  return (tokenError(context, tokens[tokPos], "Name '%s' is reserved.", funcName))  end
+
+		local entry = getLast(context.scopeStack)
 		if entry.functions[funcName] then
 			-- @Incomplete: Suppress duplicate warnings.
 			tokenWarning(context, tokens[tokPos],
@@ -1107,6 +1110,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			if tokens[tokPos].negated then  return (parseError(context, tokens[tokPos].position-1, "Unexpected character."))  end
 
 			local argName = tokens[tokPos].value
+			if context.readonly[argName] then  return (tokenError(context, tokens[tokPos], "Name '%s' is reserved.", argName))  end
+
 			table.insert(funcInfo.arguments, argName)
 			tokPos = tokPos + 1 -- username
 		end
@@ -1159,14 +1164,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
 		local var
+
 		if command == "set" then
+			if context.readonly[args.var] then  return (tokenError(context, (visited.var or startTok), "Name '%s' is reserved.", args.var))  end
+
 			local vars     = getLast(context.scopeStack).variables
 			var            = vars[args.var] or {token=startTok, value=nil}
 			vars[args.var] = var
+
 		else
 			var = findInStack(context, "variables", tokens[tokPos].position, args.var)
 			if not var then  return (tokenError(context, (visited.var or startTok), "[%s] No existing variable '%s'.", command, args.var))  end
 		end
+
 		var.value = args.value
 
 	elseif command == "add" then
@@ -1309,6 +1319,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if args.step == 0                          then  return (tokenError(context, (visited.step or startTok), "[%s] Step is zero."       , command))  end
 		if not validateVariableName(context, (visited.var or startTok), "variable name", args.var) then  return nil  end
 
+		if context.readonly[args.var] then  return (tokenError(context, (visited.var or startTok), "Name '%s' is reserved.", args.var))  end
+
 		if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[%s] Invalid ','. Cannot chain '%s'.", command, command))  end -- It'd be nice to chain loops though! @UX
 
 		-- Get loop body.
@@ -1439,8 +1451,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.canvasH = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
 		context.msaa    = args.aa^2
 
-		context.scopeStack[1].variables.CanvasWidth .value = context.canvasW
-		context.scopeStack[1].variables.CanvasHeight.value = context.canvasH
+		context.readonly.CanvasWidth .value = context.canvasW
+		context.readonly.CanvasHeight.value = context.canvasH
 
 	--
 	-- State.
@@ -2536,77 +2548,77 @@ function _G.loadArtFile(path, isLocal)
 		end
 	end
 
+	local vars     = context.readonly
+	local dummyTok = {position=1, type="dummy"}
+
+	vars.True  = {token=dummyTok, value=true}
+	vars.False = {token=dummyTok, value=false}
+	vars.Huge  = {token=dummyTok, value=1/0}
+	vars.Nan   = {token=dummyTok, value=0/0}
+	vars.Pi    = {token=dummyTok, value=math.pi}
+	vars.Tau   = {token=dummyTok, value=TAU}
+
+	vars.WindowWidth  = {token=dummyTok, value=LG.getWidth()}
+	vars.WindowHeight = {token=dummyTok, value=LG.getHeight()}
+	vars.CanvasWidth  = {token=dummyTok, value=context.canvasW}
+	vars.CanvasHeight = {token=dummyTok, value=context.canvasH}
+
+	-- These are just for the Lua/bracket expressions.  @Incomplete @Robustness: Argument validation.
+	vars.num     = {token=dummyTok, value=tonumber}
+	vars.sel     = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
+	vars.selx    = {token=dummyTok, value=select}
+	vars.str     = {token=dummyTok, value=tostring}
+	vars.type    = {token=dummyTok, value=type}
+	vars.abs     = {token=dummyTok, value=math.abs}
+	vars.acos    = {token=dummyTok, value=math.acos}
+	vars.asin    = {token=dummyTok, value=math.asin}
+	vars.atan    = {token=dummyTok, value=function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
+	vars.ceil    = {token=dummyTok, value=math.ceil}
+	vars.cos     = {token=dummyTok, value=math.cos}
+	vars.cosh    = {token=dummyTok, value=math.cosh}
+	vars.deg     = {token=dummyTok, value=math.deg}
+	vars.exp     = {token=dummyTok, value=math.exp}
+	vars.floor   = {token=dummyTok, value=math.floor}
+	vars.fmod    = {token=dummyTok, value=math.fmod}
+	vars.frac    = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return frac  end}
+	vars.frexpe  = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return e  end}
+	vars.frexpm  = {token=dummyTok, value=function(n)  return (math.frexp(n))  end}
+	vars.int     = {token=dummyTok, value=function(n)  return (math.modf(n))  end}
+	vars.ldexp   = {token=dummyTok, value=math.ldexp}
+	vars.log     = {token=dummyTok, value=math.log} -- log( n [, base=e ] )
+	vars.lerp    = {token=dummyTok, value=math.lerp}
+	vars.max     = {token=dummyTok, value=math.max}
+	vars.min     = {token=dummyTok, value=math.min}
+	vars.rad     = {token=dummyTok, value=math.rad}
+	vars.rand    = {token=dummyTok, value=love.math.random}
+	vars.randf   = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [[ n1=0, ] n2=1 ] )
+	vars.round   = {token=dummyTok, value=math.round}
+	vars.sin     = {token=dummyTok, value=math.sin}
+	vars.sinh    = {token=dummyTok, value=math.sinh}
+	vars.sqrt    = {token=dummyTok, value=math.sqrt}
+	vars.tan     = {token=dummyTok, value=math.tan}
+	vars.tanh    = {token=dummyTok, value=math.tanh}
+	vars.clock   = {token=dummyTok, value=os.clock}
+	vars.date    = {token=dummyTok, value=os.date}
+	vars.env     = {token=dummyTok, value=os.getenv}
+	vars.time    = {token=dummyTok, value=os.time}
+	vars.byte    = {token=dummyTok, value=string.byte} -- @Robustness: Handle the string metatable.
+	vars.char    = {token=dummyTok, value=string.char}
+	vars.find    = {token=dummyTok, value=string.find}
+	vars.format  = {token=dummyTok, value=F}
+	vars.gsub    = {token=dummyTok, value=function(s, pat, repl, n)  return (string.gsub(s, pat, repl, n))  end}
+	vars.lower   = {token=dummyTok, value=string.lower}
+	vars.match   = {token=dummyTok, value=string.match}
+	vars.rep     = {token=dummyTok, value=string.rep}
+	vars.rev     = {token=dummyTok, value=string.reverse} -- @Incomplete: Also reverse arrays.
+	vars.sub     = {token=dummyTok, value=string.sub}
+	vars.upper   = {token=dummyTok, value=string.upper}
+	vars.unpack  = {token=dummyTok, value=unpack}
+	vars.concat  = {token=dummyTok, value=table.concat}
+	vars.sort    = {token=dummyTok, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
+	vars.sortby  = {token=dummyTok, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
+
 	local entry = ScopeStackEntry()
-	local vars  = entry.variables
-	local tok1  = tokens[1]
-
-	vars.True  = {token=tok1, value=true} -- @Robustness: Make these constant.
-	vars.False = {token=tok1, value=false}
-	vars.Huge  = {token=tok1, value=1/0}
-	vars.Nan   = {token=tok1, value=0/0}
-	vars.Pi    = {token=tok1, value=math.pi}
-	vars.Tau   = {token=tok1, value=TAU}
-
-	vars.WindowWidth  = {token=tok1, value=LG.getWidth()}
-	vars.WindowHeight = {token=tok1, value=LG.getHeight()}
-	vars.CanvasWidth  = {token=tok1, value=context.canvasW}
-	vars.CanvasHeight = {token=tok1, value=context.canvasH}
-
-	-- These are just for the Lua/bracket expressions.  @Incomplete: Argument validation.  @Robustness: Make these constant (although their names already make them).
-	vars.num     = {token=tok1, value=tonumber}
-	vars.sel     = {token=tok1, value=function(n, ...)  return (select(n, ...))  end}
-	vars.selx    = {token=tok1, value=select}
-	vars.str     = {token=tok1, value=tostring}
-	vars.type    = {token=tok1, value=type}
-	vars.abs     = {token=tok1, value=math.abs}
-	vars.acos    = {token=tok1, value=math.acos}
-	vars.asin    = {token=tok1, value=math.asin}
-	vars.atan    = {token=tok1, value=function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
-	vars.ceil    = {token=tok1, value=math.ceil}
-	vars.cos     = {token=tok1, value=math.cos}
-	vars.cosh    = {token=tok1, value=math.cosh}
-	vars.deg     = {token=tok1, value=math.deg}
-	vars.exp     = {token=tok1, value=math.exp}
-	vars.floor   = {token=tok1, value=math.floor}
-	vars.fmod    = {token=tok1, value=math.fmod}
-	vars.frac    = {token=tok1, value=function(n)  local int, frac = math.modf(n) ; return frac  end}
-	vars.frexpe  = {token=tok1, value=function(n)  local m, e = math.frexp(n) ; return e  end}
-	vars.frexpm  = {token=tok1, value=function(n)  return (math.frexp(n))  end}
-	vars.int     = {token=tok1, value=function(n)  return (math.modf(n))  end}
-	vars.ldexp   = {token=tok1, value=math.ldexp}
-	vars.log     = {token=tok1, value=math.log} -- log( n [, base=e ] )
-	vars.lerp    = {token=tok1, value=math.lerp}
-	vars.max     = {token=tok1, value=math.max}
-	vars.min     = {token=tok1, value=math.min}
-	vars.rad     = {token=tok1, value=math.rad}
-	vars.rand    = {token=tok1, value=love.math.random}
-	vars.randf   = {token=tok1, value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [[ n1=0, ] n2=1 ] )
-	vars.round   = {token=tok1, value=math.round}
-	vars.sin     = {token=tok1, value=math.sin}
-	vars.sinh    = {token=tok1, value=math.sinh}
-	vars.sqrt    = {token=tok1, value=math.sqrt}
-	vars.tan     = {token=tok1, value=math.tan}
-	vars.tanh    = {token=tok1, value=math.tanh}
-	vars.clock   = {token=tok1, value=os.clock}
-	vars.date    = {token=tok1, value=os.date}
-	vars.env     = {token=tok1, value=os.getenv}
-	vars.time    = {token=tok1, value=os.time}
-	vars.byte    = {token=tok1, value=string.byte} -- @Robustness: Handle the string metatable.
-	vars.char    = {token=tok1, value=string.char}
-	vars.find    = {token=tok1, value=string.find}
-	vars.format  = {token=tok1, value=F}
-	vars.gsub    = {token=tok1, value=function(s, pat, repl, n)  return (string.gsub(s, pat, repl, n))  end}
-	vars.lower   = {token=tok1, value=string.lower}
-	vars.match   = {token=tok1, value=string.match}
-	vars.rep     = {token=tok1, value=string.rep}
-	vars.rev     = {token=tok1, value=string.reverse} -- @Incomplete: Also reverse arrays.
-	vars.sub     = {token=tok1, value=string.sub}
-	vars.upper   = {token=tok1, value=string.upper}
-	vars.unpack  = {token=tok1, value=unpack}
-	vars.concat  = {token=tok1, value=table.concat}
-	vars.sort    = {token=tok1, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
-	vars.sortby  = {token=tok1, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
-
 	table.insert(context.scopeStack, entry)
 	local loveGfxStackDepth = LG.getStackDepth()
 
