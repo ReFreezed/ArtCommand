@@ -15,6 +15,9 @@
 --============================================================]]
 
 _G.TAU = 2*math.pi
+_G.DEV = love.filesystem.getInfo"local/dev" ~= nil
+
+_G.guiMode = true
 
 
 
@@ -46,6 +49,48 @@ local function tryLoadingTheArtFile()
 		theArt.canvas:getWidth(), theArt.canvas:getHeight()
 	))
 end
+
+-- saveTheArt( fileType=auto )
+local function saveTheArt(fileType)
+	if not theArt then  return  end
+
+	if thePathIsTest then
+		fileType      = fileType or "png"
+		local pathOut = "output."..fileType
+
+		print("Saving "..pathOut.."...")
+
+		local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
+		imageData:encode(fileType, pathOut):release() ; imageData:release()
+
+		print("Saving "..pathOut.."... done!")
+
+	else
+		fileType = fileType or (thePathOut:find"%.[Tt][Gg][Aa]$" and "tga" or "png")
+
+		local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "").."."..fileType
+		if pathOut == thePathIn then
+			print("Error: Input and output paths are the same: "..pathOut)
+			return
+		end
+
+		print("Saving "..pathOut.."...")
+
+		local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
+		local fileData  = imageData:encode(fileType) ; imageData:release()
+		local s         = fileData:getString()       ; fileData :release()
+		local ok, err   = writeFile(thePathIsTest, pathOut, s)
+
+		if not ok then
+			print("Error: "..err)
+			return
+		end
+
+		print("Saving "..pathOut.."... done!")
+	end
+end
+
+
 
 local function includeShader(paths, lines, lineFiles, lineLines, s, path)
 	if paths[path] then  return  end
@@ -129,9 +174,20 @@ end
 	end
 end
 
+local function programArgumentError(s)
+	if guiMode and not DEV then
+		love.window.setMode(600,400)
+	end
+	error("[ProgramArguments] "..s, 0)
+end
+
 function love.load(args, rawArgs)
 	io.stdout:setvbuf("no")
 	io.stderr:setvbuf("no")
+
+	print("Starting Art Command.")
+
+	require"love.window"
 
 	-- Parse arguments.
 	local parseOptions = true
@@ -141,20 +197,24 @@ function love.load(args, rawArgs)
 		local arg = args[i]
 
 		if not (parseOptions and arg:find"^%-") then
-			if arg       == "" then  error("[ProgramArguments] Path cannot be empty.", 0)  end
-			if thePathIn ~= "" then  error("[ProgramArguments] Multiple paths specified.", 0)  end
+			if arg       == "" then  programArgumentError("Path cannot be empty.")  end
+			if thePathIn ~= "" then  programArgumentError("Multiple paths specified.")  end
 			thePathIn = arg
 
 		elseif arg == "--" then
 			parseOptions = false
 
+		elseif arg == "--nogui" then
+			_G.guiMode = false
+			_G.DEV     = false
+
 		elseif arg == "--out" then
-			if thePathOut ~= "" then  error("[ProgramArguments] Multiple output paths specified.", 0)  end
-			thePathOut = args[i+1] or error("[ProgramArguments] Missing path after "..arg..".", 0)
+			if thePathOut ~= "" then  programArgumentError("Multiple output paths specified.")  end
+			thePathOut = args[i+1] or programArgumentError("Missing path after "..arg..".")
 			i          = i + 1
 
 		else
-			error("[ProgramArguments] Unknown option "..arg..".", 0)
+			programArgumentError("Unknown option "..arg..".")
 		end
 
 		i = i + 1
@@ -164,6 +224,29 @@ function love.load(args, rawArgs)
 		thePathIn     = "tests/all.artcmd"
 		thePathOut    = ""
 		thePathIsTest = true
+	end
+
+	-- Create window.
+	if not guiMode then
+		love.window.setMode(1,1, {
+			stencil    = false,
+			borderless = true,
+			x          = 0,
+			y          = 0,
+		})
+	else
+		love.window.setMode(800,600, {
+			stencil   = false,
+			resizable = true,
+			display   = DEV and 2 or 1,
+		})
+
+		love.window.setTitle("Art Command")
+		-- if not love.filesystem.isFused() then  love.window.setIcon(love.image.newImageData("gfx/appIcon32.png"))  end -- @Incomplete
+
+		love.graphics.clear()
+		love.graphics.print("Loading...", love.graphics.getWidth()/2,love.graphics.getHeight()/2)
+		love.graphics.present()
 	end
 
 	-- Load stuff.
@@ -207,6 +290,16 @@ function love.load(args, rawArgs)
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
 	initFilesystem()
+
+	if not guiMode then
+		tryLoadingTheArtFile()
+		if not theArt then  error("No art loaded.", 0)  end
+
+		saveTheArt(nil)
+
+		print("Quitting.")
+		love.event.quit()
+	end
 end
 
 
@@ -365,40 +458,7 @@ function love.keypressed(key)
 		autoZoom = (autoZoom + 1) % 3
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
-		if not theArt then  return  end
-
-		local fileType = love.keyboard.isDown("lshift","rshift") and "tga" or "png"
-
-		if thePathIsTest then
-			local pathOut = "output."..fileType
-			print("Saving "..pathOut.."...")
-
-			local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
-			imageData:encode(fileType, pathOut):release() ; imageData:release()
-
-			print("Saving "..pathOut.."... done!")
-
-		else
-			local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "").."."..fileType
-			if pathOut == thePathIn then
-				print("Error: Input and output paths are the same: "..pathOut)
-				return
-			end
-
-			print("Saving "..pathOut.."...")
-
-			local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
-			local fileData  = imageData:encode(fileType) ; imageData:release()
-			local s         = fileData:getString()       ; fileData :release()
-			local ok, err   = writeFile(thePathIsTest, pathOut, s)
-
-			if not ok then
-				print("Error: "..err)
-				return
-			end
-
-			print("Saving "..pathOut.."... done!")
-		end
+		saveTheArt(love.keyboard.isDown("lshift","rshift") and "tga" or "png")
 	end
 end
 
@@ -510,12 +570,18 @@ end
 
 
 
-if DEV then
-	function love.errorhandler(err)
+local loveErrorHandler = love.errorhandler or love.errhand
+
+function love.errorhandler(err)
+	if DEV then
 		print(debug.traceback(tostring(err), 2))
+	elseif guiMode then
+		return loveErrorHandler(err)
+	else
+		print("Error: "..tostring(err))
 	end
-	love.errhand = love.errorhandler
 end
+love.errhand = love.errorhandler
 
 
 
