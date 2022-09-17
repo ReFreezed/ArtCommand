@@ -2599,6 +2599,7 @@ function _G.loadArtFile(path, isLocal)
 	vars.lerp    = {token=dummyTok, value=math.lerp}
 	vars.max     = {token=dummyTok, value=math.max}
 	vars.min     = {token=dummyTok, value=math.min}
+	vars.noise   = {token=dummyTok, value=love.math.noise}
 	vars.rad     = {token=dummyTok, value=math.rad}
 	vars.rand    = {token=dummyTok, value=love.math.random}
 	vars.randf   = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [[ n1=0, ] n2=1 ] )
