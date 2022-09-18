@@ -2322,7 +2322,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "contrast" then
 		applyEffect(context, A.shaders.fxContrast, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxContrast, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxContrast, "params", args.r,args.g,args.b, args.amount) -- rgb is a channel filter.
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2330,7 +2330,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "brightness" then
 		applyEffect(context, A.shaders.fxBrightness, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxBrightness, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxBrightness, "params", args.r,args.g,args.b, args.amount) -- rgb is a channel filter.
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2338,7 +2338,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "saturation" then
 		applyEffect(context, A.shaders.fxSaturation, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxSaturation, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxSaturation, "params", args.r,args.g,args.b, args.amount) -- rgb is a channel filter.
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2346,7 +2346,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "gamma" then
 		applyEffect(context, A.shaders.fxGamma, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxGamma, "params", args.r,args.g,args.b,args.amount) -- rgb is a channel filter.
+			shaderSendVec4(A.shaders.fxGamma, "params", args.r,args.g,args.b, args.amount) -- rgb is a channel filter.
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
+
+	elseif command == "replace" then
+		applyEffect(context, A.shaders.fxReplace, function(context, canvasRead, canvasWrite)
+			shaderSendVec3(A.shaders.fxReplace, "target", args.r,args.g,args.b)
+			shaderSendVec2(A.shaders.fxReplace, "params", args.reach, args.ramp)
+			applyColor(context, A.shaders.fxReplace, "rectangle", context.gfxState.canvas:getDimensions())
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead

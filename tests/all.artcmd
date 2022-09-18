@@ -376,11 +376,26 @@ setbuf"forest" "forest.png"
 	levels .5 1  .25 .75  mid.25
 color; buf"forest" 450 80 rot5deg
 
-# Effect: threshold.
 setbuf"b&w" "forest.png"
 	thres .53
 	levels 0 1 .25 1
 color .95 .9 .8; buf"b&w" 320 60 scale.45 anchor.5 rot-15deg +filter
+
+setbuf"rainbow" 148 128
+	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1; rect 0   0 128 128
+	grad 1 0 0 1, .5 .5 .5 1;                               rect 128 0 20  128
+	grad rgb1 1, rgb0 0 rot90deg; rect 0 0  9999 64
+	grad rgb0 0, rgb0 1 rot90deg; rect 0 64 9999 64
+
+	color 1 0 1
+	Ramp = 3
+	replace 0 1 1      .5 Ramp
+	replace .75 .5 .5  .5 Ramp
+	# replace .5 .5 .5  .8 Ramp
+	# replace 0 0 0  1 Ramp
+	# replace 1 1 1  1 Ramp
+	# replace 1 0 0  1 Ramp
+color; buf"rainbow" 720 260 scale.5
 
 # Generator: noise.
 color

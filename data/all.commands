@@ -53,7 +53,7 @@ canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
 push 
 pop  
 
-color    r=1 g=1 b=1 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
+color    r=1 g=1 b=1 a=1                                                                rgb=r&g&b rg=r&g rb=r&b gb=g&b
 grey     grey=1      a=1  # Short for `color rgbN`.
 grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  radial=false fit=true  clear=true  rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
 texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0               fit=true              rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
@@ -103,10 +103,11 @@ iso     mode="sdf"   x=0 y=0                          sx=1 sy=1  rot=0  kx=0 ky=
 boxblur  x=0 y=0  xy=x&y
 blur     x=0 y=0  xy=x&y
 
-contrast    amount=1  r=1 g=1 b=1
-brightness  amount=1  r=1 g=1 b=1
-saturation  amount=1  r=1 g=1 b=1
-gamma       amount=1  r=1 g=1 b=1
+contrast    amount=1  r=1 g=1 b=1                 rgb=r&g&b rg=r&g rb=r&b gb=g&b
+brightness  amount=1  r=1 g=1 b=1                 rgb=r&g&b rg=r&g rb=r&b gb=g&b
+saturation  amount=1  r=1 g=1 b=1                 rgb=r&g&b rg=r&g rb=r&b gb=g&b
+gamma       amount=1  r=1 g=1 b=1                 rgb=r&g&b rg=r&g rb=r&b gb=g&b
+replace               r=1 g=1 b=1 reach=1 ramp=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 levels      infrom=0 into=1  outfrom=0 outto=1  mid=.5
 thres       thres=.5
 
