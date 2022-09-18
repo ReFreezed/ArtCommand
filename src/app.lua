@@ -17,13 +17,20 @@
 _G.TAU = 2*math.pi
 _G.DEV = love.filesystem.getInfo"local/dev" ~= nil
 
-_G.guiMode          = true
-local guiVisibility = 0
+
 
 local GUI_TEXT_PADDING_X = 10
 local GUI_TEXT_PADDING_Y = 5
 local GUI_SPACING        = 10
-local GUI_SPEED          = 20
+
+local GUI_BUTTONS_SPEED = 20
+
+local GUI_STATUS_DISPLAY_TIME = 1.50
+local GUI_STATUS_SPEED        = 1.5
+
+local GUI_OPACITY = .8
+
+
 
 local guiButtons = {x=0,y=0, w=0,h=0,
 	{x=0,y=0, w=0,h=0, name="zoom"  , text="Auto-zoom"},
@@ -33,7 +40,13 @@ local guiButtons = {x=0,y=0, w=0,h=0,
 
 
 
+_G.guiMode          = true
+local guiVisibility = 0
+
+
+
 _G.A = { -- Assets.
+	fonts   = {},
 	images  = {},
 	quads   = {},
 	shaders = {},
@@ -44,13 +57,29 @@ local thePathOut    = "" -- Empty means auto.
 local thePathIsTest = false -- @Cleanup: Make this into _G.isLocal or something.
 local theArt        = nil
 
-local autoZoom = 0 --  0 (use art zoom)  |  1 (zoom, linear)  |  2 (zoom, pixelated)
+local autoZoom = 1 --  1 (use art zoom)  |  2 (zoom, linear)  |  3 (zoom, pixelated)
+local AUTO_ZOOM_TEXTS = {"auto-zoom = off", "auto-zoom = on", "auto-zoom = on (pixelated)"}
 
 
 
-local function tryLoadingTheArtFile()
+local statusText = ""
+local statusTime = -9999.00
+
+local function setStatus(s, ...)
+	statusText = F(s, ...)
+	statusTime = love.timer.getTime()
+end
+
+
+
+local function tryLoadingTheArtFile(showSuccessStatus)
 	local art = loadArtFile(thePathIn, thePathIsTest)
-	if not art then  return  end
+	if not art then
+		setStatus("Failed loading %s", thePathIn)
+		return
+	end
+
+	setStatus("%s", (showSuccessStatus and "Loaded "..thePathIn:gsub("^.*[/\\]", "") or ""))
 
 	if theArt then  theArt.canvas:release()  end
 	theArt = art
@@ -64,7 +93,10 @@ end
 
 -- saveTheArt( fileType=auto )
 local function saveTheArt(fileType)
-	if not theArt then  return  end
+	if not theArt then
+		setStatus("No art to save!")
+		return
+	end
 
 	if thePathIsTest then
 		fileType      = fileType or "png"
@@ -76,6 +108,7 @@ local function saveTheArt(fileType)
 		imageData:encode(fileType, pathOut):release() ; imageData:release()
 
 		print("Saving "..pathOut.."... done!")
+		setStatus("Saved %s", pathOut)
 
 	else
 		fileType = fileType or (thePathOut:find"%.[Tt][Gg][Aa]$" and "tga" or "png")
@@ -83,6 +116,7 @@ local function saveTheArt(fileType)
 		local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "").."."..fileType
 		if pathOut == thePathIn then
 			print("Error: Input and output paths are the same: "..pathOut)
+			setStatus("Failed saving %s: Same as input path.", pathOut)
 			return
 		end
 
@@ -95,10 +129,12 @@ local function saveTheArt(fileType)
 
 		if not ok then
 			print("Error: "..err)
+			setStatus("Failed saving %s: %s", pathOut, err)
 			return
 		end
 
 		print("Saving "..pathOut.."... done!")
+		setStatus("Saved %s", pathOut)
 	end
 end
 
@@ -182,7 +218,7 @@ end
 	end
 
 	if loadedAny then
-		tryLoadingTheArtFile()
+		tryLoadingTheArtFile(false)
 	end
 end
 
@@ -197,7 +233,7 @@ local function updateGuiLayout()
 	local ww,wh = LG.getDimensions()
 
 	guiButtons.w = ww
-	guiButtons.h = LG.getFont():getHeight() + 2*(GUI_TEXT_PADDING_Y+GUI_SPACING)
+	guiButtons.h = A.fonts.gui:getHeight() + 2*(GUI_TEXT_PADDING_Y+GUI_SPACING)
 	guiButtons.x = 0
 	guiButtons.y = wh - guiButtons.h
 
@@ -205,8 +241,8 @@ local function updateGuiLayout()
 	local y = guiButtons.y + GUI_SPACING
 
 	for _, button in ipairs(guiButtons) do
-		button.w = LG.getFont():getWidth(button.text) + 2*GUI_TEXT_PADDING_X
-		button.h = LG.getFont():getHeight()           + 2*GUI_TEXT_PADDING_Y
+		button.w = A.fonts.gui:getWidth(button.text) + 2*GUI_TEXT_PADDING_X
+		button.h = A.fonts.gui:getHeight()           + 2*GUI_TEXT_PADDING_Y
 		button.x = x
 		button.y = y
 
@@ -312,6 +348,10 @@ function love.load(args, rawArgs)
 		end
 	end
 
+	A.fonts.artDefault = LG.newFont(12)
+	A.fonts.gui        = LG.newFont(14)
+	A.fonts.status     = A.fonts.gui--LG.newFont(20)
+
 	A.images.rectangle = newImageUsingPalette({
 		"xx",
 		"xx",
@@ -334,7 +374,7 @@ function love.load(args, rawArgs)
 	updateGuiLayout()
 
 	if not guiMode then
-		tryLoadingTheArtFile()
+		tryLoadingTheArtFile(true)
 		if not theArt then  error("No art loaded.", 0)  end
 
 		saveTheArt(nil)
@@ -497,7 +537,11 @@ function love.keypressed(key)
 		love.event.quit()
 
 	elseif key == "space" then
-		autoZoom = (autoZoom + 1) % 3
+		autoZoom = autoZoom % 3 + 1
+		setStatus(AUTO_ZOOM_TEXTS[autoZoom])
+
+	elseif key == "r" and love.keyboard.isDown("lctrl","rctrl") then
+		tryLoadingTheArtFile(true)
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
 		saveTheArt(love.keyboard.isDown("lshift","rshift") and "tga" or "png")
@@ -531,9 +575,10 @@ function love.mousereleased(mx,my, mbutton)
 		if not isOverButton(pressedButton, mx,my) then
 			-- void
 		elseif pressedButton.name == "zoom" then
-			autoZoom = (autoZoom + 1) % 3
+			autoZoom = autoZoom % 3 + 1
+			setStatus(AUTO_ZOOM_TEXTS[autoZoom])
 		elseif pressedButton.name == "reload" then
-			tryLoadingTheArtFile()
+			tryLoadingTheArtFile(true)
 		elseif pressedButton.name == "save" then
 			saveTheArt(nil)
 		end
@@ -561,13 +606,13 @@ function love.update(dt)
 
 		if modtime and modtime ~= theModtime then
 			theModtime = modtime
-			tryLoadingTheArtFile()
+			tryLoadingTheArtFile(false)
 		end
 	end
 
 	-- Update GUI.
 	local showGui = (pressedButton ~= nil) or (love.window.hasMouseFocus() and love.mouse.getY() > guiButtons.y-20)
-	guiVisibility = math.clamp01(guiVisibility + GUI_SPEED*dt*(showGui and 1 or -1))
+	guiVisibility = math.clamp01(guiVisibility + GUI_BUTTONS_SPEED*dt*(showGui and 1 or -1))
 end
 
 
@@ -579,8 +624,9 @@ function love.draw()
 
 	LG.reset()
 	LG.clear(.4, .4, .4, 1)
+	LG.setFont(A.fonts.gui)
 
-	-- Draw art.
+	-- Art.
 	A.quads.checker:setViewport(0,0, ww,wh)
 	LG.setColor(.6, .6, .6)
 	LG.draw(A.images.checker, A.quads.checker)
@@ -591,7 +637,7 @@ function love.draw()
 		local x  = math.floor((ww - cw) / 2)
 		local y  = math.floor((wh - ch) / 2)
 
-		if autoZoom == 0 then
+		if autoZoom == 1 then
 			x = math.max(x, 0)
 			y = math.max(y, 0)
 		end
@@ -604,7 +650,7 @@ function love.draw()
 		LG.push()
 
 		LG.translate(math.floor(ww/2),math.floor(wh/2))
-		LG.scale(autoZoom > 0 and math.min(ww/cw, wh/ch) or theArt.zoom)
+		LG.scale(autoZoom > 1 and math.min(ww/cw, wh/ch) or theArt.zoom)
 		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
 
 		if theArt.backdrop[4] >= .8 and (theArt.backdrop[1] + theArt.backdrop[2] + theArt.backdrop[3]) < 3*.3 then
@@ -617,17 +663,18 @@ function love.draw()
 		LG.rectangle("fill", x-1,y-1 , 1,ch+2)
 		LG.rectangle("fill", x+cw,y-1, 1,ch+2)
 
+		theArt.canvas:setFilter((autoZoom == 2 and "linear") or (autoZoom == 3 and "nearest") or (theArt.zoomFilter and "linear" or "nearest"))
 		LG.setColor(1, 1, 1)
 		LG.setBlendMode("alpha", "premultiplied")
-		theArt.canvas:setFilter((autoZoom == 1 and "linear") or (autoZoom == 2 and "nearest") or (theArt.zoomFilter and "linear" or "nearest"))
 		LG.draw(theArt.canvas, x,y)
+		LG.setBlendMode("alpha")
 
 		LG.pop()
 
 	else
 		local text = "No art loaded"
-		local w    = LG.getFont():getWidth(text) -- @Incomplete: Use predictable font.
-		local h    = LG.getFont():getHeight()
+		local w    = A.fonts.gui:getWidth(text) -- @Incomplete: Use predictable font.
+		local h    = A.fonts.gui:getHeight()
 		local x    = math.floor((ww-w)/2)
 		local y    = math.floor((wh-h)/2)
 
@@ -638,12 +685,11 @@ function love.draw()
 		LG.print(text, x,y)
 	end
 
-	-- Draw GUI.
+	-- GUI.
 	LG.push()
 	LG.translate(0, (1-guiVisibility) * (wh-guiButtons.y))
 
-	LG.setBlendMode("alpha")
-	LG.setColor(0, 0, 0, .8)
+	LG.setColor(0, 0, 0, GUI_OPACITY)
 	LG.rectangle("fill", guiButtons.x,guiButtons.y, guiButtons.w,guiButtons.h)
 
 	for _, button in ipairs(guiButtons) do
@@ -665,22 +711,37 @@ function love.draw()
 
 	LG.pop()
 
-	-- Draw extra info.
+	-- Extra info.
 	if love.keyboard.isDown"tab" then
-		LG.setBlendMode("alpha")
 		LG.setColor(0, 0, 0)
-		LG.rectangle("fill", 0,0, ww,4*LG.getFont():getHeight())
+		LG.rectangle("fill", 0,0, ww,4*A.fonts.gui:getHeight()+2*4)
 		LG.setColor(1, 1, 1)
 		LG.print(F(
 			"Art: %s"
 			.."\nSize: %dx%d (%.1f megapixels)"
-			.."\nLuaMem: %.2f MiB"
-			.."\nTexMem: %d MiB"
+			.."\nTextureMemory: %d MiB"
+			.."\nLuaMemory: %.2f MiB"
 			, thePathIn
 			, (theArt and theArt.canvas:getWidth() or 0), (theArt and theArt.canvas:getHeight() or 0), (theArt and theArt.canvas:getWidth()*theArt.canvas:getHeight() or 0)/1000^2
-			, collectgarbage"count"/1024
 			, LG.getStats().texturememory/1024^2
-		))
+			, collectgarbage"count"/1024
+		), 4,4)
+	end
+
+	-- Status.
+	if statusText ~= "" then
+		local w = A.fonts.status:getWidth(statusText) + 2*GUI_TEXT_PADDING_X
+		local h = A.fonts.status:getHeight()          + 2*GUI_TEXT_PADDING_Y
+		local x = math.floor((ww - w) / 2)
+		local y = -GUI_STATUS_SPEED * h * math.max(love.timer.getTime()-statusTime-GUI_STATUS_DISPLAY_TIME, 0)^2
+
+		LG.setColor(0, 0, 0, GUI_OPACITY)
+		LG.rectangle("fill", x,y, w,h)
+
+		LG.setColor(1, 1, 1)
+		LG.setFont(A.fonts.status)
+		LG.print(statusText, x+GUI_TEXT_PADDING_X,y+GUI_TEXT_PADDING_Y)
+		LG.setFont(A.fonts.gui)
 	end
 
 	LG.present()

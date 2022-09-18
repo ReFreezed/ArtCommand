@@ -134,7 +134,7 @@ local function GfxState()return{
 	colorTextureOffsetY = 0.0,
 	colorTextureBuffer  = "",
 	-- Font.
-	font = LG.getFont(),
+	font = A.fonts.artDefault,
 
 	-- "makemask" & "applymask"
 	canvas         = nil,
