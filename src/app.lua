@@ -17,7 +17,19 @@
 _G.TAU = 2*math.pi
 _G.DEV = love.filesystem.getInfo"local/dev" ~= nil
 
-_G.guiMode = true
+_G.guiMode          = true
+local guiVisibility = 0
+
+local GUI_TEXT_PADDING_X = 10
+local GUI_TEXT_PADDING_Y = 5
+local GUI_SPACING        = 10
+local GUI_SPEED          = 20
+
+local guiButtons = {x=0,y=0, w=0,h=0,
+	{x=0,y=0, w=0,h=0, name="zoom"  , text="Auto-zoom"},
+	{x=0,y=0, w=0,h=0, name="reload", text="Reload"},
+	{x=0,y=0, w=0,h=0, name="save"  , text="Export"},
+}
 
 
 
@@ -181,6 +193,35 @@ local function programArgumentError(s)
 	error("[ProgramArguments] "..s, 0)
 end
 
+local function updateGuiLayout()
+	local ww,wh = LG.getDimensions()
+
+	guiButtons.w = ww
+	guiButtons.h = LG.getFont():getHeight() + 2*(GUI_TEXT_PADDING_Y+GUI_SPACING)
+	guiButtons.x = 0
+	guiButtons.y = wh - guiButtons.h
+
+	local x = guiButtons.x + GUI_SPACING
+	local y = guiButtons.y + GUI_SPACING
+
+	for _, button in ipairs(guiButtons) do
+		button.w = LG.getFont():getWidth(button.text) + 2*GUI_TEXT_PADDING_X
+		button.h = LG.getFont():getHeight()           + 2*GUI_TEXT_PADDING_Y
+		button.x = x
+		button.y = y
+
+		x = x + button.w + GUI_SPACING
+	end
+
+	if x < ww then
+		local offsetX = math.floor((ww-x)/2)
+
+		for _, button in ipairs(guiButtons) do
+			button.x = button.x + offsetX
+		end
+	end
+end
+
 function love.load(args, rawArgs)
 	io.stdout:setvbuf("no")
 	io.stderr:setvbuf("no")
@@ -290,6 +331,7 @@ function love.load(args, rawArgs)
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
 	initFilesystem()
+	updateGuiLayout()
 
 	if not guiMode then
 		tryLoadingTheArtFile()
@@ -464,6 +506,44 @@ end
 
 
 
+local function isOverButton(button, mx,my)
+	return mx >= button.x and my >= button.y and mx < button.x+button.w and my < button.y+button.h
+end
+
+local pressedButton = nil
+
+function love.mousepressed(mx,my, mbutton)
+	if mbutton == 1 then
+		for _, button in ipairs(guiButtons) do
+			if isOverButton(button, mx,my) then
+				love.mouse.setGrabbed(true)
+				pressedButton = button
+				break
+			end
+		end
+	end
+end
+
+function love.mousereleased(mx,my, mbutton)
+	if mbutton == 1 and pressedButton then
+		love.mouse.setGrabbed(false)
+
+		if not isOverButton(pressedButton, mx,my) then
+			-- void
+		elseif pressedButton.name == "zoom" then
+			autoZoom = (autoZoom + 1) % 3
+		elseif pressedButton.name == "reload" then
+			tryLoadingTheArtFile()
+		elseif pressedButton.name == "save" then
+			saveTheArt(nil)
+		end
+
+		pressedButton = nil
+	end
+end
+
+
+
 local theModtime       = -1/0
 local modtimeCheckTime = 0
 
@@ -472,6 +552,7 @@ function love.update(dt)
 		require"hotLoader".update(dt)
 	end
 
+	-- Hot-load art.
 	modtimeCheckTime = modtimeCheckTime - dt
 
 	if modtimeCheckTime < 0 then
@@ -483,6 +564,10 @@ function love.update(dt)
 			tryLoadingTheArtFile()
 		end
 	end
+
+	-- Update GUI.
+	local showGui = (pressedButton ~= nil) or (love.window.hasMouseFocus() and love.mouse.getY() > guiButtons.y-20)
+	guiVisibility = math.clamp01(guiVisibility + GUI_SPEED*dt*(showGui and 1 or -1))
 end
 
 
@@ -495,6 +580,7 @@ function love.draw()
 	LG.reset()
 	LG.clear(.4, .4, .4, 1)
 
+	-- Draw art.
 	A.quads.checker:setViewport(0,0, ww,wh)
 	LG.setColor(.6, .6, .6)
 	LG.draw(A.images.checker, A.quads.checker)
@@ -515,6 +601,8 @@ function love.draw()
 			LG.rectangle("fill", 0,0, ww,wh)
 		end
 
+		LG.push()
+
 		LG.translate(math.floor(ww/2),math.floor(wh/2))
 		LG.scale(autoZoom > 0 and math.min(ww/cw, wh/ch) or theArt.zoom)
 		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
@@ -534,6 +622,8 @@ function love.draw()
 		theArt.canvas:setFilter((autoZoom == 1 and "linear") or (autoZoom == 2 and "nearest") or (theArt.zoomFilter and "linear" or "nearest"))
 		LG.draw(theArt.canvas, x,y)
 
+		LG.pop()
+
 	else
 		local text = "No art loaded"
 		local w    = LG.getFont():getWidth(text) -- @Incomplete: Use predictable font.
@@ -548,6 +638,34 @@ function love.draw()
 		LG.print(text, x,y)
 	end
 
+	-- Draw GUI.
+	LG.push()
+	LG.translate(0, (1-guiVisibility) * (wh-guiButtons.y))
+
+	LG.setBlendMode("alpha")
+	LG.setColor(0, 0, 0, .8)
+	LG.rectangle("fill", guiButtons.x,guiButtons.y, guiButtons.w,guiButtons.h)
+
+	for _, button in ipairs(guiButtons) do
+		local highlight = (button == pressedButton or not pressedButton) and isOverButton(button, love.mouse.getPosition())
+
+		if highlight then
+			LG.setColor(1, 1, 1, .3)
+			LG.rectangle("fill", button.x,button.y, button.w,button.h)
+			LG.setColor(1, 1, 1, 1)
+			LG.rectangle("line", button.x+.5,button.y+.5, button.w-1,button.h-1)
+		else
+			LG.setColor(1, 1, 1, .5)
+			LG.rectangle("line", button.x+.5,button.y+.5, button.w-1,button.h-1)
+		end
+
+		LG.setColor(1, 1, 1, 1)
+		LG.print(button.text, button.x+GUI_TEXT_PADDING_X,button.y+GUI_TEXT_PADDING_Y)
+	end
+
+	LG.pop()
+
+	-- Draw extra info.
 	if love.keyboard.isDown"tab" then
 		LG.setBlendMode("alpha")
 		LG.setColor(0, 0, 0)
@@ -566,6 +684,12 @@ function love.draw()
 	end
 
 	LG.present()
+end
+
+
+
+function love.resize(ww,wh)
+	updateGuiLayout()
 end
 
 
