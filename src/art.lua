@@ -82,10 +82,8 @@ local function Context()return{
 
 	gfxState = nil, -- (including love.graphics transform)
 
-	workCanvas1  = nil,
-	workCanvas2  = nil,
-	canvasToMask = nil,
-	maskCanvas   = nil,
+	workCanvas1 = nil,
+	workCanvas2 = nil,
 
 	images      = {--[[ [path1]=image|canvas, ... ]]},
 	buffers     = {--[[ [name1]=image, ... ]]},
@@ -116,12 +114,12 @@ local function ScopeStackEntry()return{
 }end
 
 local function GfxState()return{
-	stackType = "user", -- "user" | "makemask" | "applymask"
+	canvas    = nil, -- @Cleanup: Store bufferName instead.
+	useMask   = "",
+	blendMode = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
 
-	-- "user"
 	-- Color.
 	colorMode           = "flatcolor", -- "flatcolor" | "gradient" | "texture"
-	blendMode           = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
 	flatColor           = {1,1,1,1},
 	gradient            = {--[[ r1,g1,b1,a1, ... ]]},
 	colorTexture        = nil,
@@ -133,65 +131,51 @@ local function GfxState()return{
 	colorTextureOffsetX = 0.0,
 	colorTextureOffsetY = 0.0,
 	colorTextureBuffer  = "",
+
 	-- Font.
 	font = A.fonts.artDefault,
-
-	-- "makemask" & "applymask"
-	canvas         = nil,
-	fallbackCanvas = nil, -- @Cleanup: We only have this because of buffers. Add a currentBufferName field instead and infer what canvas to use from gfxStack! (Note: Separate from colorTextureBuffer.)
-
-	-- "makemask"
-	makeMaskMode = false,
 }end
 
-local function copyGfxState(gfxState,stackType)return{
-	stackType = stackType or error("Missing 'stackType' argument."),
+local function copyGfxState(gfxState)return{
+	canvas    = gfxState.canvas,
+	useMask   = gfxState.useMask,
+	blendMode = gfxState.blendMode,
 
-	colorMode           = (stackType == "user" or nil) and gfxState.colorMode,
-	blendMode           = (stackType == "user" or nil) and gfxState.blendMode,
-	flatColor           = (stackType == "user" or nil) and {unpack(gfxState.flatColor)},
-	gradient            = (stackType == "user" or nil) and {unpack(gfxState.gradient)},
-	colorTexture        = (stackType == "user" or nil) and gfxState.colorTexture,
-	colorTextureRadial  = (stackType == "user" or nil) and gfxState.colorTextureRadial,
-	colorTextureFit     = (stackType == "user" or nil) and gfxState.colorTextureFit,
-	colorTextureScaleX  = (stackType == "user" or nil) and gfxState.colorTextureScaleX,
-	colorTextureScaleY  = (stackType == "user" or nil) and gfxState.colorTextureScaleY,
-	colorTextureAngle   = (stackType == "user" or nil) and gfxState.colorTextureAngle,
-	colorTextureOffsetX = (stackType == "user" or nil) and gfxState.colorTextureOffsetX,
-	colorTextureOffsetY = (stackType == "user" or nil) and gfxState.colorTextureOffsetY,
-	colorTextureBuffer  = (stackType == "user" or nil) and gfxState.colorTextureBuffer,
-	font                = (stackType == "user" or nil) and gfxState.font,
+	colorMode           = gfxState.colorMode,
+	flatColor           = {unpack(gfxState.flatColor)},
+	gradient            = {unpack(gfxState.gradient)},
+	colorTexture        = gfxState.colorTexture,
+	colorTextureRadial  = gfxState.colorTextureRadial,
+	colorTextureFit     = gfxState.colorTextureFit,
+	colorTextureScaleX  = gfxState.colorTextureScaleX,
+	colorTextureScaleY  = gfxState.colorTextureScaleY,
+	colorTextureAngle   = gfxState.colorTextureAngle,
+	colorTextureOffsetX = gfxState.colorTextureOffsetX,
+	colorTextureOffsetY = gfxState.colorTextureOffsetY,
+	colorTextureBuffer  = gfxState.colorTextureBuffer,
 
-	canvas         = (stackType == "makemask" or stackType == "applymask" or nil) and gfxState.canvas,
-	fallbackCanvas = (stackType == "makemask" or stackType == "applymask" or nil) and gfxState.fallbackCanvas,
-
-	makeMaskMode = (stackType == "makemask" or nil) and gfxState.makeMaskMode,
+	font = gfxState.font,
 }end
 
 local function moveGfxState(fromGfxState, toGfxState)
-	if fromGfxState.stackType == "user" then
-		toGfxState.colorMode           = fromGfxState.colorMode
-		toGfxState.blendMode           = fromGfxState.blendMode
-		toGfxState.flatColor           = fromGfxState.flatColor
-		toGfxState.gradient            = fromGfxState.gradient
-		toGfxState.colorTexture        = fromGfxState.colorTexture
-		toGfxState.colorTextureRadial  = fromGfxState.colorTextureRadial
-		toGfxState.colorTextureFit     = fromGfxState.colorTextureFit
-		toGfxState.colorTextureScaleX  = fromGfxState.colorTextureScaleX
-		toGfxState.colorTextureScaleY  = fromGfxState.colorTextureScaleY
-		toGfxState.colorTextureAngle   = fromGfxState.colorTextureAngle
-		toGfxState.colorTextureOffsetX = fromGfxState.colorTextureOffsetX
-		toGfxState.colorTextureOffsetY = fromGfxState.colorTextureOffsetY
-		toGfxState.colorTextureBuffer  = fromGfxState.colorTextureBuffer
-		toGfxState.font                = fromGfxState.font
-	end
-	if fromGfxState.stackType == "makemask" or fromGfxState.stackType == "applymask" then
-		toGfxState.canvas         = fromGfxState.canvas
-		toGfxState.fallbackCanvas = fromGfxState.fallbackCanvas
-	end
-	if fromGfxState.stackType == "makemask" then
-		toGfxState.makeMaskMode = fromGfxState.makeMaskMode
-	end
+	toGfxState.canvas    = fromGfxState.canvas
+	toGfxState.useMask   = fromGfxState.useMask
+	toGfxState.blendMode = fromGfxState.blendMode
+
+	toGfxState.colorMode           = fromGfxState.colorMode
+	toGfxState.flatColor           = fromGfxState.flatColor
+	toGfxState.gradient            = fromGfxState.gradient
+	toGfxState.colorTexture        = fromGfxState.colorTexture
+	toGfxState.colorTextureRadial  = fromGfxState.colorTextureRadial
+	toGfxState.colorTextureFit     = fromGfxState.colorTextureFit
+	toGfxState.colorTextureScaleX  = fromGfxState.colorTextureScaleX
+	toGfxState.colorTextureScaleY  = fromGfxState.colorTextureScaleY
+	toGfxState.colorTextureAngle   = fromGfxState.colorTextureAngle
+	toGfxState.colorTextureOffsetX = fromGfxState.colorTextureOffsetX
+	toGfxState.colorTextureOffsetY = fromGfxState.colorTextureOffsetY
+	toGfxState.colorTextureBuffer  = fromGfxState.colorTextureBuffer
+
+	toGfxState.font = fromGfxState.font
 end
 
 
@@ -265,10 +249,9 @@ end
 
 
 
--- gfxStateSetCanvas( context, canvas, fallbackCanvas=canvas )
-local function gfxStateSetCanvas(context, canvas, fallbackCanvas)
-	context.gfxState.canvas         = canvas
-	context.gfxState.fallbackCanvas = fallbackCanvas or canvas
+-- gfxStateSetCanvas( context, canvas=main )
+local function gfxStateSetCanvas(context, canvas)
+	context.gfxState.canvas = canvas or context.art.canvas
 end
 
 
@@ -277,9 +260,21 @@ end
 local function applyCanvas(context, shader)
 	shader = shader or A.shaders.main
 
-	shaderSend(shader, "makeMaskMode", context.gfxState.makeMaskMode) -- Maybe not the best place for this, but eh...
+	local gfxState     = context.gfxState
+	local makeMaskMode = (gfxState.canvas:getFormat() == "r16")
 
-	LG.setCanvas(context.gfxState.canvas)
+	shaderSend(shader, "makeMaskMode", makeMaskMode) -- Maybe not the best place for this, but eh...
+
+	if gfxState.useMask == "" or makeMaskMode then
+		shaderSend(shader, "useMask", false)
+	else
+		local bufCanvas = context.buffers[gfxState.useMask]
+		shaderSend    (shader, "useMask" , true)
+		shaderSend    (shader, "mask"    , bufCanvas)
+		shaderSendVec2(shader, "maskSize", bufCanvas:getDimensions())
+	end
+
+	LG.setCanvas(gfxState.canvas)
 	LG.setShader(shader.shader)
 end
 
@@ -392,6 +387,7 @@ local function applyColor(context, shader, shape, w,h)
 	shaderSend    (shader, "colorTextureRadialOffset", radialOffset)
 	shaderSendVec2(shader, "colorTextureOffset"      , gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
 	shaderSendVec4(shader, "colorTextureScale"       , preSx,preSy, postSx,postSy)
+	shaderSend    (shader, "gradientSize"            , #gfxState.gradient/4)
 end
 
 
@@ -406,13 +402,8 @@ local function ensureCanvasAndInitted(context)
 	context.art.canvas   = LG.newCanvas(context.canvasWidth,context.canvasHeight, settingsCanvas)
 	context.workCanvas1  = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="rgba16"}) -- No MSAA!
 	context.workCanvas2  = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="rgba16"})
-	context.canvasToMask = LG.newCanvas(context.canvasWidth,context.canvasHeight, settingsCanvas)
-	context.maskCanvas   = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="r16", msaa=settingsCanvas.msaa})
 
-	context.canvasToMask:setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
-	context.maskCanvas  :setFilter("nearest") -- Fixes mask fuzziness caused by MSAA.
-
-	gfxStateSetCanvas(context, context.art.canvas, nil)
+	gfxStateSetCanvas(context, nil)
 end
 
 
@@ -796,104 +787,26 @@ local function pushTransformAndReset(blendMode)
 	LG.setBlendMode(blendMode, "premultiplied")
 end
 
--- pushGfxState( context, stackType )
--- stackType: see GfxState.stackType
-local function pushGfxState(context, stackType)
-	local gfxState = copyGfxState(context.gfxState, stackType)
-
-	if stackType == "user" then
-		LG.push() -- Only the transform - we save everything else manually. (Beware of LÖVE's stack limit! Maybe we should only use our own stack, for maximum @Robustness.)
-
-	elseif stackType == "makemask" then
-		-- void
-
-	elseif stackType == "applymask" then
-		-- void
-
-	else
-		error(stackType)
-	end
-
-	table.insert(context.gfxStack, gfxState)
+local function pushGfxState(context)
+	table.insert(context.gfxStack, copyGfxState(context.gfxState))
+	LG.push()
 end
 
--- status = popGfxState( context, stackType )
--- status = "success" | "emptystack" | "error"
--- stackType: see GfxState.stackType
-local function popGfxState(context, stackType)
-	local gfxState = getLast(context.gfxStack)
-	if not gfxState                    then  return "emptystack"  end
-	if gfxState.stackType ~= stackType then  return "error"       end
+-- success = popGfxState( context )
+local function popGfxState(context)
+	local gfxState = table.remove(context.gfxStack)
+	if not gfxState then  return false  end
 
-	moveGfxState(table.remove(context.gfxStack), context.gfxState)
-
-	if stackType == "user" then
-		LG.pop()
-
-	elseif stackType == "makemask" then
-		assert(gfxState.makeMaskMode == false) -- The caller should've handled this.
-		gfxStateSetCanvas(context, gfxState.canvas, gfxState.fallbackCanvas)
-
-	elseif stackType == "applymask" then
-		shaderSend(A.shaders.applyMask, "mask", context.maskCanvas)
-
-		LG.setCanvas(nil) -- Before push/pop. Not sure it affects canvas switching. Probably doesn't matter.
-		pushTransformAndReset("alpha") -- Should we use gfxState.blendMode (probably not), and/or maybe warn if gfxState.blendMode~="alpha"?
-		LG.setCanvas(gfxState.canvas)
-		LG.setShader(A.shaders.applyMask.shader)
-		LG.draw(context.canvasToMask)
-		LG.pop()
-
-		gfxStateSetCanvas(context, gfxState.canvas, gfxState.fallbackCanvas)
-
-		--[[ DEBUG
-		LG.push("all")
-		LG.reset()
-		LG.setBlendMode("replace")
-		LG.draw(context.canvasToMask)
-		-- LG.draw(context.maskCanvas)
-		LG.present()
-		LG.sleep(1)
-		LG.pop()
-		--]]
-
-		--[[ DEBUG
-		local imageData       = context.maskCanvas:newImageData()
-		local imageDataToSave = love.image.newImageData(imageData:getDimensions())
-		imageDataToSave:mapPixel(function(x,y, r,g,b,a)
-			local v = imageData:getPixel(x,y)
-			return v,v,v,1
-		end)
-		imageData:release()
-		imageDataToSave:encode("png", "mask.png"):release()
-		imageDataToSave:release()
-		--]]
-
-	else
-		error(stackType)
-	end
-
-	return "success"
-end
-
--- success = maybeApplyMask( context, tokenForError )
-local function maybeApplyMask(context, tokForError)
-	if not itemWith1(context.gfxStack, "stackType", "applymask") then  return true  end
-
-	local status = popGfxState(context, "applymask")
-	if status == "error" then
-		return (tokenError(context, tokForError, "Could not apply mask. (Unbalanced push and pop commands?)"))
-	elseif status ~= "success" then
-		return (tokenError(context, tokForError, "Internal error. (%s)", status))
-	end
+	moveGfxState(gfxState, context.gfxState)
+	LG.pop()
 
 	return true
 end
 
 local function isCanvasReferenced(context, canvas)
-	if canvas == context.gfxState.canvas or canvas == context.gfxState.fallbackCanvas then  return true  end
+	if canvas == context.gfxState.canvas--[[ or canvas == context.gfxState.fallbackCanvas]] then  return true  end
 	for _, gfxState in ipairs(context.gfxStack) do
-		if canvas == gfxState.canvas or canvas == gfxState.fallbackCanvas then  return true  end
+		if canvas == gfxState.canvas--[[ or canvas == gfxState.fallbackCanvas]] then  return true  end
 	end
 	return false
 end
@@ -958,7 +871,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 			return imageOrCanvas
 		end
 
-		pushGfxState(context, "user") -- @Cleanup
+		pushGfxState(context) -- @Cleanup
 
 		if startRecursion then  artFileRecursionAllowed[path] = recursionsAllowed  end
 		local art = loadArtFile(path, context.isLocal)
@@ -967,7 +880,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 		if not art then  return (tokenError(context, tokForError, "Could not load .artcmd image."))  end
 		imageOrCanvas = art.canvas
 
-		assert(popGfxState(context, "user") == "success")
+		assert(popGfxState(context))
 
 	else
 		local s, err = readFile(false, path)
@@ -1145,7 +1058,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	local visited = {}
 	setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
 
-	-- Initialize arguments (dynamic values only).
+	-- Initialize arguments (dynamic values only).  @Cleanup: Do this using 'visited' instead.
 	if command == "setbuf" then
 		args.w  = context.canvasWidth
 		args.h  = context.canvasHeight
@@ -1473,26 +1386,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "push" then
 		ensureCanvasAndInitted(context)
-		pushGfxState(context, "user")
+		pushGfxState(context)
 
 	----------------------------------------------------------------
 	elseif command == "pop" then
-		local status = popGfxState(context, "user") -- Will fail if there was no push - otherwise ensureCanvasAndInitted() will have been called.
-
-		if status == "error" then
-			if getLast(context.gfxStack).stackType == "makemask" then
-				return (tokenError(context, startTok, "[%s] Unbalanced push and pop commands during 'makemask'.", command))
-			elseif getLast(context.gfxStack).stackType == "applymask" then
-				return (tokenError(context, startTok, "[%s] Unbalanced push and pop commands during 'mask'.", command))
-			else
-				return (tokenError(context, startTok, "[%s] Unbalanced push and pop commands.", command))
-			end
-
-		elseif status == "emptystack" then
+		if not popGfxState(context) then -- Will fail if there was no push - otherwise ensureCanvasAndInitted() will have been called.
 			tokenWarning(context, startTok, "pop: Too many 'pop' commands. Ignoring.")
-
-		elseif status ~= "success" then
-			return (tokenError(context, startTok, "[%s] Internal error. (%s)", command, status))
 		end
 
 	----------------------------------------------------------------
@@ -1711,40 +1610,28 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		context.gfxState.font          = font
 
 	----------------------------------------------------------------
-	elseif command == "makemask" then
-		ensureCanvasAndInitted(context)
-		if not maybeApplyMask(context, startTok) then  return nil  end -- 'makemask' also exits 'mask' mode.
-
-		if context.gfxState.makeMaskMode then  return (tokenError(context, startTok, "[%s] Already making a mask.", command))  end
-
-		pushGfxState(context, "makemask")
-
-		gfxStateSetCanvas(context, context.maskCanvas, nil)
-		if args.clear then
-			LG.setCanvas(context.gfxState.canvas)
-			LG.clear(0, 0, 0, 1)
-		end
-
-		context.gfxState.makeMaskMode = true
-
-	----------------------------------------------------------------
 	elseif command == "mask" then
 		ensureCanvasAndInitted(context)
-		if not maybeApplyMask(context, startTok) then  return nil  end
-
-		-- 'mask' also exits 'makemask' mode.
-		if context.gfxState.makeMaskMode and popGfxState(context, "makemask") ~= "success" then
-			return (tokenError(context, startTok, "[%s] Could not finish making mask. (Unbalanced push and pop commands?)", command))
-		end
 
 		if args.mask then
-			-- @UX: Could we enable the mask just by setting a flag, and not use a separate canvas? That'd be great.
-			pushGfxState(context, "applymask")
-			gfxStateSetCanvas(context, context.canvasToMask, nil)
-			LG.setCanvas(context.gfxState.canvas)
-			LG.clear(0, 0, 0, 0)
+			local bufName = args.buf
+			if bufName == "" then  return (tokenError(context, (visited.buf or startTok), "[%s] Missing mask buffer name.", command))  end
+
+			local bufCanvas = context.buffers[bufName]
+			if not bufCanvas then  return (tokenError(context, (visited.buf or startTok), "[%s] No buffer '%s' to use as mask.", command, bufName))  end
+
+			context.gfxState.useMask = bufName
+
+			if context.gfxState.canvas == bufCanvas then
+				gfxStateSetCanvas(context, nil) -- :SetMainBuffer
+			end
+
 		else
-			-- void  We would apply the mask, but we just did that!
+			if visited.buf and args.buf ~= "" then
+				tokenWarning(context, (visited.buf or startTok), "[%s] Cannot specify a mask buffer when disabling the mask. Ignoring.", command)
+			end
+
+			context.gfxState.useMask = "" -- :DisableMask
 		end
 
 	----------------------------------------------------------------
@@ -1763,9 +1650,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "setbuf" then
 		ensureCanvasAndInitted(context)
 
-		local bufName = args.name
-		local iw      = args.w
-		local ih      = args.h
+		local bufName      = (args.mask and not visited.name and "mask") or args.name
+		local iw           = args.w
+		local ih           = args.h
+		local canvasFormat = args.mask and "r16" or "rgba16"
 
 		local imageOrCanvas
 
@@ -1774,7 +1662,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			if args.path ~= ""        then  return (tokenError(context, (visited.name           or startTok), "[%s] Missing buffer name to load image to.", command))  end
 			if visited.w or visited.h then  return (tokenError(context, (visited.w or visited.h or startTok), "[%s] Cannot set the size of the main buffer. Use the 'canvas' command instead.", command))  end
 
-			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- :SetMainBuffer
+			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
 
 		-- Custom buffer.
 		else
@@ -1785,20 +1673,22 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				iw,ih = imageOrCanvas:getDimensions()
 			end
 
-			-- Reuse existing canvas.
+			-- Reuse existing.
 			if
 				context.buffers[bufName]
 				and context.buffers[bufName]:getWidth () == iw
 				and context.buffers[bufName]:getHeight() == ih
 				and context.buffers[bufName]:getMSAA  () == args.aa
+				and context.buffers[bufName]:getFormat() == canvasFormat
 			then
-				gfxStateSetCanvas(context, context.buffers[bufName], context.gfxState.fallbackCanvas)
-				LG.setCanvas(context.gfxState.canvas)
+				gfxStateSetCanvas(context, context.buffers[bufName])
+
 				if args.clear then
-					LG.clear(0, 0, 0, 0)
+					LG.setCanvas(context.gfxState.canvas)
+					LG.clear(0, 0, 0, (args.mask and 1 or 0))
 				end
 
-			-- Create new canvas.
+			-- Create new.
 			else
 				if args.w > context.canvasWidth or args.h > context.canvasHeight then
 					return (tokenError(context, (args.w > context.canvasWidth and visited.w or visited.h or startTok),
@@ -1812,8 +1702,18 @@ local function runCommand(context, tokens, tokPos, commandTok)
 					context.buffers[bufName]:release()
 				end
 
-				context.buffers[bufName] = LG.newCanvas(iw,ih, {format="rgba16", msaa=args.aa})
-				gfxStateSetCanvas(context, context.buffers[bufName], context.gfxState.fallbackCanvas)
+				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=args.aa})
+				gfxStateSetCanvas(context, context.buffers[bufName])
+
+				if args.mask then
+					LG.setCanvas(context.gfxState.canvas)
+					LG.clear(0, 0, 0, 1)
+				end
+			end
+
+			-- Make sure the current buffer isn't used as mask.
+			if context.gfxState.useMask == bufName then
+				context.gfxState.useMask = "" -- :DisableMask
 			end
 		end
 
@@ -2102,10 +2002,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				return (tokenError(context, (visited[k] or startTok), "[%s] Cannot draw canvas to itself.", command, bufName))
 			end
 		elseif texture == context.gfxState.canvas then
-			gfxStateSetCanvas(context, context.gfxState.fallbackCanvas, nil) -- This is like an automatic `setbuf""`. :SetMainBuffer
+			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
 			-- LG.setCanvas(nil) ; texture:newImageData():encode("png", "buffer.png"):release() -- DEBUG
-		elseif isCanvasReferenced(context, texture) then
-			return (tokenError(context, (visited[k] or startTok), "[%s] Cannot draw buffer '%s' at this point.", command, bufName))
 		end
 
 		local iw,ih = texture:getDimensions()
@@ -2218,7 +2116,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 					float v = $DEBUG;
 					return (v < 0) ? vec4(vec3(max(.7+.7*v,0)), 1) : vec4(1, vec2(max(1-v,0)), 1);
 				} else if (result > $threshold && result < $limit) {
-					return applyMainEffect(vec4(1), texUv, loveColor);
+					return applyMainEffect(vec4(1), texUv, screenPos, loveColor);
 				} else {
 					discard;
 				}
@@ -2408,25 +2306,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local cw,ch    = canvas:getDimensions()
 		local iw,ih    = A.images.rectangle:getDimensions()
 
-		shaderSend    (A.shaders.generateNoise, "clouds", (command == "clouds"))
-		shaderSendVec3(A.shaders.generateNoise, "offset", args.x,args.y,(args.z or 0))
-		shaderSendVec2(A.shaders.generateNoise, "scale" , args.sx,args.sy)
+		applyCanvas(context, A.shaders.generateNoise)
+		applyColor(context, A.shaders.generateNoise, "rectangle", 1,1)
 
-		if gfxState.colorMode == "gradient" then
-			applyColor(context, nil, "rectangle", 1,1) -- Generates colorTexture.
-			shaderSend(A.shaders.generateNoise, "useColorTexture" , true)
-			shaderSend(A.shaders.generateNoise, "colorTexture"    , gfxState.colorTexture)
-			shaderSend(A.shaders.generateNoise, "colorTextureSize", gfxState.colorTexture:getWidth())
-		else
-			local r,g,b,a = unpack(gfxState.flatColor)
-			shaderSend    (A.shaders.generateNoise, "useColorTexture", false)
-			shaderSendVec4(A.shaders.generateNoise, "color0"         , 0,0,0,a)
-			shaderSendVec4(A.shaders.generateNoise, "color1"         , r*a, g*a, b*a, a)
-		end
+		local r,g,b,a = unpack(gfxState.flatColor)
+		shaderSend    (A.shaders.generateNoise, "clouds"       , (command == "clouds"))
+		shaderSendVec3(A.shaders.generateNoise, "offset"       , args.x,args.y,(args.z or 0))
+		shaderSendVec2(A.shaders.generateNoise, "scale"        , args.sx,args.sy)
+		shaderSendVec4(A.shaders.generateNoise, "gradientColor", r*a,g*a,b*a,a)
 
-		pushTransformAndReset(gfxState.blendMode)
-		LG.setCanvas(canvas)
-		LG.setShader(A.shaders.generateNoise.shader)
+		LG.push()
+		LG.origin()
 		LG.draw(A.images.rectangle, 0,0, 0, cw/iw,ch/ih)
 		LG.pop()
 
@@ -2444,7 +2334,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			g = rng:random()
 			b = rng:random()
 
-			if rng:random() > args.level then  return 0, 0, 0, 0  end
+			if rng:random() > args.level then  return 0,0,0,0  end
 
 			return r
 			     , math.lerp(r, g, args.color)
@@ -2516,10 +2406,8 @@ local function cleanup(context, loveGfxStackDepth, success)
 
 	if not success and context.art.canvas then  context.art.canvas:release()  end
 
-	if context.workCanvas1  then  context.workCanvas1 :release()  end
-	if context.workCanvas2  then  context.workCanvas2 :release()  end
-	if context.canvasToMask then  context.canvasToMask:release()  end
-	if context.maskCanvas   then  context.maskCanvas  :release()  end
+	if context.workCanvas1  then  context.workCanvas1:release()  end
+	if context.workCanvas2  then  context.workCanvas2:release()  end
 
 	for _, texture in pairs(context.images     ) do  texture:release()  end
 	for _, canvas  in pairs(context.buffers    ) do  canvas :release()  end
@@ -2658,11 +2546,6 @@ function _G.loadArtFile(path, isLocal)
 	end
 
 	assert(#context.scopeStack == 1)
-
-	if context.art.canvas and not maybeApplyMask(context, nil) then -- @Incomplete: Check that maybeApplyMask() works here after all our gfxStack changes. 2022-08-31
-		cleanup(context, loveGfxStackDepth, false)
-		return nil
-	end
 
 	-- Success!
 	cleanup(context, loveGfxStackDepth, true)

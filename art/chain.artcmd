@@ -10,7 +10,7 @@ func Link Dir DrawLight
 	rotate (rad(5)*Dir)
 	move 0 30
 
-	makemask
+	setbuf+mask
 		fill rgb1
 		grey0
 		rect (LinkFlip and 1 or -1) 0 1000 1000 ax(LinkFlip and 0 or 1) ay.5

@@ -16,5 +16,5 @@ uniform bool textBlendFix;
 vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 	vec4 color = Texel(tex, texUv);
 	if (textBlendFix)  color.rgb = vec3(color.a);
-	return applyMainEffect(color, texUv, loveColor);
+	return applyMainEffect(color, texUv, screenPos, loveColor);
 }

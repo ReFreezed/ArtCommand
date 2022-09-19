@@ -19,7 +19,7 @@ add Rings {Y= 060, Scale=.98, Kx=-.05, Light=0.70}
 add Rings {Y= 140, Scale=.92, Kx=-.10, Light=0.55}
 add Rings {Y= 191, Scale=.87, Kx=-.15, Light=0.40}
 
-makemask
+setbuf+mask
 	# General shape.
 	push
 		move 20

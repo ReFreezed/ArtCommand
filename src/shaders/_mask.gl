@@ -1,0 +1,30 @@
+/***************************************************************
+*
+*  Mask stuff
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+****************************************************************
+
+	applyMaskStuff
+
+***************************************************************/
+
+uniform bool makeMaskMode;
+
+uniform bool  useMask;
+uniform Image mask;
+uniform vec2  maskSize;
+
+vec4 applyMaskStuff(vec4 sample, vec2 screenPos) {
+	if (makeMaskMode) {
+		return vec4((sample.r+sample.g+sample.b)/3, 0, 0, sample.a); // One way of doing it.
+	} else if (useMask) {
+		return sample * Texel(mask, (floor(screenPos)+.5)/maskSize).r;
+	} else {
+		return sample;
+	}
+}

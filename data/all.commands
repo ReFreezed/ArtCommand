@@ -63,12 +63,10 @@ addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 overlaycolor  r=0 g=0 b=0 a=1          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 blend  mode="alpha"
+mask   mask=true  buf="mask"
 
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
-
-makemask  clear=true
-mask      mask=true
 
 origin 
 move    x=0 y=0  xy=x&y
@@ -76,7 +74,7 @@ rotate  rot=0
 scale   x=1 y=1  xy=x&y
 shear   x=1 y=1  xy=x&y
 
-setbuf  name=""  path=""  w=0(context.canvasWidth) h=0(context.canvasHeight)  aa=0(context.canvasMsaa)  clear=true  size=w&h
+setbuf  name=""(autoIfMask)  path=""  w=0(context.canvasWidth) h=0(context.canvasHeight)  aa=0(context.canvasMsaa)  mask=false clear=true  size=w&h
 
 #
 # Drawing.

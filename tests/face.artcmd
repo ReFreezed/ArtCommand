@@ -10,7 +10,7 @@ circle 20 48 r6
 circle 80 48 r6
 
 # Mouth.
-makemask; color
+setbuf+mask; color
 	rect 0 60 size999
 mask
 	color rgb0

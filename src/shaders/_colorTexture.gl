@@ -1,0 +1,27 @@
+/***************************************************************
+*
+*  Color texture stuff
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+****************************************************************
+
+	colorTextureTexel
+
+***************************************************************/
+
+uniform bool  useColorTexture;
+uniform bool  colorTextureRadial;
+uniform Image colorTexture;
+uniform vec4  colorTextureLayout; // {scaleX,scaleY, directionX,directionY}  @Cleanup: Split scale and direction. (Is scale needed with colorTextureScale? Probably not.)
+uniform float colorTextureRadialOffset;
+uniform vec2  colorTextureOffset;
+uniform vec4  colorTextureScale; // {preScaleX,preScaleY, postScaleX,postScaleY}
+uniform int   gradientSize;
+
+vec4 colorTextureTexel(vec2 texPos) {
+	return Texel(colorTexture, texPos);
+}

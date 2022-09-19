@@ -13,15 +13,8 @@
 
 ***************************************************************/
 
-uniform bool makeMaskMode;
-
-uniform bool  useColorTexture;
-uniform bool  colorTextureRadial;
-uniform Image colorTexture;
-uniform vec4  colorTextureLayout; // {scaleX,scaleY, directionX,directionY}  @Cleanup: Split scale and direction. (Is scale needed with colorTextureScale? Probably not.)
-uniform float colorTextureRadialOffset;
-uniform vec2  colorTextureOffset;
-uniform vec4  colorTextureScale; // {preScaleX,preScaleY, postScaleX,postScaleY}
+#include "_colorTexture.gl"
+#include "_mask.gl"
 
 #define LAYOUT_SCALE     colorTextureLayout.xy
 #define LAYOUT_DIRECTION colorTextureLayout.zw
@@ -36,7 +29,7 @@ vec2 _main_rotateCcw(vec2 v, vec2 angle) {
 	return vec2(v.x*angle.x+v.y*angle.y, -v.x*angle.y+v.y*angle.x);
 }
 
-vec4 applyMainEffect(vec4 sample, vec2 uv, vec4 loveColor) {
+vec4 applyMainEffect(vec4 sample, vec2 uv, vec2 screenPos, vec4 loveColor) {
 	if (useColorTexture) {
 		vec2 colorTexUv  = uv;
 		colorTexUv      -= colorTextureOffset;
@@ -59,7 +52,7 @@ vec4 applyMainEffect(vec4 sample, vec2 uv, vec4 loveColor) {
 		colorTexUv /= POST_SCALE;
 
 		colorTexUv  = (colorTexUv+1) * .5; // Uncenter.
-		sample     *= Texel(colorTexture, colorTexUv);
+		sample     *= colorTextureTexel(colorTexUv);
 
 		/* DEBUG * /
 		if (colorTexUv.x < 0 || colorTexUv.x > 1 || colorTexUv.y < 0 || colorTexUv.y > 1) {
@@ -75,9 +68,5 @@ vec4 applyMainEffect(vec4 sample, vec2 uv, vec4 loveColor) {
 		sample *= loveColor;
 	}
 
-	if (makeMaskMode) {
-		return vec4((sample.r+sample.g+sample.b)/3, 0, 0, sample.a); // One way of doing it.
-	} else {
-		return sample;
-	}
+	return applyMaskStuff(sample, screenPos);
 }
