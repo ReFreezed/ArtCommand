@@ -535,10 +535,10 @@ local function tokenize(context, path)
 
 			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
-		-- Brackets: (lua_expression) OR {lua_expression_1,...}
+		-- Brackets: (lua_expression) OR {lua_table_constructor}
 		elseif s:find("^[({]", pos) then
 			local i1    = pos
-			local pat   = s:find("^%(", pos) and "[-\"'%[\n()]" or "[-\"'%[\n{}]"
+			local pat   = s:find("^%(", pos) and "[-\"'%[\n%w_()]" or "[-\"'%[\n%w_{}]"
 			local depth = 1
 
 			while true do
@@ -573,7 +573,7 @@ local function tokenize(context, path)
 					if s:find("^=*%[", pos+1) then -- String.
 						local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+1)
 						if not _pos then  return (parseError(context, luaPos, "Missing end of Lua string."))  end
-						pos = _pos - 1
+						pos = _pos
 					else
 						-- void
 					end
@@ -588,6 +588,15 @@ local function tokenize(context, path)
 					else -- Line comment.
 						return (parseError(context, startPos, "Missing end bracket."))
 					end
+
+				elseif s:find("^[%a_]", pos) then -- Identifier/keyword.
+					local _, _pos = s:find("^[%w_]*", pos+1)
+					if s:sub(pos, _pos) == "function" then  return (parseError(context, luaPos, "Disallowed Lua code."))  end
+					pos = _pos
+
+				elseif s:find("^%d", pos) then -- Number.
+					local _, _pos = s:find("^[%w_]+", pos)
+					pos = _pos
 
 				else
 					return (parseError(context, pos, "Internal error: Unhandled case in brackets."))
