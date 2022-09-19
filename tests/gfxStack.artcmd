@@ -1,0 +1,12 @@
+canvas 300 100
+
+setbuf"a" size50
+push
+	setbuf"b" size50
+	circle  # Should draw to "b".
+pop
+rect  # Should draw to "a".
+setbuf
+
+buf"a" 100
+buf"b" 200

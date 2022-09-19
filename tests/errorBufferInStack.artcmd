@@ -1,0 +1,6 @@
+setbuf"theone" size1
+push
+	# Error because the existing buffer is in the stack and cannot
+	# be replaced. (We may change how this works at some point.)
+	setbuf"theone" size2
+pop

@@ -803,10 +803,9 @@ local function popGfxState(context)
 	return true
 end
 
-local function isCanvasReferenced(context, canvas)
-	if canvas == context.gfxState.canvas--[[ or canvas == context.gfxState.fallbackCanvas]] then  return true  end
+local function isCanvasReferencedInStack(context, canvas)
 	for _, gfxState in ipairs(context.gfxStack) do
-		if canvas == gfxState.canvas--[[ or canvas == gfxState.fallbackCanvas]] then  return true  end
+		if canvas == gfxState.canvas then  return true  end
 	end
 	return false
 end
@@ -871,7 +870,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 			return imageOrCanvas
 		end
 
-		pushGfxState(context) -- @Cleanup
+		pushGfxState(context) -- @Cleanup (Using LG.push/pop() is probably fine here, I think.)
 
 		if startRecursion then  artFileRecursionAllowed[path] = recursionsAllowed  end
 		local art = loadArtFile(path, context.isLocal)
@@ -1057,13 +1056,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	local args    = {}
 	local visited = {}
 	setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
-
-	-- Initialize arguments (dynamic values only).  @Cleanup: Do this using 'visited' instead.
-	if command == "setbuf" then
-		args.w  = context.canvasWidth
-		args.h  = context.canvasHeight
-		args.aa = context.canvasMsaa
-	end
 
 	-- Special cases.
 	if (command == "set" or command == "setx" or command == "add" or command == "rem" or command == "for" or command == "fori") and isToken(tokens[tokPos], "username") and not tokens[tokPos].negated then
@@ -1650,12 +1642,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "setbuf" then
 		ensureCanvasAndInitted(context)
 
-		local bufName      = (args.mask and not visited.name and "mask") or args.name
-		local iw           = args.w
-		local ih           = args.h
-		local canvasFormat = args.mask and "r16" or "rgba16"
-
-		local imageOrCanvas
+		local bufName      = (args.mask and not visited.name) and "mask"  or args.name
+		local iw           = visited.w                        and args.w  or context.canvasWidth
+		local ih           = visited.h                        and args.h  or context.canvasHeight
+		local msaa         = visited.aa                       and args.aa or context.canvasMsaa
+		local canvasFormat = args.mask                        and "r16"   or "rgba16"
+		local texture
 
 		-- Main buffer (the "canvas").
 		if bufName == "" then
@@ -1667,10 +1659,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		-- Custom buffer.
 		else
 			if args.path ~= "" then
-				imageOrCanvas = getOrLoadImage(context, startTok, args.path, args.recurse)
-				if not imageOrCanvas then  return nil  end
+				texture = getOrLoadImage(context, startTok, args.path, args.recurse)
+				if not texture then  return nil  end
 
-				iw,ih = imageOrCanvas:getDimensions()
+				iw,ih = texture:getDimensions()
 			end
 
 			-- Reuse existing.
@@ -1678,7 +1670,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				context.buffers[bufName]
 				and context.buffers[bufName]:getWidth () == iw
 				and context.buffers[bufName]:getHeight() == ih
-				and context.buffers[bufName]:getMSAA  () == args.aa
+				and context.buffers[bufName]:getMSAA  () == msaa
 				and context.buffers[bufName]:getFormat() == canvasFormat
 			then
 				gfxStateSetCanvas(context, context.buffers[bufName])
@@ -1690,24 +1682,29 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- Create new.
 			else
-				if args.w > context.canvasWidth or args.h > context.canvasHeight then
-					return (tokenError(context, (args.w > context.canvasWidth and visited.w or visited.h or startTok),
-						"[%s] Buffer size cannot currently be larger than the canvas. (%dx%d)",
-						command, context.canvasWidth, context.canvasHeight
+				if iw > context.canvasWidth or ih > context.canvasHeight then
+					return (tokenError(context, (iw > context.canvasWidth and visited.w or visited.h or startTok),
+						"[%s] Buffer size cannot currently be larger than the canvas. (Canvas is %dx%d, got %dx%d)",
+						command, context.canvasWidth,context.canvasHeight, iw,ih
 					))
 				end
 
 				if context.buffers[bufName] then
-					LG.setCanvas(nil) -- Don't accidentally release the current canvas!
+					-- Don't accidentally release the active canvas, or one in the stack!
+					LG.setCanvas(nil)
+					if isCanvasReferencedInStack(context, context.buffers[bufName]) then
+						return (tokenError(context, (visited.buf or startTok), "[%s] Cannot replace existing buffer '%s' at this point.", command, bufName))
+					end
+
 					context.buffers[bufName]:release()
 				end
 
-				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=args.aa})
+				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=msaa})
 				gfxStateSetCanvas(context, context.buffers[bufName])
 
 				if args.mask then
 					LG.setCanvas(context.gfxState.canvas)
-					LG.clear(0, 0, 0, 1)
+					LG.clear(0, 0, 0, 1) -- Non-masks are already cleared (to [0,0,0,0]).
 				end
 			end
 
@@ -1718,10 +1715,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		if args.path ~= "" then
-			imageOrCanvas:setFilter("nearest")
+			texture:setFilter("nearest")
 			pushTransformAndReset("replace")
 			LG.setCanvas(context.gfxState.canvas)
-			LG.draw(imageOrCanvas)
+			LG.draw(texture)
 			LG.pop()
 		end
 
@@ -1977,16 +1974,16 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		local imageOrCanvas = getOrLoadImage(context, startTok, args.path, args.recurse)
-		if not imageOrCanvas then  return nil  end
+		local texture = getOrLoadImage(context, startTok, args.path, args.recurse)
+		if not texture then  return nil  end
 
-		local iw,ih = imageOrCanvas:getDimensions()
+		local iw,ih = texture:getDimensions()
 
-		imageOrCanvas:setFilter(args.filter and "linear" or "nearest")
+		texture:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context, nil)
 		applyColor(context, nil, "rectangle", iw,ih)
 
-		LG.draw(imageOrCanvas, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
 	----------------------------------------------------------------
 	elseif command == "buf" or command == "pat" then
