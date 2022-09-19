@@ -9,6 +9,7 @@
 --=
 --==============================================================
 
+	errorf
 	F
 	getLast, itemWith1, indexOf
 	getLineNumber
@@ -65,6 +66,12 @@ function _G.printFileErrorAt(path, source, pos, s, ...)
 end
 function _G.printFileWarningAt(path, source, pos, s, ...)
 	_printFileMessageAt(printFileWarning, path, source, pos, s, ...)
+end
+
+
+
+function _G.errorf(level, s, ...)
+	error(F(s, ...), 1+level)
 end
 
 

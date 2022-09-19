@@ -55,6 +55,15 @@ for line in LF.lines"data/all.commands" do
 	end
 end
 
+local SCOPE_ENTER_COMMANDS = {
+	["do"]   = true,
+	["for"]  = true,
+	["fori"] = true,
+	["func"] = true,
+	["if"]   = true,
+	-- There's only one scope exit command: "end".
+}
+
 
 
 local function Art()return{
@@ -91,6 +100,8 @@ local function Context()return{
 	fontsBySize = {--[[ [path1]={[size1]=font,...}, ... ]]}, -- Vector fonts.
 
 	points = {{x=0,y=0, a=0/0,b=0/0, s=""}},
+
+	reportedWarnings = {--[[ [idObject1]=true, ... ]]},
 
 	-- Settings.
 	canvasWidth  = DEFAULT_ART_SIZE,
@@ -219,22 +230,23 @@ local function parseWarning(context, pos, s, ...)
 	printFileWarningAt(context.path, context.source, pos, s, ...)
 end
 
--- tokenError  ( context, token=atEnd, format, ... )
--- tokenWarning( context, token=atEnd, format, ... )
--- tokenMessage( context, token=atEnd, format, ... )
+-- position = getTokenPosition( context, token|nil )
+local function getTokenPosition(context, tok)
+	return (tok and tok.position) or context.source:find"%S%s*$" or #context.source
+end
+
+-- tokenError       ( context, token=atEnd, format, ... )
+-- tokenErrorNoStack( context, token=atEnd, format, ... )
+-- tokenWarning     ( context, token=atEnd, format, ... )
+-- tokenMessage     ( context, token=atEnd, format, ... )
 local function tokenError(context, tok, s, ...)
-	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
+	local pos = getTokenPosition(context, tok)
 	printFileErrorAt(context.path, context.source, pos, s, ...)
 	printCallStack(context, pos)
 end
-local function tokenWarning(context, tok, s, ...)
-	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
-	printFileWarningAt(context.path, context.source, pos, s, ...)
-end
-local function tokenMessage(context, tok, s, ...)
-	local pos = (tok and tok.position) or context.source:find"%S%s*$" or #context.source
-	printFileMessageAt(context.path, context.source, pos, s, ...)
-end
+local function tokenErrorNoStack(context, tok, s, ...)  printFileErrorAt  (context.path, context.source, getTokenPosition(context, tok), s, ...)  end
+local function tokenWarning     (context, tok, s, ...)  printFileWarningAt(context.path, context.source, getTokenPosition(context, tok), s, ...)  end
+local function tokenMessage     (context, tok, s, ...)  printFileMessageAt(context.path, context.source, getTokenPosition(context, tok), s, ...)  end
 
 
 
@@ -263,7 +275,7 @@ local function applyCanvas(context, shader)
 	local gfxState     = context.gfxState
 	local makeMaskMode = (gfxState.canvas:getFormat() == "r16")
 
-	shaderSend(shader, "makeMaskMode", makeMaskMode) -- Maybe not the best place for this, but eh...
+	shaderSend(shader, "makeMaskMode", makeMaskMode)
 
 	if gfxState.useMask == "" or makeMaskMode then
 		shaderSend(shader, "useMask", false)
@@ -752,7 +764,7 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 		elseif not expectCommand then
 			-- void
 
-		elseif isToken(tok, "name", "do") or isToken(tok, "name", "if") or isToken(tok, "name", "for") or isToken(tok, "name", "fori") or isToken(tok, "name", "func") then -- @Volatile
+		elseif isToken(tok, "name") and SCOPE_ENTER_COMMANDS[tok.value] then
 			depth = depth + 1
 			table.insert(stack, tok)
 
@@ -767,8 +779,9 @@ local function collectBodyTokens(context, tokens, tokForError, tokPos, outTokens
 			elseif isToken(stack[#stack], "name", "if") or isToken(stack[#stack], "name", "elseif") then
 				stack[#stack] = tok -- Exit if-block and enter else/elseif-block.
 			else
-				tokenError(context, tok, "Unexpected '%s'.", tok.value)
+				tokenErrorNoStack(context, tok, "Unexpected '%s'.", tok.value)
 				if stack[1] then  tokenMessage(context, stack[#stack], "...block started here.")  end
+				printCallStack(context, getTokenPosition(context, tok))
 				return nil
 			end
 
@@ -1015,12 +1028,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if context.readonly[funcName] then  return (tokenError(context, tokens[tokPos], "Name '%s' is reserved.", funcName))  end
 
 		local entry = getLast(context.scopeStack)
-		if entry.functions[funcName] then
-			-- @Incomplete: Suppress duplicate warnings.
+		if entry.functions[funcName] and not context.reportedWarnings[tokens[tokPos]] then
 			tokenWarning(context, tokens[tokPos],
 				"[%s] Duplicate function '%s' in the same scope. Replacing. (%s:%d)",
 				command, funcName, context.path, getLineNumber(context.source, entry.functions[funcName].token.position)
 			)
+			context.reportedWarnings[tokens[tokPos]] = true
 		end
 
 		tokPos = tokPos + 1 -- username
@@ -1057,9 +1070,12 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	local visited = {}
 	setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
 
-	-- Special cases.
-	if (command == "set" or command == "setx" or command == "add" or command == "rem" or command == "for" or command == "fori") and isToken(tokens[tokPos], "username") and not tokens[tokPos].negated then
-		-- Treat `set X` as `set "X"` (and same with 'setx' and 'for').
+	-- Special cases: Treat `set X` as `set "X"` (including some more commands).
+	if
+		(command == "set" or command == "setx" or command == "add" or command == "rem" or command == "for" or command == "fori")
+		and isToken(tokens[tokPos], "username")
+		and not tokens[tokPos].negated
+	then
 		args   .var = tokens[tokPos].value
 		visited.var = tokens[tokPos]
 		tokPos      = tokPos + 1
@@ -1175,7 +1191,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			table.clear(visited)
 			setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
 
-			-- @Incomplete @Speed: Don't evaluate arguments if executedSomeBlock=true. (Low priority because evaluating expressions currently has no side effects.)
+			-- @Incomplete @Speed: Don't evaluate arguments if executedSomeBlock=true. (Low priority because evaluating expressions currently has no side effects. 2022-09-19)
 			tokPos = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited)
 			if not tokPos then  return nil  end
 
@@ -2379,7 +2395,7 @@ end
 		if stop == STOP_ONE then  return 1/0, STOP_CONTINUE  end
 		if stop == STOP_ALL then  return 1/0, STOP_ALL       end
 
-		if not (isToken(commandTok, "name", "do") or isToken(commandTok, "name", "if") or isToken(commandTok, "name", "for") or isToken(commandTok, "name", "fori") or isToken(commandTok, "name", "func")) then -- @Volatile
+		if not (isToken(tok, "name") and SCOPE_ENTER_COMMANDS[tok.value]) then
 			while isToken(tokens[tokPos], ",") do
 				tokPos       = tokPos + 1 -- ','
 				tokPos, stop = runCommand(context, tokens, tokPos, commandTok)
@@ -2413,6 +2429,14 @@ local function cleanup(context, loveGfxStackDepth, success)
 	for _, fonts in pairs(context.fontsBySize) do
 		for _, font in pairs(fonts) do  font:release()  end
 	end
+end
+
+local function getReversedArray(arr)
+	local reversed = {}
+	for i = #arr, 1, -1 do
+		table.insert(reversed, arr[i])
+	end
+	return reversed
 end
 
 -- art|nil = loadArtFile( path, isLocal )
@@ -2516,13 +2540,20 @@ function _G.loadArtFile(path, isLocal)
 	vars.lower   = {token=dummyTok, value=string.lower}
 	vars.match   = {token=dummyTok, value=string.match}
 	vars.rep     = {token=dummyTok, value=string.rep}
-	vars.rev     = {token=dummyTok, value=string.reverse} -- @Incomplete: Also reverse arrays.
+	vars.rev     = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
 	vars.sub     = {token=dummyTok, value=string.sub}
 	vars.upper   = {token=dummyTok, value=string.upper}
 	vars.unpack  = {token=dummyTok, value=unpack}
 	vars.concat  = {token=dummyTok, value=table.concat}
 	vars.sort    = {token=dummyTok, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
 	vars.sortby  = {token=dummyTok, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
+
+	vars.imagew = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end} -- @Incomplete: Load image if it's not loaded.
+	vars.imageh = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
+
+	vars.bufw  = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getWidth () or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufh  = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getHeight() or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufaa = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getMSAA()   or errorf(2, "No buffer '%s'.", name)  end}
 
 	local entry = ScopeStackEntry()
 	table.insert(context.scopeStack, entry)
