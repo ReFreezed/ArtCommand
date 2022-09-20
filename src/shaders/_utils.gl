@@ -7,10 +7,32 @@
 *  Art Command
 *  by Marcus 'ReFreezed' Thunström
 *
+****************************************************************
+
+	remapChannels
+	texelClamped
+
 ***************************************************************/
 
 uniform vec2 texelClamp;
 
+uniform ivec4 channelMapping; // {outR=inR, outG=inG, outB=inB, outA=inA} // 0..3=rgba, 4=0, 5=1
+
 vec4 texelClamped(Image tex, vec2 texUv) {
 	return Texel(tex, min(texUv, texelClamp));
+}
+
+vec4 remapChannels(vec4 sample) {
+	// (Also see fxRemap.gl)
+	sample.rgb /= sample.a;
+
+	vec4 result = vec4(
+		(channelMapping.r < 4) ? sample[channelMapping.r] : (channelMapping.r == 4) ? 0 : 1,
+		(channelMapping.g < 4) ? sample[channelMapping.g] : (channelMapping.g == 4) ? 0 : 1,
+		(channelMapping.b < 4) ? sample[channelMapping.b] : (channelMapping.b == 4) ? 0 : 1,
+		(channelMapping.a < 4) ? sample[channelMapping.a] : (channelMapping.a == 4) ? 0 : 1
+	);
+
+	result.rgb *= result.a;
+	return result;
 }

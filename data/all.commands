@@ -62,8 +62,10 @@ scalecolor    r=1 g=1 b=1 a=1  base=0  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 overlaycolor  r=0 g=0 b=0 a=1          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
-blend  mode="alpha"
-mask   mask=true  buf="mask"
+blend   mode="alpha"
+mask    mask=true  buf="mask"
+map     r="r" g="g" b="b" a="a"      rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
+channel r=true g=true b=true a=true  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
@@ -107,10 +109,12 @@ saturation  amount=1  r=1 g=1 b=1                 rgb=r&g&b rg=r&g rb=r&b gb=g&b
 gamma       amount=1  r=1 g=1 b=1                 rgb=r&g&b rg=r&g rb=r&b gb=g&b
 replace               r=1 g=1 b=1 reach=1 ramp=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 levels      infrom=0 into=1  outfrom=0 outto=1  mid=.5
-thres       thres=.5
+thres       thres=.5  alpha=false
 
 overlay  r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 tint     r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
+
+remap  r="r" g="g" b="b" a="a"  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 #
 # Generators.

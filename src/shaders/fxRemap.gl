@@ -1,0 +1,28 @@
+/***************************************************************
+*
+*  Effect: Remap channels
+*  (Also see remapChannels() in _utils.gl)
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+uniform ivec4 mappings; // {outR=channel, outG=channel, outB=channel, outA=channel} // 0..3=rgba, 4=0, 5=1
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+	vec4 pixel  = Texel(tex, texUv);
+	pixel.rgb  /= pixel.a;
+
+	vec4 result = vec4(
+		(mappings.r < 4) ? pixel[mappings.r] : (mappings.r == 4) ? 0 : 1,
+		(mappings.g < 4) ? pixel[mappings.g] : (mappings.g == 4) ? 0 : 1,
+		(mappings.b < 4) ? pixel[mappings.b] : (mappings.b == 4) ? 0 : 1,
+		(mappings.a < 4) ? pixel[mappings.a] : (mappings.a == 4) ? 0 : 1
+	);
+
+	result.rgb *= result.a;
+	return result;
+}

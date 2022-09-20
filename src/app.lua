@@ -660,8 +660,8 @@ function love.draw()
 		end
 		LG.rectangle("fill", x-1,y-1 , cw+2,1)
 		LG.rectangle("fill", x-1,y+ch, cw+2,1)
-		LG.rectangle("fill", x-1,y-1 , 1,ch+2)
-		LG.rectangle("fill", x+cw,y-1, 1,ch+2)
+		LG.rectangle("fill", x-1,y   , 1,ch  )
+		LG.rectangle("fill", x+cw,y  , 1,ch  )
 
 		theArt.canvas:setFilter((autoZoom == 2 and "linear") or (autoZoom == 3 and "nearest") or (theArt.zoomFilter and "linear" or "nearest"))
 		LG.setColor(1, 1, 1)

@@ -15,6 +15,7 @@
 
 #include "_colorTexture.gl"
 #include "_mask.gl"
+#include "_utils.gl"
 
 uniform bool clouds;
 uniform vec3 offset;
@@ -59,5 +60,5 @@ vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 		sample = vec4(v*gradientColor.rgb, gradientColor.a);
 	}
 
-	return applyMaskStuff(sample, screenPos);
+	return remapChannels(applyMaskStuff(sample, screenPos));
 }

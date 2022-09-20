@@ -26,6 +26,14 @@ local WRAP_TO_LOVE_WRAP = {
 	["repeat"] = "repeat",
 	["mirror"] = "mirroredrepeat",
 }
+local CHANNEL_MAPPING_INDICES = {
+	["r"] = 0,
+	["g"] = 1,
+	["b"] = 2,
+	["a"] = 3,
+	["0"] = 4,
+	["1"] = 5,
+}
 
 
 
@@ -132,9 +140,10 @@ local function ScopeStackEntry()return{
 }end
 
 local function GfxState()return{
-	canvas    = nil, -- @Cleanup: Store bufferName instead.
-	useMask   = "",
-	blendMode = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
+	canvas         = nil, -- @Cleanup: Store bufferName instead.
+	useMask        = "",
+	blendMode      = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
+	channelMapping = {0,1,2,3},
 
 	-- Color.
 	colorMode           = "flatcolor", -- "flatcolor" | "gradient" | "texture"
@@ -157,9 +166,10 @@ local function GfxState()return{
 }end
 
 local function copyGfxState(gfxState)return{
-	canvas    = gfxState.canvas,
-	useMask   = gfxState.useMask,
-	blendMode = gfxState.blendMode,
+	canvas         = gfxState.canvas,
+	useMask        = gfxState.useMask,
+	blendMode      = gfxState.blendMode,
+	channelMapping = {unpack(gfxState.channelMapping)},
 
 	colorMode           = gfxState.colorMode,
 	flatColor           = {unpack(gfxState.flatColor)},
@@ -180,9 +190,10 @@ local function copyGfxState(gfxState)return{
 }end
 
 local function moveGfxState(fromGfxState, toGfxState)
-	toGfxState.canvas    = fromGfxState.canvas
-	toGfxState.useMask   = fromGfxState.useMask
-	toGfxState.blendMode = fromGfxState.blendMode
+	toGfxState.canvas         = fromGfxState.canvas
+	toGfxState.useMask        = fromGfxState.useMask
+	toGfxState.blendMode      = fromGfxState.blendMode
+	toGfxState.channelMapping = fromGfxState.channelMapping
 
 	toGfxState.colorMode           = fromGfxState.colorMode
 	toGfxState.flatColor           = fromGfxState.flatColor
@@ -313,6 +324,7 @@ local function applyColor(context, shader, shape, w,h)
 	local gfxState = context.gfxState
 
 	LG.setBlendMode(gfxState.blendMode, "premultiplied")
+	shaderSendVec4(shader, "channelMapping", unpack(gfxState.channelMapping))
 
 	if gfxState.colorMode == "flatcolor" then
 		local r,g,b,a = unpack(gfxState.flatColor)
@@ -1674,6 +1686,22 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 	----------------------------------------------------------------
+	elseif command == "map" then
+		if not CHANNEL_MAPPING_INDICES[args.r] then  return (tokenError(context, (visited.r or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.r))  end
+		if not CHANNEL_MAPPING_INDICES[args.g] then  return (tokenError(context, (visited.g or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.g))  end
+		if not CHANNEL_MAPPING_INDICES[args.b] then  return (tokenError(context, (visited.b or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.b))  end
+		if not CHANNEL_MAPPING_INDICES[args.a] then  return (tokenError(context, (visited.a or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.a))  end
+
+		context.gfxState.channelMapping[1] = CHANNEL_MAPPING_INDICES[args.r]
+		context.gfxState.channelMapping[2] = CHANNEL_MAPPING_INDICES[args.g]
+		context.gfxState.channelMapping[3] = CHANNEL_MAPPING_INDICES[args.b]
+		context.gfxState.channelMapping[4] = CHANNEL_MAPPING_INDICES[args.a]
+
+	----------------------------------------------------------------
+	elseif command == "channel" then
+		-- @Incomplete args.r args.g args.b args.a
+
+	----------------------------------------------------------------
 	elseif command == "origin" then
 		LG.origin()
 	elseif command == "move" then
@@ -2318,6 +2346,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "thres" then
 		applyEffect(context, A.shaders.fxThreshold, function(context, canvasRead, canvasWrite)
 			shaderSend(A.shaders.fxThreshold, "threshold", args.thres)
+			shaderSend(A.shaders.fxThreshold, "alphaMode", args.alpha)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2334,6 +2363,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "tint" then -- Change hue and saturation, leave brighness.
 		applyEffect(context, A.shaders.fxTint, function(context, canvasRead, canvasWrite)
 			shaderSendVec4(A.shaders.fxTint, "params", args.r,args.g,args.b,args.a)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
+
+	elseif command == "remap" then
+		if not CHANNEL_MAPPING_INDICES[args.r] then  return (tokenError(context, (visited.r or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.r))  end
+		if not CHANNEL_MAPPING_INDICES[args.g] then  return (tokenError(context, (visited.g or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.g))  end
+		if not CHANNEL_MAPPING_INDICES[args.b] then  return (tokenError(context, (visited.b or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.b))  end
+		if not CHANNEL_MAPPING_INDICES[args.a] then  return (tokenError(context, (visited.a or startTok), "[%s] Invalid channel '%s'. Must be 'r', 'g', 'b', 'a', '0' or '1'.", command, args.a))  end
+
+		applyEffect(context, A.shaders.fxRemap, function(context, canvasRead, canvasWrite)
+			shaderSendVec4(A.shaders.fxRemap, "mappings", CHANNEL_MAPPING_INDICES[args.r],CHANNEL_MAPPING_INDICES[args.g],CHANNEL_MAPPING_INDICES[args.b],CHANNEL_MAPPING_INDICES[args.a])
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2525,60 +2567,61 @@ function _G.loadArtFile(path, isLocal)
 	vars.CanvasH = {token=dummyTok, value=context.canvasHeight}
 
 	-- These are just for the Lua/bracket expressions.  @Incomplete @Robustness: Argument validation.
-	vars.num     = {token=dummyTok, value=tonumber}
-	vars.sel     = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
-	vars.selx    = {token=dummyTok, value=select}
-	vars.str     = {token=dummyTok, value=tostring}
-	vars.type    = {token=dummyTok, value=type}
-	vars.abs     = {token=dummyTok, value=math.abs}
-	vars.acos    = {token=dummyTok, value=math.acos}
-	vars.asin    = {token=dummyTok, value=math.asin}
-	vars.atan    = {token=dummyTok, value=function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
-	vars.ceil    = {token=dummyTok, value=math.ceil}
-	vars.cos     = {token=dummyTok, value=math.cos}
-	vars.cosh    = {token=dummyTok, value=math.cosh}
-	vars.deg     = {token=dummyTok, value=math.deg}
-	vars.exp     = {token=dummyTok, value=math.exp}
-	vars.floor   = {token=dummyTok, value=math.floor}
-	vars.fmod    = {token=dummyTok, value=math.fmod}
-	vars.frac    = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return frac  end}
-	vars.frexpe  = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return e  end}
-	vars.frexpm  = {token=dummyTok, value=function(n)  return (math.frexp(n))  end}
-	vars.int     = {token=dummyTok, value=function(n)  return (math.modf(n))  end}
-	vars.ldexp   = {token=dummyTok, value=math.ldexp}
-	vars.log     = {token=dummyTok, value=math.log} -- log( n [, base=e ] )
-	vars.lerp    = {token=dummyTok, value=math.lerp}
-	vars.max     = {token=dummyTok, value=math.max}
-	vars.min     = {token=dummyTok, value=math.min}
-	vars.noise   = {token=dummyTok, value=love.math.noise}
-	vars.rad     = {token=dummyTok, value=math.rad}
-	vars.rand    = {token=dummyTok, value=love.math.random}
-	vars.randf   = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [[ n1=0, ] n2=1 ] )
-	vars.round   = {token=dummyTok, value=math.round}
-	vars.sin     = {token=dummyTok, value=math.sin}
-	vars.sinh    = {token=dummyTok, value=math.sinh}
-	vars.sqrt    = {token=dummyTok, value=math.sqrt}
-	vars.tan     = {token=dummyTok, value=math.tan}
-	vars.tanh    = {token=dummyTok, value=math.tanh}
-	vars.clock   = {token=dummyTok, value=os.clock}
-	vars.date    = {token=dummyTok, value=os.date}
-	vars.env     = {token=dummyTok, value=os.getenv}
-	vars.time    = {token=dummyTok, value=os.time}
-	vars.byte    = {token=dummyTok, value=string.byte} -- @Robustness: Handle the string metatable.
-	vars.char    = {token=dummyTok, value=string.char}
-	vars.find    = {token=dummyTok, value=string.find}
-	vars.format  = {token=dummyTok, value=F}
-	vars.gsub    = {token=dummyTok, value=function(s, pat, repl, n)  return (string.gsub(s, pat, repl, n))  end}
-	vars.lower   = {token=dummyTok, value=string.lower}
-	vars.match   = {token=dummyTok, value=string.match}
-	vars.rep     = {token=dummyTok, value=string.rep}
-	vars.rev     = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
-	vars.sub     = {token=dummyTok, value=string.sub}
-	vars.upper   = {token=dummyTok, value=string.upper}
-	vars.unpack  = {token=dummyTok, value=unpack}
-	vars.concat  = {token=dummyTok, value=table.concat}
-	vars.sort    = {token=dummyTok, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
-	vars.sortby  = {token=dummyTok, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
+	vars.num    = {token=dummyTok, value=tonumber}
+	vars.sel    = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
+	vars.selx   = {token=dummyTok, value=select}
+	vars.str    = {token=dummyTok, value=tostring}
+	vars.type   = {token=dummyTok, value=type}
+	vars.abs    = {token=dummyTok, value=math.abs}
+	vars.acos   = {token=dummyTok, value=math.acos}
+	vars.asin   = {token=dummyTok, value=math.asin}
+	vars.atan   = {token=dummyTok, value=function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
+	vars.ceil   = {token=dummyTok, value=math.ceil}
+	vars.cos    = {token=dummyTok, value=math.cos}
+	vars.cosh   = {token=dummyTok, value=math.cosh}
+	vars.deg    = {token=dummyTok, value=math.deg}
+	vars.exp    = {token=dummyTok, value=math.exp}
+	vars.floor  = {token=dummyTok, value=math.floor}
+	vars.fmod   = {token=dummyTok, value=math.fmod}
+	vars.frac   = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return frac  end}
+	vars.frexpe = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return e  end}
+	vars.frexpm = {token=dummyTok, value=function(n)  return (math.frexp(n))  end}
+	vars.int    = {token=dummyTok, value=function(n)  return (math.modf(n))  end}
+	vars.ldexp  = {token=dummyTok, value=math.ldexp}
+	vars.log    = {token=dummyTok, value=math.log} -- log( n [, base=e ] )
+	vars.lerp   = {token=dummyTok, value=math.lerp}
+	vars.max    = {token=dummyTok, value=math.max}
+	vars.min    = {token=dummyTok, value=math.min}
+	vars.noise  = {token=dummyTok, value=love.math.noise}
+	vars.norm   = {token=dummyTok, value=math.normalize} -- normalize( v1, v2, v )
+	vars.rad    = {token=dummyTok, value=math.rad}
+	vars.rand   = {token=dummyTok, value=love.math.random}
+	vars.randf  = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [[ n1=0, ] n2=1 ] )
+	vars.round  = {token=dummyTok, value=math.round}
+	vars.sin    = {token=dummyTok, value=math.sin}
+	vars.sinh   = {token=dummyTok, value=math.sinh}
+	vars.sqrt   = {token=dummyTok, value=math.sqrt}
+	vars.tan    = {token=dummyTok, value=math.tan}
+	vars.tanh   = {token=dummyTok, value=math.tanh}
+	vars.clock  = {token=dummyTok, value=os.clock}
+	vars.date   = {token=dummyTok, value=os.date}
+	vars.env    = {token=dummyTok, value=os.getenv}
+	vars.time   = {token=dummyTok, value=os.time}
+	vars.byte   = {token=dummyTok, value=string.byte} -- @Robustness: Handle the string metatable.
+	vars.char   = {token=dummyTok, value=string.char}
+	vars.find   = {token=dummyTok, value=string.find}
+	vars.format = {token=dummyTok, value=F}
+	vars.gsub   = {token=dummyTok, value=function(s, pat, repl, n)  return (string.gsub(s, pat, repl, n))  end}
+	vars.lower  = {token=dummyTok, value=string.lower}
+	vars.match  = {token=dummyTok, value=string.match}
+	vars.rep    = {token=dummyTok, value=string.rep}
+	vars.rev    = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
+	vars.sub    = {token=dummyTok, value=string.sub}
+	vars.upper  = {token=dummyTok, value=string.upper}
+	vars.unpack = {token=dummyTok, value=unpack}
+	vars.concat = {token=dummyTok, value=table.concat}
+	vars.sort   = {token=dummyTok, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
+	vars.sortby = {token=dummyTok, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
 
 	vars.imagew = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end} -- @Incomplete: Load image if it's not loaded.
 	vars.imageh = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}

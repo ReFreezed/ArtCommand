@@ -15,6 +15,7 @@
 
 #include "_colorTexture.gl"
 #include "_mask.gl"
+#include "_utils.gl"
 
 #define LAYOUT_SCALE     colorTextureLayout.xy
 #define LAYOUT_DIRECTION colorTextureLayout.zw
@@ -68,5 +69,5 @@ vec4 applyMainEffect(vec4 sample, vec2 uv, vec2 screenPos, vec4 loveColor) {
 		sample *= loveColor;
 	}
 
-	return applyMaskStuff(sample, screenPos);
+	return remapChannels(applyMaskStuff(sample, screenPos));
 }
