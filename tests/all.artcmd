@@ -479,6 +479,9 @@ push
 	line 0 95 thick8
 pop
 
+texture"forest" sx.2 sy.6 "mirror" "cut"
+circle"line" 550 77 r25 thick25 rot-5deg
+
 # Lexical scopes.
 Bar = 1
 func F

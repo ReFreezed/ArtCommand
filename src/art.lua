@@ -20,6 +20,13 @@ local STOP_CONTINUE = nil
 local STOP_ONE      = 1
 local STOP_ALL      = 2
 
+local WRAP_TO_LOVE_WRAP = {
+	["clamp"]  = "clamp",
+	["cut"]    = "clampzero",
+	["repeat"] = "repeat",
+	["mirror"] = "mirroredrepeat",
+}
+
 
 
 local COMMANDS = {--[[
@@ -142,6 +149,8 @@ local function GfxState()return{
 	colorTextureOffsetX = 0.0,
 	colorTextureOffsetY = 0.0,
 	colorTextureBuffer  = "",
+	colorTextureWrapX   = "clamp",
+	colorTextureWrapY   = "clamp",
 
 	-- Font.
 	font = A.fonts.artDefault,
@@ -164,6 +173,8 @@ local function copyGfxState(gfxState)return{
 	colorTextureOffsetX = gfxState.colorTextureOffsetX,
 	colorTextureOffsetY = gfxState.colorTextureOffsetY,
 	colorTextureBuffer  = gfxState.colorTextureBuffer,
+	colorTextureWrapX   = gfxState.colorTextureWrapX,
+	colorTextureWrapY   = gfxState.colorTextureWrapY,
 
 	font = gfxState.font,
 }end
@@ -185,6 +196,8 @@ local function moveGfxState(fromGfxState, toGfxState)
 	toGfxState.colorTextureOffsetX = fromGfxState.colorTextureOffsetX
 	toGfxState.colorTextureOffsetY = fromGfxState.colorTextureOffsetY
 	toGfxState.colorTextureBuffer  = fromGfxState.colorTextureBuffer
+	toGfxState.colorTextureWrapX   = fromGfxState.colorTextureWrapX
+	toGfxState.colorTextureWrapY   = fromGfxState.colorTextureWrapY
 
 	toGfxState.font = fromGfxState.font
 end
@@ -360,6 +373,8 @@ local function applyColor(context, shader, shape, w,h)
 			dirY = math.sin(scaledAngle)
 		end
 
+		texture:setWrap("clamp")
+
 	elseif gfxState.colorMode == "texture" then
 		texture = context.buffers[gfxState.colorTextureBuffer] or error(gfxState.colorTextureBuffer)
 
@@ -387,6 +402,8 @@ local function applyColor(context, shader, shape, w,h)
 
 		postSx = gfxState.colorTextureScaleX
 		postSy = gfxState.colorTextureScaleY * ih/iw
+
+		texture:setWrap(WRAP_TO_LOVE_WRAP[gfxState.colorTextureWrapX], WRAP_TO_LOVE_WRAP[gfxState.colorTextureWrapY])
 
 	else
 		error(gfxState.colorMode)
@@ -420,6 +437,12 @@ end
 
 
 
+local function validateVariableName(context, tokForError, term, varName)
+	if not varName:find"^%w+$" then  tokenError(context, tokForError, "Bad %s '%s'. Must only contain alphanumeric characters.", term, varName) ; return false  end
+	if not varName:find"^%u"   then  tokenError(context, tokForError, "Bad %s '%s'. Must start with an uppercase letter."      , term, varName) ; return false  end
+	return true
+end
+
 local function tokenize(context, path)
 	local s       = context.source
 	local pos     = 1
@@ -443,6 +466,19 @@ local function tokenize(context, path)
 				table.insert(tokens, {position=startPos, type="linebreak"})
 			end
 
+		-- Declaration: Name=
+		-- Assignment:  Name^=
+		-- (Declaration is same as `set  Name`.)
+		-- (Assignment  is same as `setx Name`.)
+		elseif s:find("^%a%w*[ \t]*^?=", pos) then
+			local namePos,name, punctPos,punct, _pos = s:match("^()(%w+)%s*()(^?=)()", pos)
+			pos = _pos
+
+			table.insert(tokens, {position=punctPos, type="name"    , value=(punct == "^=" and "setx" or "set"), hasAttachment=false}) -- @UX: Fix error messages mentioning 'set' or 'setx'.
+			table.insert(tokens, {position=namePos , type="username", value=name, negated=false})
+
+			if not validateVariableName(context, getLast(tokens), "variable name", name) then  return nil  end
+
 		-- Name: name OR +name OR -name
 		elseif s:find("^[-+]?%l", pos) then
 			local mod, namePos,name, _pos = s:match("^([-+]?)()(%l+)()", pos)
@@ -461,17 +497,6 @@ local function tokenize(context, path)
 					parseWarning(context, pos, "Value right after '%s%s' does not belong to the argument.", mod, name)
 				end
 			end
-
-		-- Declaration: Name=
-		-- Assignment:  Name^=
-		-- (Declaration is same as `set  Name`.)
-		-- (Assignment  is same as `setx Name`.)
-		elseif s:find("^%u%w*[ \t]*^?=", pos) then
-			local namePos,name, punctPos,punct, _pos = s:match("^()(%u%w*)%s*()(^?=)()", pos)
-			pos = _pos
-
-			table.insert(tokens, {position=punctPos, type="name"    , value=(punct == "^=" and "setx" or "set"), hasAttachment=false}) -- @UX: Fix error messages mentioning 'set' or 'setx'.
-			table.insert(tokens, {position=namePos , type="username", value=name, negated=false})
 
 		-- Username: Name OR -Name
 		-- @Incomplete: +Name
@@ -638,12 +663,6 @@ end
 -- bool = isToken( token|nil, tokenType [, tokenValue=any ] )
 local function isToken(tok, tokType, tokValue)
 	return tok ~= nil and tok.type == tokType and (tokValue == nil or tok.value == tokValue)
-end
-
-local function validateVariableName(context, tokForError, term, varName)
-	if not varName:find"^%w+$" then  tokenError(context, tokForError, "Bad %s '%s'. Must only contain alphanumeric characters.", term, varName) ; return false  end
-	if not varName:find"^%u"   then  tokenError(context, tokForError, "Bad %s '%s'. Must start with an uppercase letter."      , term, varName) ; return false  end
-	return true
 end
 
 local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInfos, args, visited)
@@ -914,7 +933,6 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 		imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
 	end
 
-	-- imageOrCanvas:setFilter("nearest") -- Fixes fuzziness caused by MSAA, but also messes up scaling and rotation etc. Is there a good solution here? For now, just use a 'filter' argument.
 	context.images[pathIdent] = imageOrCanvas
 	return imageOrCanvas
 end
@@ -1455,7 +1473,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "texture" then
-		if not context.buffers[args.buf] then  return (tokenError(context, (visited.name or startTok), "[%s] No buffer '%s'.", command, args.buf))  end
+		if not context.buffers[args.buf]     then  return (tokenError(context, (visited.name  or startTok), "[%s] No buffer '%s'."   , command, args.buf  ))  end
+		if not WRAP_TO_LOVE_WRAP[args.modex] then  return (tokenError(context, (visited.modex or startTok), "[%s] Invalid mode '%s'.", command, args.modex))  end
+		if not WRAP_TO_LOVE_WRAP[args.modey] then  return (tokenError(context, (visited.modey or startTok), "[%s] Invalid mode '%s'.", command, args.modey))  end
 
 		ensureCanvasAndInitted(context)
 
@@ -1468,6 +1488,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		gfxState.colorTextureOffsetX = args.x
 		gfxState.colorTextureOffsetY = args.y
 		gfxState.colorTextureBuffer  = args.buf
+		gfxState.colorTextureWrapX   = args.modex
+		gfxState.colorTextureWrapY   = args.modey
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
@@ -2004,9 +2026,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local iw,ih = texture:getDimensions()
 
-		texture:setFilter(args.filter and "linear" or "nearest")
 		applyCanvas(context, nil)
 		applyColor(context, nil, "rectangle", iw,ih)
+		texture:setFilter(args.filter and "linear" or "nearest")
+		texture:setWrap("clamp")
 
 		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
@@ -2031,19 +2054,20 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local iw,ih = texture:getDimensions()
 
 		if command == "buf" then
-			texture:setFilter(args.filter and "linear" or "nearest")
 			applyCanvas(context, nil)
 			applyColor(context, nil, "rectangle", iw,ih)
+			texture:setFilter(args.filter and "linear" or "nearest")
+			texture:setWrap("clamp")
 
 			LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
 
 		else
 			local cw,ch = context.gfxState.canvas:getDimensions()
 
-			texture:setFilter(args.filter and "linear" or "nearest")
-			texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
 			applyCanvas(context, nil)
 			applyColor(context, nil, "rectangle", iw,ih)
+			texture:setFilter(args.filter and "linear" or "nearest")
+			texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
 			LG.push()
 
 			LG.translate(args.x, args.y)
@@ -2062,7 +2086,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			drawQuad(texture,  0,0, cw,0, cw,ch, 0,ch,  u1,v1, u2,v2, u3,v3, u4,v4)
 
 			LG.pop()
-			texture:setWrap("clamp")
 		end
 
 	----------------------------------------------------------------

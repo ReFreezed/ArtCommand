@@ -53,10 +53,10 @@ canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
 push 
 pop  
 
-color    r=1 g=1 b=1 a=1                                                                rgb=r&g&b rg=r&g rb=r&b gb=g&b
+color    r=1 g=1 b=1 a=1                                                                    rgb=r&g&b rg=r&g rb=r&b gb=g&b
 grey     grey=1      a=1  # Short for `color rgbN`.
-grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  radial=false fit=true  clear=true  rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
-texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0               fit=true              rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
+grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  fit=true radial=false  clear=true      rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
+texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0  fit=true  modex="clamp" modey="clamp"  rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y  mode=modex&modey
 
 scalecolor    r=1 g=1 b=1 a=1  base=0  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b rg=r&g rb=r&b gb=g&b
