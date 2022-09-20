@@ -118,6 +118,8 @@ local function Context()return{
 
 	reportedWarnings = {--[[ [idObject1]=true, ... ]]},
 
+	rng = nil, -- RandomGenerator
+
 	-- Settings.
 	canvasWidth  = DEFAULT_ART_SIZE,
 	canvasHeight = DEFAULT_ART_SIZE,
@@ -140,10 +142,12 @@ local function ScopeStackEntry()return{
 }end
 
 local function GfxState()return{
-	canvas         = nil, -- @Cleanup: Store bufferName instead.
-	useMask        = "",
-	blendMode      = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
-	channelMapping = {0,1,2,3},
+	canvas          = nil, -- @Cleanup: Store bufferName instead.
+	useMask         = "",
+	maskAlphaMode   = false,
+	blendMode       = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
+	channelMapping  = {0,1,2,3},
+	writeToChannels = {true,true,true,true},
 
 	-- Color.
 	colorMode           = "flatcolor", -- "flatcolor" | "gradient" | "texture"
@@ -151,6 +155,7 @@ local function GfxState()return{
 	gradient            = {--[[ r1,g1,b1,a1, ... ]]},
 	colorTexture        = nil,
 	colorTextureRadial  = false,
+	colorTextureSmooth  = false,
 	colorTextureFit     = true, -- Used with colorTextureRadial.
 	colorTextureScaleX  = 1.0,
 	colorTextureScaleY  = 1.0,
@@ -166,16 +171,19 @@ local function GfxState()return{
 }end
 
 local function copyGfxState(gfxState)return{
-	canvas         = gfxState.canvas,
-	useMask        = gfxState.useMask,
-	blendMode      = gfxState.blendMode,
-	channelMapping = {unpack(gfxState.channelMapping)},
+	canvas          = gfxState.canvas,
+	useMask         = gfxState.useMask,
+	maskAlphaMode   = gfxState.maskAlphaMode,
+	blendMode       = gfxState.blendMode,
+	channelMapping  = {unpack(gfxState.channelMapping)},
+	writeToChannels = {unpack(gfxState.writeToChannels)},
 
 	colorMode           = gfxState.colorMode,
 	flatColor           = {unpack(gfxState.flatColor)},
 	gradient            = {unpack(gfxState.gradient)},
 	colorTexture        = gfxState.colorTexture,
 	colorTextureRadial  = gfxState.colorTextureRadial,
+	colorTextureSmooth  = gfxState.colorTextureSmooth,
 	colorTextureFit     = gfxState.colorTextureFit,
 	colorTextureScaleX  = gfxState.colorTextureScaleX,
 	colorTextureScaleY  = gfxState.colorTextureScaleY,
@@ -190,16 +198,19 @@ local function copyGfxState(gfxState)return{
 }end
 
 local function moveGfxState(fromGfxState, toGfxState)
-	toGfxState.canvas         = fromGfxState.canvas
-	toGfxState.useMask        = fromGfxState.useMask
-	toGfxState.blendMode      = fromGfxState.blendMode
-	toGfxState.channelMapping = fromGfxState.channelMapping
+	toGfxState.canvas          = fromGfxState.canvas
+	toGfxState.useMask         = fromGfxState.useMask
+	toGfxState.maskAlphaMode   = fromGfxState.maskAlphaMode
+	toGfxState.blendMode       = fromGfxState.blendMode
+	toGfxState.channelMapping  = fromGfxState.channelMapping
+	toGfxState.writeToChannels = fromGfxState.writeToChannels
 
 	toGfxState.colorMode           = fromGfxState.colorMode
 	toGfxState.flatColor           = fromGfxState.flatColor
 	toGfxState.gradient            = fromGfxState.gradient
 	toGfxState.colorTexture        = fromGfxState.colorTexture
 	toGfxState.colorTextureRadial  = fromGfxState.colorTextureRadial
+	toGfxState.colorTextureSmooth  = fromGfxState.colorTextureSmooth
 	toGfxState.colorTextureFit     = fromGfxState.colorTextureFit
 	toGfxState.colorTextureScaleX  = fromGfxState.colorTextureScaleX
 	toGfxState.colorTextureScaleY  = fromGfxState.colorTextureScaleY
@@ -305,9 +316,10 @@ local function applyCanvas(context, shader)
 		shaderSend(shader, "useMask", false)
 	else
 		local bufCanvas = context.buffers[gfxState.useMask]
-		shaderSend    (shader, "useMask" , true)
-		shaderSend    (shader, "mask"    , bufCanvas)
-		shaderSendVec2(shader, "maskSize", bufCanvas:getDimensions())
+		shaderSend    (shader, "useMask"      , true)
+		shaderSend    (shader, "mask"         , bufCanvas)
+		shaderSendVec2(shader, "maskSize"     , bufCanvas:getDimensions())
+		shaderSend    (shader, "maskAlphaMode", gfxState.maskAlphaMode)
 	end
 
 	LG.setCanvas(gfxState.canvas)
@@ -324,6 +336,7 @@ local function applyColor(context, shader, shape, w,h)
 	local gfxState = context.gfxState
 
 	LG.setBlendMode(gfxState.blendMode, "premultiplied")
+	LG.setColorMask(unpack(gfxState.writeToChannels))
 	shaderSendVec4(shader, "channelMapping", unpack(gfxState.channelMapping))
 
 	if gfxState.colorMode == "flatcolor" then
@@ -335,6 +348,7 @@ local function applyColor(context, shader, shape, w,h)
 
 	local texture      = gfxState.colorTexture
 	local radial       = false
+	local smooth       = false
 	local sx           = 1 -- colorTextureLayout
 	local sy           = 1 -- colorTextureLayout
 	local dirX         = 1 -- colorTextureLayout
@@ -385,6 +399,7 @@ local function applyColor(context, shader, shape, w,h)
 			dirY = math.sin(scaledAngle)
 		end
 
+		smooth = gfxState.colorTextureSmooth
 		texture:setWrap("clamp")
 
 	elseif gfxState.colorMode == "texture" then
@@ -424,6 +439,7 @@ local function applyColor(context, shader, shape, w,h)
 	shaderSend    (shader, "useColorTexture"         , true)
 	shaderSend    (shader, "colorTexture"            , texture)
 	shaderSend    (shader, "colorTextureRadial"      , radial)
+	shaderSend    (shader, "colorTextureSmooth"      , smooth)
 	shaderSendVec4(shader, "colorTextureLayout"      , sx,sy, dirX,dirY)
 	shaderSend    (shader, "colorTextureRadialOffset", radialOffset)
 	shaderSendVec2(shader, "colorTextureOffset"      , gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
@@ -1463,6 +1479,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local gfxState               = context.gfxState
 		gfxState.colorMode           = "gradient"
 		gfxState.colorTextureRadial  = args.radial
+		gfxState.colorTextureSmooth  = args.smooth
 		gfxState.colorTextureFit     = args.fit
 		gfxState.colorTextureScaleX  = args.sx
 		gfxState.colorTextureScaleY  = args.sy
@@ -1671,16 +1688,16 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			local bufCanvas = context.buffers[bufName]
 			if not bufCanvas then  return (tokenError(context, (visited.buf or startTok), "[%s] No buffer '%s' to use as mask.", command, bufName))  end
 
-			context.gfxState.useMask = bufName
+			context.gfxState.useMask       = bufName
+			context.gfxState.maskAlphaMode = args.alpha
 
 			if context.gfxState.canvas == bufCanvas then
 				gfxStateSetCanvas(context, nil) -- :SetMainBuffer
 			end
 
 		else
-			if visited.buf and args.buf ~= "" then
-				tokenWarning(context, (visited.buf or startTok), "[%s] Cannot specify a mask buffer when disabling the mask. Ignoring.", command)
-			end
+			if visited.buf and args.buf ~= "" then  tokenWarning(context, (visited.buf or startTok), "[%s] Cannot specify a mask buffer when disabling the mask. Ignoring."  , command)  end
+			if visited.maskAlphaMode          then  tokenWarning(context, (visited.buf or startTok), "[%s] Cannot specify mask alpha mode when disabling the mask. Ignoring.", command)  end
 
 			context.gfxState.useMask = "" -- :DisableMask
 		end
@@ -1699,7 +1716,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "channel" then
-		-- @Incomplete args.r args.g args.b args.a
+		context.gfxState.writeToChannels[1] = args.r
+		context.gfxState.writeToChannels[2] = args.g
+		context.gfxState.writeToChannels[3] = args.b
+		context.gfxState.writeToChannels[4] = args.a
 
 	----------------------------------------------------------------
 	elseif command == "origin" then
@@ -1797,6 +1817,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			LG.pop()
 		end
 
+	----------------------------------------------------------------
+	elseif command == "randseed" then
+		if visited.seed then
+			context.rng = context.rng or love.math.newRandomGenerator()
+			context.rng:setSeed(args.seed)
+		else
+			context.rng = nil
+		end
+
 	--
 	-- Drawing.
 	--
@@ -1864,6 +1893,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		)
 
 		LG.push()
+		if args.origin then  LG.origin()  end
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
@@ -1899,6 +1929,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyColor(context, nil, "circle", args.rx+.5*lw,args.ry+.5*lw)
 
 		LG.push()
+		if args.origin then  LG.origin()  end
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
@@ -1950,6 +1981,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyColor(context, nil, "rectangle", colorW,colorH)
 
 		LG.push()
+		if args.origin then  LG.origin()  end
 		LG.translate(args.x+x1, args.y+y1)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
@@ -2001,6 +2033,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		applyColor(context, nil, "rectangle", colorW,colorH)
 
 		LG.push()
+		if args.origin then  LG.origin()  end
 		LG.translate(args.x+x1, args.y+y1)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
@@ -2033,6 +2066,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.setFont(font)
 
 		LG.push()
+		if args.origin then  LG.origin()  end
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
@@ -2059,7 +2093,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		texture:setFilter(args.filter and "linear" or "nearest")
 		texture:setWrap("clamp")
 
+		if args.origin then  LG.push() ; LG.origin()  end
 		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+		if args.origin then  LG.pop()  end
 
 	----------------------------------------------------------------
 	elseif command == "buf" or command == "pat" then
@@ -2080,41 +2116,36 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		local iw,ih = texture:getDimensions()
+		applyCanvas(context, nil)
+		applyColor(context, nil, "rectangle", iw,ih)
+		texture:setFilter(args.filter and "linear" or "nearest")
+
+		LG.push()
+		if args.origin then  LG.origin()  end
+		LG.translate(args.x, args.y)
+		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
+		LG.translate(-args.ax*iw, -args.ay*ih)
 
 		if command == "buf" then
-			applyCanvas(context, nil)
-			applyColor(context, nil, "rectangle", iw,ih)
-			texture:setFilter(args.filter and "linear" or "nearest")
 			texture:setWrap("clamp")
-
-			LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
+			LG.draw(texture)
 
 		else
-			local cw,ch = context.gfxState.canvas:getDimensions()
-
-			applyCanvas(context, nil)
-			applyColor(context, nil, "rectangle", iw,ih)
-			texture:setFilter(args.filter and "linear" or "nearest")
-			texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
-			LG.push()
-
-			LG.translate(args.x, args.y)
-			LG.rotate(args.rot)
-			LG.scale(args.sx, args.sy)
-			LG.shear(args.kx, args.ky)
-			LG.translate(-args.ax*iw, -args.ay*ih)
 			LG.scale(iw, ih)
-
+			local cw ,ch = context.gfxState.canvas:getDimensions()
 			local u1, v1 = LG.inverseTransformPoint(0 , 0 )
 			local u2, v2 = LG.inverseTransformPoint(cw, 0 )
 			local u3, v3 = LG.inverseTransformPoint(cw, ch)
 			local u4, v4 = LG.inverseTransformPoint(0 , ch)
 
 			LG.origin()
+			texture:setWrap((args.mirrorx and "mirroredrepeat" or "repeat"), (args.mirrory and "mirroredrepeat" or "repeat"))
 			drawQuad(texture,  0,0, cw,0, cw,ch, 0,ch,  u1,v1, u2,v2, u3,v3, u4,v4)
-
-			LG.pop()
 		end
+
+		LG.pop()
 
 	----------------------------------------------------------------
 	elseif command == "iso" then
@@ -2228,17 +2259,17 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		local cw,ch = context.gfxState.canvas:getDimensions()
-
 		applyCanvas(context, shaderOrErr)
 		applyColor(context, shaderOrErr, "circle", 1,1) -- @Incomplete: Handle gradients better for isolines.
 		LG.push()
 
+		if args.origin then  LG.origin()  end
 		LG.translate(args.x, args.y)
 		LG.rotate(args.rot)
 		LG.scale(args.sx, args.sy)
 		LG.shear(args.kx, args.ky)
 
+		local cw, ch = context.gfxState.canvas:getDimensions()
 		local u1, v1 = LG.inverseTransformPoint(0 , 0 )
 		local u2, v2 = LG.inverseTransformPoint(cw, 0 )
 		local u3, v3 = LG.inverseTransformPoint(cw, ch)
@@ -2413,7 +2444,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local canvas = context.gfxState.canvas
 		local cw,ch  = canvas:getDimensions()
 
-		local rng       = love.math.newRandomGenerator(args.seed)
+		local rng       = love.math.newRandomGenerator(args.seed) -- Note: We don't use context.rng - this should be separate.
 		local imageData = love.image.newImageData(cw,ch)
 
 		imageData:mapPixel(function(x,y, r,g,b,a) -- @Speed
@@ -2551,6 +2582,10 @@ function _G.loadArtFile(path, isLocal)
 		end
 	end
 
+	local function getRandom(...)
+		return context.rng and context.rng:random(...) or love.math.random(...)
+	end
+
 	local vars     = context.readonly
 	local dummyTok = {position=1, type="dummy"}
 
@@ -2595,8 +2630,8 @@ function _G.loadArtFile(path, isLocal)
 	vars.noise  = {token=dummyTok, value=love.math.noise}
 	vars.norm   = {token=dummyTok, value=math.normalize} -- normalize( v1, v2, v )
 	vars.rad    = {token=dummyTok, value=math.rad}
-	vars.rand   = {token=dummyTok, value=love.math.random}
-	vars.randf  = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*love.math.random() or (n1 or 1)*love.math.random()  end} -- randomf( [[ n1=0, ] n2=1 ] )
+	vars.rand   = {token=dummyTok, value=getRandom}
+	vars.randf  = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*getRandom() or (n1 or 1)*getRandom()  end} -- randf( [[ n1=0, ] n2=1 ] )
 	vars.round  = {token=dummyTok, value=math.round}
 	vars.sin    = {token=dummyTok, value=math.sin}
 	vars.sinh   = {token=dummyTok, value=math.sinh}

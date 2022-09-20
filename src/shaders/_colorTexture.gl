@@ -15,13 +15,31 @@
 
 uniform bool  useColorTexture;
 uniform bool  colorTextureRadial;
+uniform bool  colorTextureSmooth; // For gradients.
 uniform Image colorTexture;
 uniform vec4  colorTextureLayout; // {scaleX,scaleY, directionX,directionY}  @Cleanup: Split scale and direction. (Is scale needed with colorTextureScale? Probably not.)
 uniform float colorTextureRadialOffset;
 uniform vec2  colorTextureOffset;
 uniform vec4  colorTextureScale; // {preScaleX,preScaleY, postScaleX,postScaleY}
-uniform int   gradientSize;
+uniform int   gradientSize; // @Cleanup: Have a `vec2 colorTextureSize` instead?
 
 vec4 colorTextureTexel(vec2 texPos) {
-	return Texel(colorTexture, texPos);
+	if (colorTextureSmooth) {
+		// Smoothstep filter.
+		texPos.x *= gradientSize;
+		texPos.x -= .5;
+
+		float integ = floor(texPos.x);
+		float frac  = texPos.x - integ;
+		texPos.x    = integ + smoothstep(0, 1, frac);
+
+		texPos.x += .5;
+		texPos.x /= gradientSize;
+
+		return Texel(colorTexture, texPos);
+
+	} else {
+		// Linear filter.
+		return Texel(colorTexture, texPos);
+	}
 }

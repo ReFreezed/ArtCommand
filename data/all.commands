@@ -53,19 +53,19 @@ canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
 push 
 pop  
 
-color    r=1 g=1 b=1 a=1                                                                    rgb=r&g&b rg=r&g rb=r&b gb=g&b
+color    r=1 g=1 b=1 a=1                                                                             rgb=r&g&b rg=r&g rb=r&b gb=g&b
 grey     grey=1      a=1  # Short for `color rgbN`.
-grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  fit=true radial=false  clear=true      rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
-texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0  fit=true  modex="clamp" modey="clamp"  rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y  mode=modex&modey
+grad     r=1 g=1 b=1 a=1  rot=0  sx=1 sy=1  x=0 y=0  fit=true radial=false smooth=false  clear=true  rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y
+texture  buf=""           rot=0  sx=1 sy=1  x=0 y=0  fit=true  modex="clamp" modey="clamp"           rgb=r&g&b rg=r&g rb=r&b gb=g&b  scale=sx&sy  xy=x&y  mode=modex&modey
 
 scalecolor    r=1 g=1 b=1 a=1  base=0  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 addcolor      r=0 g=0 b=0 a=0          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 overlaycolor  r=0 g=0 b=0 a=1          rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
-blend   mode="alpha"
-mask    mask=true  buf="mask"
-map     r="r" g="g" b="b" a="a"      rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
-channel r=true g=true b=true a=true  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
+blend    mode="alpha"
+mask     mask=true  buf="mask"  alpha=false
+map      r="r" g="g" b="b" a="a"      rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
+channel  r=true g=true b=true a=true  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
@@ -78,6 +78,8 @@ shear   x=1 y=1  xy=x&y
 
 setbuf  name=""(autoIfMask)  path=""  w=0(context.canvasWidth) h=0(context.canvasHeight)  aa=0(context.canvasMsaa)  mask=false clear=true  size=w&h
 
+randseed  seed=0
+
 #
 # Drawing.
 #
@@ -86,16 +88,16 @@ relpoint  x=0 y=0  a=0/0 b=0/0  s=""  clear=true  xy=x&y
 
 fill  r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b  # A rectangle that covers the whole screen.
 
-rect    mode="fill"  x=0 y=0  w=10 h=10  ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  tlrx=0 tlry=0 trrx=0 trry=0 brrx=0 brry=0 blrx=0 blry=0  segs=0(auto)  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=tlrx&tlry&trrx&trry&brrx&brry&blrx&blry  rx=tlrx&trrx&brrx&blrx ry=tlry&trry&brry&blry  tlr=tlrx&tlry trr=trrx&trry brr=brrx&brry blr=blrx&blry  trx=tlrx&trrx try=tlry&trry brx=blrx&brrx bry=blry&brry  size=w&h
-circle  mode="fill"  x=0 y=0  rx=5 ry=5  ax=.5 ay=.5  sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  from=0 to=tau                                            segs=0(auto)  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=rx&ry
-poly    mode="fill"  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true                                                             xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-line                 x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true                                                             xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-bezier               x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  thick=1  shift=true  depth=5                                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-text    text=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  wrap=1/0  align="left"  lineh=1  filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-image   path=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  recurse=0                        filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-buf     name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  recurse=0                        filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-pat     buf=""       x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  mirrorx=false mirrory=false      filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  mirror=mirrorx&mirrory
-iso     mode="sdf"   x=0 y=0                          sx=1 sy=1  rot=0  kx=0 ky=0  thres=0 limit=9999  k=.1  debug=false                                           xy=x&y                scale=sx&sy  shear=kx&ky
+rect    mode="fill"  x=0 y=0  w=10 h=10  ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  tlrx=0 tlry=0 trrx=0 trry=0 brrx=0 brry=0 blrx=0 blry=0  segs=0(auto)  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=tlrx&tlry&trrx&trry&brrx&brry&blrx&blry  rx=tlrx&trrx&brrx&blrx ry=tlry&trry&brry&blry  tlr=tlrx&tlry trr=trrx&trry brr=brrx&brry blr=blrx&blry  trx=tlrx&trrx try=tlry&trry brx=blrx&brrx bry=blry&brry  size=w&h
+circle  mode="fill"  x=0 y=0  rx=5 ry=5  ax=.5 ay=.5  sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  from=0 to=tau                                            segs=0(auto)  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  r=rx&ry
+poly    mode="fill"  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  shift=true                                                             xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+line                 x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  shift=true                                                             xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+bezier               x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  shift=true  depth=5                                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+text    text=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  wrap=1/0  align="left"  lineh=1  filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+image   path=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  recurse=0                        filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+buf     name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  recurse=0                        filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+pat     buf=""       x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  mirrorx=false mirrory=false      filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  mirror=mirrorx&mirrory
+iso     mode="sdf"   x=0 y=0                          sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thres=0 limit=9999  k=.1  debug=false                                           xy=x&y                scale=sx&sy  shear=kx&ky
 
 #
 # Effects.

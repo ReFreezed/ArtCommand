@@ -175,6 +175,6 @@ buf"soft" -filter
 grad rgb0 0, rgb0 0, rgb0 0, rgb0 (.3*.2), rgb0 .2 +radial scale1.7
 rect 0 0 Cw Ch
 
-# Some noise.
+# Grain.
 color a.02
 random color0  # May increases file size a bunch!
