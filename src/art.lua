@@ -2281,6 +2281,54 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.pop()
 		shaderOrErr.shader:release()
 
+	----------------------------------------------------------------
+	elseif command == "quad" then
+		-- @Incomplete: Maybe use context.points instead? Point format would be {x,y,u,v}.
+		local x1 = math.min(args.cax, args.cbx, args.ccx, args.cdx) -- Similar to polygons/lines.
+		local x2 = math.max(args.cax, args.cbx, args.ccx, args.cdx)
+		local y1 = math.min(args.cay, args.cby, args.ccy, args.cdy)
+		local y2 = math.max(args.cay, args.cby, args.ccy, args.cdy)
+
+		local colorW = x2 - x1
+		local colorH = y2 - y1
+
+		if not args.shift then
+			x1, y1 = 0, 0
+		end
+
+		ensureCanvasAndInitted(context)
+
+		local bufName = args.buf
+		local texture = (bufName == "") and context.art.canvas or context.buffers[bufName]
+		if not texture then  return (tokenError(context, (visited.buf or startTok), "[%s] No buffer '%s'.", command, bufName))  end
+
+		if bufName == "" then
+			if texture == context.gfxState.canvas then
+				return (tokenError(context, (visited.buf or startTok), "[%s] Cannot draw canvas to itself.", command, bufName))
+			end
+		elseif texture == context.gfxState.canvas then
+			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
+		end
+
+		applyCanvas(context, A.shaders.quad)
+		applyColor(context, A.shaders.quad, "rectangle", colorW,colorH)
+		texture:setFilter(args.filter and "linear" or "nearest")
+		texture:setWrap("clamp")
+
+		LG.push()
+		if args.origin then  LG.origin()  end
+		LG.translate(args.x+x1, args.y+y1)
+		LG.rotate(args.rot)
+		LG.scale(args.sx, args.sy)
+		LG.shear(args.kx, args.ky)
+		LG.translate(-args.ax*(x2-x1), -args.ay*(y2-y1))
+		LG.translate(-x1, -y1)
+		drawPerspectiveCorrectQuad(texture,
+			args.cax,args.cay, args.cbx,args.cby, args.ccx,args.ccy, args.cdx,args.cdy,
+			args.cau,args.cav, args.cbu,args.cbv, args.ccu,args.ccv, args.cdu,args.cdv
+		)
+		LG.pop()
+
 	--
 	-- Effects.
 	--

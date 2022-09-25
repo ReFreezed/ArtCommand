@@ -99,6 +99,8 @@ buf     name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=
 pat     buf=""       x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  mirrorx=false mirrory=false      filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  mirror=mirrorx&mirrory
 iso     mode="sdf"   x=0 y=0                          sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thres=0 limit=9999  k=.1  debug=false                                           xy=x&y                scale=sx&sy  shear=kx&ky
 
+quad  buf=""  cax=0 cay=0 cbx=10 cby=0 ccx=10 ccy=10 cdx=0 cdy=10  cau=0 cav=0 cbu=1 cbv=0 ccu=1 ccv=1 cdu=0 cdv=1  x=0 y=0  ax=0 ay=0  sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  shift=true  filter=true  xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+
 #
 # Effects.
 #

@@ -12,7 +12,7 @@
 	drawCircleFill, drawCircleLine
 	drawLine
 	drawPolygonFill, drawPolygonLine
-	drawQuad
+	drawQuad, drawPerspectiveCorrectQuad
 	drawRectangleFill, drawRectangleLine
 	newImageUsingPalette
 	shaderSend*
@@ -23,7 +23,7 @@ local MAX_CIRCLE_SEGMENTS = 128
 
 
 
-local function copyVertexXyuv(vertices, fromI, toI)
+local function copyCommonVertexXyuv(vertices, fromI, toI)
 	vertices[toI][1] = vertices[fromI][1]
 	vertices[toI][2] = vertices[fromI][2]
 	vertices[toI][3] = vertices[fromI][3]
@@ -100,7 +100,7 @@ local function _drawLine(connected, coords, lw, circleMode, circleX,circleY, cir
 		end
 
 		for i = #vertices+1, allocationSize do
-			table.insert(vertices, {0,0, 0,0, 1,1,1,1})
+			table.insert(vertices, {0,0, 0,0})
 		end
 
 		if mesh then
@@ -109,7 +109,7 @@ local function _drawLine(connected, coords, lw, circleMode, circleX,circleY, cir
 		end
 	end
 
-	mesh = mesh or LG.newMesh(vertices, "strip", "stream")
+	mesh = mesh or LG.newMesh({{"VertexPosition","float",2},{"VertexTexCoord","float",2}}, vertices, "strip", "stream")
 
 	-- Make polygon line.
 	local lwHalf = .5 * lw
@@ -201,8 +201,8 @@ local function _drawLine(connected, coords, lw, circleMode, circleX,circleY, cir
 
 	-- Draw mesh.
 	if connected then
-		copyVertexXyuv(vertices, 1, 2*coordCount+1)
-		copyVertexXyuv(vertices, 2, 2*coordCount+2)
+		copyCommonVertexXyuv(vertices, 1, 2*coordCount+1)
+		copyCommonVertexXyuv(vertices, 2, 2*coordCount+2)
 	end
 
 	mesh:setVertices(vertices, 1, 2*coordCount+additionalCount)
@@ -303,16 +303,16 @@ end
 
 
 local mesh, vertices = nil, {
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
 }
 
 function _G.drawRectangleLine(x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs, lw)
@@ -334,7 +334,7 @@ function _G.drawRectangleLine(x,y, w,h, tlx,tly, trx,try, brx,bry, blx,bly, segs
 	--   |/  \\|
 	-- 4 8-----6
 	--
-	mesh = mesh or LG.newMesh(vertices, "strip", "stream")
+	mesh = mesh or LG.newMesh({{"VertexPosition","float",2},{"VertexTexCoord","float",2}}, vertices, "strip", "stream")
 
 	local x1 =   - lw*.5
 	local x2 =     lw*.5
@@ -372,11 +372,11 @@ local vertices = {}
 local mesh     = nil
 
 for i = 1, MAX_CIRCLE_SEGMENTS+2 do
-	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
+	table.insert(vertices, {0,0, 0,0})
 end
 
 function _G.drawCircleFill(x,y, rx,ry, angle1,angle2, closed, segs)
-	mesh = mesh or LG.newMesh(vertices, "fan", "stream")
+	mesh = mesh or LG.newMesh({{"VertexPosition","float",2},{"VertexTexCoord","float",2}}, vertices, "fan", "stream")
 
 	segs            = math.clamp(segs, 3, MAX_CIRCLE_SEGMENTS)
 	local angleStep = (angle2 - angle1) / segs
@@ -389,7 +389,7 @@ function _G.drawCircleFill(x,y, rx,ry, angle1,angle2, closed, segs)
 	end
 
 	if    closed
-	then  copyVertexXyuv(vertices, 2, 1)
+	then  copyCommonVertexXyuv(vertices, 2, 1)
 	else  vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = 0,0, .5,.5  end
 
 	mesh:setVertices(vertices, 1, segs+2)
@@ -398,13 +398,6 @@ function _G.drawCircleFill(x,y, rx,ry, angle1,angle2, closed, segs)
 end
 
 
-
-local vertices = {}
-local mesh     = nil
-
-for i = 1, 2*MAX_CIRCLE_SEGMENTS+2 do
-	table.insert(vertices, {0,0, 0,0, 1,1,1,1})
-end
 
 local coords = {}
 
@@ -476,7 +469,7 @@ function _G.drawPolygonFill(coords, asStrip)
 		end
 
 		for i = #vertices+1, allocationSize do
-			table.insert(vertices, {0,0, 0,0, 1,1,1,1})
+			table.insert(vertices, {0,0, 0,0})
 		end
 
 		if mesh then
@@ -485,7 +478,7 @@ function _G.drawPolygonFill(coords, asStrip)
 		end
 	end
 
-	mesh = mesh or LG.newMesh(vertices, "fan", "stream")
+	mesh = mesh or LG.newMesh({{"VertexPosition","float",2},{"VertexTexCoord","float",2}}, vertices, "fan", "stream")
 
 	local x1 =  1/0
 	local x2 = -1/0
@@ -543,15 +536,15 @@ end
 
 
 local vertices = {
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
-	{0,0, 0,0, 1,1,1,1},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
+	{0,0, 0,0},
 }
 local mesh = nil
 
 function _G.drawQuad(texture, x1,y1,x2,y2,x3,y3,x4,y4, u1,v1,u2,v2,u3,v3,u4,v4)
-	mesh = mesh or LG.newMesh(vertices, "fan", "stream")
+	mesh = mesh or LG.newMesh({{"VertexPosition","float",2},{"VertexTexCoord","float",2}}, vertices, "fan", "stream")
 
 	vertices[1][1],vertices[1][2], vertices[1][3],vertices[1][4] = x1,y1, u1,v1
 	vertices[2][1],vertices[2][2], vertices[2][3],vertices[2][4] = x2,y2, u2,v2
@@ -560,7 +553,65 @@ function _G.drawQuad(texture, x1,y1,x2,y2,x3,y3,x4,y4, u1,v1,u2,v2,u3,v3,u4,v4)
 
 	mesh:setTexture(texture)
 	mesh:setVertices(vertices)
+	LG.draw(mesh)
+end
 
+
+
+local vertices = {
+	{0,0,0, 0,0},
+	{0,0,0, 0,0},
+	{0,0,0, 0,0},
+	{0,0,0, 0,0},
+}
+local mesh = nil
+
+-- z = calculateZ( point1, point2, vanishingPoint )
+local function calculateZ(x1,y1, x2,y2, vapoX,vapoY)
+	local dx1    = x1 - vapoX
+	local dy1    = y1 - vapoY
+	local dx2    = x2 - vapoX
+	local dy2    = y2 - vapoY
+	local len2Sq = dx2*dx2 + dy2*dy2
+	return math.sqrt((dx1*dx1 + dy1*dy1) * len2Sq) / len2Sq -- Thanks, quickmath.com!
+	-- return math.sqrt(dx1*dx1+dy1*dy1) / math.sqrt(dx2*dx2+dy2*dy2)
+end
+
+-- Note: Current shader ought to be A.shaders.quad!
+function _G.drawPerspectiveCorrectQuad(texture, x1,y1,x2,y2,x3,y3,x4,y4, u1,v1,u2,v2,u3,v3,u4,v4)
+	mesh = mesh or LG.newMesh({{"VertexPosition","float",3},{"VertexTexCoord","float",2}}, vertices, "fan", "stream")
+
+	local z1 = 1 -- Reference corner - is always 1.
+	local z2 = 1
+	local z3 = 1
+	local z4 = 1
+
+	local vapo23And41X,vapo23And41Y = math.getLineLineIntersection(x2,y2,x3,y3, x4,y4,x1,y1)
+	local vapo12And34X,vapo12And34Y = math.getLineLineIntersection(x1,y1,x2,y2, x3,y3,x4,y4)
+
+	if vapo23And41X then  z4 = calculateZ(x1,y1, x4,y4, vapo23And41X,vapo23And41Y)  end
+	if vapo12And34X then  z2 = calculateZ(x1,y1, x2,y2, vapo12And34X,vapo12And34Y)  end
+
+	if vapo23And41X and vapo12And34X then
+		local vapo13X,vapo13Y = math.getLineLineIntersection(x1,y1,x3,y3, vapo23And41X,vapo23And41Y,vapo12And34X,vapo12And34Y)
+		z3 = not vapo13X and 1 or
+		     calculateZ(x1,y1, x3,y3, vapo13X,vapo13Y)
+	elseif vapo23And41X then
+		z3 = calculateZ(x2,y2, x3,y3, vapo23And41X,vapo23And41Y)
+	elseif vapo12And34X then
+		z3 = calculateZ(x4,y4, x3,y3, vapo12And34X,vapo12And34Y)
+	end
+
+	vertices[1][1],vertices[1][2],vertices[1][3], vertices[1][4],vertices[1][5] = x1,y1,1/z1, 0,0
+	vertices[2][1],vertices[2][2],vertices[2][3], vertices[2][4],vertices[2][5] = x2,y2,1/z2, 1/z2,0
+	vertices[3][1],vertices[3][2],vertices[3][3], vertices[3][4],vertices[3][5] = x3,y3,1/z3, 1/z3,1/z3
+	vertices[4][1],vertices[4][2],vertices[4][3], vertices[4][4],vertices[4][5] = x4,y4,1/z4, 0,1/z4
+
+	shaderSendVec4(A.shaders.quad, "quadX", u1,u2,u3,u4)
+	shaderSendVec4(A.shaders.quad, "quadY", v1,v2,v3,v4)
+
+	mesh:setTexture(texture)
+	mesh:setVertices(vertices)
 	LG.draw(mesh)
 end
 

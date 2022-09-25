@@ -305,14 +305,18 @@ function love.load(args, rawArgs)
 
 	-- Create window.
 	if not guiMode then
-		love.window.setMode(1,1, {
+		love.window.setMode(1,1, { -- Sneaky window, because OpenGL is annoying.
 			stencil    = false,
 			borderless = true,
 			x          = 0,
 			y          = 0,
 		})
+
 	else
-		love.window.setMode(800,600, {
+		local ww = DEV and 1000 or 800
+		local wh = DEV and 800  or 600
+
+		love.window.setMode(ww,wh, {
 			stencil   = false,
 			resizable = true,
 			display   = DEV and 2 or 1,

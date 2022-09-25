@@ -25,7 +25,7 @@ end
 
 
 # Settings.
-canvas 800 600 aa4
+canvas 940 740 aa4
 backdrop0 .3 0 .5
 # backdrop (40/255) (40/255) (40/255)
 fill.4 .4 .4 .6
@@ -35,11 +35,12 @@ default "image" "filter" False  # MSAA+filters tend to make things blurry.
 default "pat"   "filter" False
 default "text"  "filter" False
 default "buf"   "filter" False
+default "quad"  "filter" False
 
 # Draw stuff.
 color 1 1 1 .1
 font 62  # Big boy!
-text (CanvasW-5) -5 ax1 kx-.15 wrap(CanvasW-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST
+text (CanvasW-5) -5 ax1 kx-.15 wrap(CanvasW-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 r10
@@ -524,3 +525,11 @@ end
 # Blend modes.
 blend"add"     ; color a.50; image"face.png" 510 145 scale.5 anchor.5 rot-5deg
 blend"subtract"; color a.45; image"face.png" 580 145 scale.5 anchor.5 rot10deg
+blend"alpha"
+
+# Distorted quads
+color 1 1 .7
+quad"forest" x10  y600 +filter  0  0   80 0  80  50  0  80
+quad"forest" x10  y680 +filter  30 0   70 0  100 50  0  50
+quad"forest" x100 y600 +filter  0  50  0  0  70  80  20 80
+quad"forest" x120 y690 +filter  0  0   50 0  50  40  0  40   .4 0  .5 0  .5 .4  .4 .4

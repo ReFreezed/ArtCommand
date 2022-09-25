@@ -1,0 +1,38 @@
+/***************************************************************
+*
+*  Perspective correct quad shader
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+varying float z;
+
+#ifdef VERTEX
+	vec4 position(mat4 proj, vec4 vertPos) {
+		z         = vertPos.z;
+		vertPos.z = 0;
+		return proj * vertPos;
+	}
+#endif
+
+#ifdef PIXEL
+	#include "_main.gl"
+
+	uniform vec4 quadX; // {x0,x1,x2,x3}
+	uniform vec4 quadY; // {y0,y1,y2,y3}
+
+	vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+		texUv /= z;
+
+		texUv = mix(
+			mix(vec2(quadX[0],quadY[0]), vec2(quadX[1],quadY[1]), texUv.x),
+			mix(vec2(quadX[3],quadY[3]), vec2(quadX[2],quadY[2]), texUv.x),
+		texUv.y);
+
+		return applyMainEffect(Texel(tex, texUv), texUv, screenPos, loveColor);
+	}
+#endif
