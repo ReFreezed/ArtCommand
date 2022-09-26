@@ -14,7 +14,7 @@
 --============================================================]]
 
 local DEFAULT_ART_SIZE = 500
-local MAX_LOOPS        = 10000
+local MAX_LOOPS        = 100000
 
 local STOP_CONTINUE = nil
 local STOP_ONE      = 1
@@ -1320,9 +1320,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local entry = ScopeStackEntry()
 		table.insert(context.scopeStack, entry)
 
-		local from = (command == "fori") and 1           or args.from
-		local to   = (command == "fori") and #args.value or args.to
-		local step = (command == "fori") and 1           or args.step
+		local from = (command == "fori") and 1   or args.from
+		local to   = (command == "fori") and 1/0 or args.to
+		local step = (command == "fori") and 1   or args.step
 
 		if args.rev then
 			from, to, step = to, from, -step
@@ -1333,6 +1333,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local stopAll = false
 
 		for n = from, to, step do
+			if command == "fori" and args.value[n] == nil then  break  end
+
 			loops = loops + 1
 			if loops >= MAX_LOOPS then -- Maybe there should be a MAX_DRAW_OPERATIONS too? MAX_LOOPS could probably be higher then. @Incomplete
 				tokenError(context, startTok, "[%s] Max loops exceeded. Breaking.", command)
@@ -1843,7 +1845,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			point.y         = prevPoint.y + point.y
 		end
 
-		table.insert(context.points, point)
+		local len                         = #context.points + 1
+		context.points[len]               = point
+		context.readonly.PointCount.value = len
 
 	----------------------------------------------------------------
 	elseif command == "fill" then
@@ -2634,9 +2638,24 @@ function _G.loadArtFile(path, isLocal)
 		return context.rng and context.rng:random(...) or love.math.random(...)
 	end
 
+	local function getRandomCircle(radius, x, y)
+		local a = getRandom()
+		local b = getRandom()
+		if b < a then  a, b = b, a  end
+
+		local angle = a / b * TAU
+		b           = (radius or 1) * b
+
+		return {
+			X = (x or 0) + b*math.cos(angle),
+			Y = (y or 0) + b*math.sin(angle),
+		}
+	end
+
 	local vars     = context.readonly
 	local dummyTok = {position=1, type="dummy"}
 
+	-- Constants.
 	vars.True  = {token=dummyTok, value=true}
 	vars.False = {token=dummyTok, value=false}
 	vars.Huge  = {token=dummyTok, value=1/0}
@@ -2644,17 +2663,25 @@ function _G.loadArtFile(path, isLocal)
 	vars.Pi    = {token=dummyTok, value=math.pi}
 	vars.Tau   = {token=dummyTok, value=TAU}
 
-	vars.WindowW = {token=dummyTok, value=LG.getWidth()}
-	vars.WindowH = {token=dummyTok, value=LG.getHeight()}
-	vars.CanvasW = {token=dummyTok, value=context.canvasWidth}
-	vars.CanvasH = {token=dummyTok, value=context.canvasHeight}
+	-- Dynamic values.
+	vars.WindowW    = {token=dummyTok, value=LG.getWidth()}
+	vars.WindowH    = {token=dummyTok, value=LG.getHeight()}
+	vars.CanvasW    = {token=dummyTok, value=context.canvasWidth}
+	vars.CanvasH    = {token=dummyTok, value=context.canvasHeight}
+	vars.PointCount = {token=dummyTok, value=#context.points}
 
-	-- These are just for the Lua/bracket expressions.  @Incomplete @Robustness: Argument validation.
-	vars.num    = {token=dummyTok, value=tonumber}
-	vars.sel    = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
-	vars.selx   = {token=dummyTok, value=select}
-	vars.str    = {token=dummyTok, value=tostring}
-	vars.type   = {token=dummyTok, value=type}
+	-- These functions are just for the Lua/bracket expressions.
+	-- @Incomplete @Robustness: Argument validation.
+
+	-- Functions: misc.
+	vars.num  = {token=dummyTok, value=tonumber}
+	vars.rev  = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
+	vars.sel  = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
+	vars.selx = {token=dummyTok, value=select}
+	vars.str  = {token=dummyTok, value=tostring}
+	vars.type = {token=dummyTok, value=type}
+
+	-- Functions: math and numbers.
 	vars.abs    = {token=dummyTok, value=math.abs}
 	vars.acos   = {token=dummyTok, value=math.acos}
 	vars.asin   = {token=dummyTok, value=math.asin}
@@ -2667,29 +2694,37 @@ function _G.loadArtFile(path, isLocal)
 	vars.floor  = {token=dummyTok, value=math.floor}
 	vars.fmod   = {token=dummyTok, value=math.fmod}
 	vars.frac   = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return frac  end}
+	vars.frexp  = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return {M=m, E=e}  end}
 	vars.frexpe = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return e  end}
 	vars.frexpm = {token=dummyTok, value=function(n)  return (math.frexp(n))  end}
 	vars.int    = {token=dummyTok, value=function(n)  return (math.modf(n))  end}
 	vars.ldexp  = {token=dummyTok, value=math.ldexp}
-	vars.log    = {token=dummyTok, value=math.log} -- log( n [, base=e ] )
+	vars.len    = {token=dummyTok, value=function(x, y, z)  return math.sqrt(x*x + (y and y*y or 0) + (z and z*z or 0))  end} -- len( x [, y=0, z=0 ] )
 	vars.lerp   = {token=dummyTok, value=math.lerp}
+	vars.log    = {token=dummyTok, value=math.log} -- log( n [, base=e ] )
 	vars.max    = {token=dummyTok, value=math.max}
 	vars.min    = {token=dummyTok, value=math.min}
-	vars.noise  = {token=dummyTok, value=love.math.noise}
+	vars.modf   = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return {I=int, F=frac}  end}
+	vars.noise  = {token=dummyTok, value=love.math.noise} -- noise( x [, y, z, w ] )
 	vars.norm   = {token=dummyTok, value=math.normalize} -- normalize( v1, v2, v )
 	vars.rad    = {token=dummyTok, value=math.rad}
 	vars.rand   = {token=dummyTok, value=getRandom}
 	vars.randf  = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*getRandom() or (n1 or 1)*getRandom()  end} -- randf( [[ n1=0, ] n2=1 ] )
+	vars.randc  = {token=dummyTok, value=getRandomCircle} -- randc( [ radius=1, centerX=0, centerY=0 ] )
 	vars.round  = {token=dummyTok, value=math.round}
 	vars.sin    = {token=dummyTok, value=math.sin}
 	vars.sinh   = {token=dummyTok, value=math.sinh}
 	vars.sqrt   = {token=dummyTok, value=math.sqrt}
 	vars.tan    = {token=dummyTok, value=math.tan}
 	vars.tanh   = {token=dummyTok, value=math.tanh}
-	vars.clock  = {token=dummyTok, value=os.clock}
-	vars.date   = {token=dummyTok, value=os.date}
-	vars.env    = {token=dummyTok, value=os.getenv}
-	vars.time   = {token=dummyTok, value=os.time}
+
+	-- Functions: OS.
+	vars.clock = {token=dummyTok, value=os.clock}
+	vars.date  = {token=dummyTok, value=os.date}
+	vars.env   = {token=dummyTok, value=os.getenv}
+	vars.time  = {token=dummyTok, value=os.time}
+
+	-- Functions: strings.
 	vars.byte   = {token=dummyTok, value=string.byte} -- @Robustness: Handle the string metatable.
 	vars.char   = {token=dummyTok, value=string.char}
 	vars.find   = {token=dummyTok, value=string.find}
@@ -2698,17 +2733,39 @@ function _G.loadArtFile(path, isLocal)
 	vars.lower  = {token=dummyTok, value=string.lower}
 	vars.match  = {token=dummyTok, value=string.match}
 	vars.rep    = {token=dummyTok, value=string.rep}
-	vars.rev    = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
 	vars.sub    = {token=dummyTok, value=string.sub}
 	vars.upper  = {token=dummyTok, value=string.upper}
+	-- Also: rev
+
+	-- Functions: arrays and tables.
 	vars.unpack = {token=dummyTok, value=unpack}
 	vars.concat = {token=dummyTok, value=table.concat}
 	vars.sort   = {token=dummyTok, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
 	vars.sortby = {token=dummyTok, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
+	-- Also: rev
 
-	vars.imagew = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end} -- @Incomplete: Load image if it's not loaded.
-	vars.imageh = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
+	-- Functions: coordinate system.
+	vars.screen  = {token=dummyTok, value=function(x, y)  x, y = LG.transformPoint       (x, y) ; return {X=x, Y=y}  end}
+	vars.screenx = {token=dummyTok, value=function(x, y)  x, y = LG.transformPoint       (x, y) ; return x           end}
+	vars.screeny = {token=dummyTok, value=function(x, y)  x, y = LG.transformPoint       (x, y) ; return y           end}
+	vars.world   = {token=dummyTok, value=function(x, y)  x, y = LG.inverseTransformPoint(x, y) ; return {X=x, Y=y}  end}
+	vars.worldx  = {token=dummyTok, value=function(x, y)  x, y = LG.inverseTransformPoint(x, y) ; return x           end}
+	vars.worldy  = {token=dummyTok, value=function(x, y)  x, y = LG.inverseTransformPoint(x, y) ; return y           end}
 
+	-- Functions: points.
+	vars.point    = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and {x=point.x,y=point.y, a=point.a,b=point.b, s=point.s}  end}
+	vars.pointx   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.x  end}
+	vars.pointy   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.y  end}
+	vars.pointa   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.a  end}
+	vars.pointb   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.b  end}
+	vars.pointstr = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.s  end}
+
+	-- Functions: images and buffers.
+	vars.imagewh = {token=dummyTok, value=function(path)  if not context.images[path] then errorf(2, "No image '%s' loaded.", path) end ; local w, h = context.images[path]:getDimensions() ; return {W=w, H=h}  end} -- @Incomplete: Load image if it's not loaded.
+	vars.imagew  = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end}
+	vars.imageh  = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
+
+	vars.bufwh = {token=dummyTok, value=function(name)  if not context.buffers[name] then errorf(2, "No buffer '%s'.", name) end ; local w, h = context.buffers[name]:getDimensions() ; return {W=w, H=h}  end}
 	vars.bufw  = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getWidth () or errorf(2, "No buffer '%s'.", name)  end}
 	vars.bufh  = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getHeight() or errorf(2, "No buffer '%s'.", name)  end}
 	vars.bufaa = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getMSAA()   or errorf(2, "No buffer '%s'.", name)  end}

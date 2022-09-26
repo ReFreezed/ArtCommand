@@ -554,40 +554,57 @@ end
 
 
 
-local function isOverButton(button, mx,my)
-	return mx >= button.x and my >= button.y and mx < button.x+button.w and my < button.y+button.h
+local function isOverRect(rect, mx,my)
+	return mx >= rect.x and my >= rect.y and mx < rect.x+rect.w and my < rect.y+rect.h
 end
+
+local isMeasuring   = false
+local measureStartX = 0
+local measureStartY = 0
 
 local pressedButton = nil
 
 function love.mousepressed(mx,my, mbutton)
 	if mbutton == 1 then
 		for _, button in ipairs(guiButtons) do
-			if isOverButton(button, mx,my) then
+			if isOverRect(button, mx,my) then
 				love.mouse.setGrabbed(true)
 				pressedButton = button
-				break
+				return
 			end
 		end
+
+		if isOverRect(guiButtons, mx,my) then  return  end
+
+		isMeasuring   = true
+		measureStartX = mx
+		measureStartY = my
+		love.mouse.setGrabbed(true)
 	end
 end
 
 function love.mousereleased(mx,my, mbutton)
-	if mbutton == 1 and pressedButton then
-		love.mouse.setGrabbed(false)
+	if mbutton == 1 then
+		if pressedButton then
+			love.mouse.setGrabbed(false)
 
-		if not isOverButton(pressedButton, mx,my) then
-			-- void
-		elseif pressedButton.name == "zoom" then
-			autoZoom = autoZoom % 3 + 1
-			setStatus(AUTO_ZOOM_TEXTS[autoZoom])
-		elseif pressedButton.name == "reload" then
-			tryLoadingTheArtFile(true)
-		elseif pressedButton.name == "save" then
-			saveTheArt(nil)
+			if not isOverRect(pressedButton, mx,my) then
+				-- void
+			elseif pressedButton.name == "zoom" then
+				autoZoom = autoZoom % 3 + 1
+				setStatus(AUTO_ZOOM_TEXTS[autoZoom])
+			elseif pressedButton.name == "reload" then
+				tryLoadingTheArtFile(true)
+			elseif pressedButton.name == "save" then
+				saveTheArt(nil)
+			end
+
+			pressedButton = nil
+
+		elseif isMeasuring then
+			isMeasuring = false
+			love.mouse.setGrabbed(false)
 		end
-
-		pressedButton = nil
 	end
 end
 
@@ -615,35 +632,54 @@ function love.update(dt)
 	end
 
 	-- Update GUI.
-	local showGui = (pressedButton ~= nil) or (love.window.hasMouseFocus() and love.mouse.getY() > guiButtons.y-20)
+	local showGui = (pressedButton ~= nil) or (love.window.hasMouseFocus() and not isMeasuring and love.mouse.getY() > guiButtons.y-20)
 	guiVisibility = math.clamp01(guiVisibility + GUI_BUTTONS_SPEED*dt*(showGui and 1 or -1))
 end
 
 
 
+local function drawTextBox(text, x,y, ax,ay)
+	local w = LG.getFont():getWidth(text) + 2*GUI_TEXT_PADDING_X
+	local h = LG.getFont():getHeight()    + 2*GUI_TEXT_PADDING_Y
+	x       = math.clamp(math.floor(x-w*ax), 0, LG.getWidth ()-w)
+	y       = math.clamp(math.floor(y-h*ay), 0, LG.getHeight()-h)
+
+	LG.setColor(0, 0, 0, GUI_OPACITY)
+	LG.rectangle("fill", x,y, w,h)
+
+	LG.setColor(1, 1, 1)
+	LG.print(text, x+GUI_TEXT_PADDING_X,y+GUI_TEXT_PADDING_Y)
+end
+
 function love.draw()
 	if not LG.isActive() then  return  end
 
 	local ww,wh = LG.getDimensions()
+	local mx,my = love.mouse.getPosition()
 
 	LG.reset()
 	LG.clear(.4, .4, .4, 1)
 	LG.setFont(A.fonts.gui)
 
 	-- Art.
+	local artX     = 0
+	local artY     = 0
+	local artScale = 1
+
 	A.quads.checker:setViewport(0,0, ww,wh)
 	LG.setColor(.6, .6, .6)
 	LG.draw(A.images.checker, A.quads.checker)
 
 	if theArt then
-		local cw = theArt.canvas:getWidth()
-		local ch = theArt.canvas:getHeight()
-		local x  = math.floor((ww - cw) / 2)
-		local y  = math.floor((wh - ch) / 2)
+		local artW = theArt.canvas:getWidth()
+		local artH = theArt.canvas:getHeight()
+		artScale   = (autoZoom > 1) and math.min(ww/artW, wh/artH) or theArt.zoom
+		artX       = math.floor((ww - artW*artScale) / 2)
+		artY       = math.floor((wh - artH*artScale) / 2)
 
 		if autoZoom == 1 then
-			x = math.max(x, 0)
-			y = math.max(y, 0)
+			artX = math.max(artX, 0)
+			artY = math.max(artY, 0)
 		end
 
 		if theArt.backdrop[4] > 0 then
@@ -653,31 +689,30 @@ function love.draw()
 
 		LG.push()
 
-		LG.translate(math.floor(ww/2),math.floor(wh/2))
-		LG.scale(autoZoom > 1 and math.min(ww/cw, wh/ch) or theArt.zoom)
-		LG.translate(-math.floor(ww/2),-math.floor(wh/2))
+		LG.translate(artX, artY)
+		LG.scale(artScale)
 
 		if theArt.backdrop[4] >= .8 and (theArt.backdrop[1] + theArt.backdrop[2] + theArt.backdrop[3]) < 3*.3 then
 			LG.setColor(1, 1, 1, .4)
 		else
 			LG.setColor(0, 0, 0)
 		end
-		LG.rectangle("fill", x-1,y-1 , cw+2,1)
-		LG.rectangle("fill", x-1,y+ch, cw+2,1)
-		LG.rectangle("fill", x-1,y   , 1,ch  )
-		LG.rectangle("fill", x+cw,y  , 1,ch  )
+		LG.rectangle("fill", -1,-1  , artW+2,1)
+		LG.rectangle("fill", -1,artH, artW+2,1)
+		LG.rectangle("fill", -1,0   , 1,artH  )
+		LG.rectangle("fill", artW,0 , 1,artH  )
 
 		theArt.canvas:setFilter((autoZoom == 2 and "linear") or (autoZoom == 3 and "nearest") or (theArt.zoomFilter and "linear" or "nearest"))
 		LG.setColor(1, 1, 1)
 		LG.setBlendMode("alpha", "premultiplied")
-		LG.draw(theArt.canvas, x,y)
+		LG.draw(theArt.canvas)
 		LG.setBlendMode("alpha")
 
 		LG.pop()
 
 	else
 		local text = "No art loaded"
-		local w    = A.fonts.gui:getWidth(text) -- @Incomplete: Use predictable font.
+		local w    = A.fonts.gui:getWidth(text)
 		local h    = A.fonts.gui:getHeight()
 		local x    = math.floor((ww-w)/2)
 		local y    = math.floor((wh-h)/2)
@@ -697,7 +732,7 @@ function love.draw()
 	LG.rectangle("fill", guiButtons.x,guiButtons.y, guiButtons.w,guiButtons.h)
 
 	for _, button in ipairs(guiButtons) do
-		local highlight = (button == pressedButton or not pressedButton) and isOverButton(button, love.mouse.getPosition())
+		local highlight = (button == pressedButton or not pressedButton) and not isMeasuring and isOverRect(button, mx,my)
 
 		if highlight then
 			LG.setColor(1, 1, 1, .3)
@@ -746,6 +781,28 @@ function love.draw()
 		LG.setFont(A.fonts.status)
 		LG.print(statusText, x+GUI_TEXT_PADDING_X,y+GUI_TEXT_PADDING_Y)
 		LG.setFont(A.fonts.gui)
+	end
+
+	-- Mouse info.
+	if theArt and love.window.hasMouseFocus() then
+		if isMeasuring then
+			local x1 = math.min(measureStartX, mx)
+			local x2 = math.max(measureStartX, mx)
+			local y1 = math.min(measureStartY, my)
+			local y2 = math.max(measureStartY, my)
+			local w  = x2 - x1
+			local h  = y2 - y1
+
+			LG.setColor(1, 1, 1, .5)
+			LG.rectangle("line", x1+.5,y1+.5, w-1,h-1)
+
+			drawTextBox(F("%d", math.round(math.abs(w/artScale))), (measureStartX+mx)/2,y1, .5,1)
+			drawTextBox(F("%d", math.round(math.abs(h/artScale))), x1,(measureStartY+my)/2, 1,.5)
+
+		elseif my < guiButtons.y then
+			local text = F("[%d, %d]", (mx-artX)/artScale,(my-artY)/artScale)
+			drawTextBox(text, mx+20,my+10, 0,0)
+		end
 	end
 
 	LG.present()

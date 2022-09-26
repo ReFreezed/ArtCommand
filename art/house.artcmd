@@ -1,0 +1,560 @@
+#
+# "House" by ReFreezed, 2022-09-26
+#
+FastRender  = (1==0)
+HideEffects = (1==0)
+
+canvas 800 600 aa4
+backdrop a.8
+
+
+
+#
+# World.
+#
+
+# Sky.
+HorizonY = (.5*CanvasH)
+
+clouds sx.8 sy1.5
+contrast .5
+gamma .45
+grad rgb.15 0, rgb.15 1 rot90deg; rect 0 0 CanvasW HorizonY
+
+# Landscape.
+GrassR1 = .05
+GrassG1 = .1
+GrassB1 = .05
+
+GrassR2 = .18
+GrassG2 = .3
+GrassB2 = .15
+
+func Tree X Y Scale
+	TreeW = (randf(8 , 12)*Scale)
+	TreeH = (randf(16, 24)*Scale)
+
+	if (rand() < .3)
+		TreeW ^= (1.3*TreeW)
+		TreeH ^= (1.4*TreeH)
+	end
+
+	point       (X*CanvasW) (Y*CanvasH-TreeH)
+	point-clear (X*CanvasW+TreeW/2) (Y*CanvasH)
+	point-clear (X*CanvasW-TreeW/2) (Y*CanvasH)
+	poly
+end
+
+func TreeLines Ranges Scale
+	fori Range Ranges
+		for X (Range.X1) (Range.X2) (Range.Dist)
+			X = (X + Range.Dist * randf(0, .4))
+			T = (norm(Range.X1, Range.X2, X) ^ Range.Bend)
+			Tree X (lerp(Range.Y1, Range.Y2, T)) Scale
+		end
+	end
+end
+
+# Far.
+setbuf"land"; color
+	randseed634
+
+	circle (.15*CanvasW) (HorizonY) 100 230
+	circle (.4*CanvasW) (HorizonY) 200 260 kx.3
+	circle (.25*CanvasW) (HorizonY) 200 250 kx-.5
+	circle (.74*CanvasW) (HorizonY) 100 160 kx.3
+	circle (.95*CanvasW) (HorizonY) 200 220 kx-.4
+	blur xy400; thres+alpha
+
+	Ranges = {}
+	add Ranges {X1=.100, X2=.160, Y1=.150, Y2=.120, Dist=.006, Bend=0.50}
+	add Ranges {X1=.160, X2=.190, Y1=.120, Y2=.130, Dist=.006, Bend=1.00}
+	add Ranges {X1=.180, X2=.300, Y1=.175, Y2=.070, Dist=.006, Bend=0.30}
+	add Ranges {X1=.300, X2=.390, Y1=.070, Y2=.090, Dist=.006, Bend=1.50}
+	add Ranges {X1=.390, X2=.535, Y1=.090, Y2=.225, Dist=.006, Bend=3.70}
+	add Ranges {X1=.540, X2=.615, Y1=.225, Y2=.325, Dist=.005, Bend=0.30}
+	add Ranges {X1=.610, X2=.680, Y1=.325, Y2=.240, Dist=.006, Bend=0.45}
+	add Ranges {X1=.680, X2=.790, Y1=.240, Y2=.310, Dist=.006, Bend=1.70}
+	add Ranges {X1=.800, X2=1.00, Y1=.310, Y2=.145, Dist=.006, Bend=0.70}
+	TreeLines Ranges .6
+
+	blur xy6 #focus
+setbuf
+# color; buf"land"; stop #debug
+
+color GrassR1 GrassG1 GrassB1
+overlaycolor rgb.15 .6
+buf"land" -filter
+
+# Near.
+setbuf"land"; color
+	randseed4
+
+	circle (0.*CanvasW) HorizonY 300 280 kx.5
+	circle (.4*CanvasW) HorizonY 250 20
+	circle (.9*CanvasW) HorizonY 120 50
+	circle (1.*CanvasW) HorizonY 150 150 kx-.5
+	rect 0 CanvasH CanvasW (HorizonY-CanvasH)
+	blur xy1000; thres+alpha
+
+	Ranges = {}
+	add Ranges {X1=.000, X2=.290, Y1=.090, Y2=.340, Dist=.01, Bend=1.45}
+	add Ranges {X1=.600, X2=.740, Y1=.475, Y2=.510, Dist=.01, Bend=1.00}
+	add Ranges {X1=.735, X2=.850, Y1=.500, Y2=.420, Dist=.01, Bend=0.90}
+	add Ranges {X1=.845, X2=1.00, Y1=.450, Y2=.290, Dist=.01, Bend=0.60}
+	TreeLines Ranges 3
+
+	blur xy3 #focus
+setbuf
+# color; buf"land"; stop #debug
+
+grad       GrassR1 GrassG1 GrassB1
+grad-clear GrassR1 GrassG1 GrassB1
+grad-clear GrassR2 GrassG2 GrassB2 rot90deg
+buf"land" -filter
+
+
+
+#
+# Big tree.
+#
+
+# Pre-render.
+push; setbuf"tree"
+	# Wood.
+	randseed1
+
+	TreeX    = (.90*CanvasW)
+	TreeY    = (.83*CanvasH)
+	Branches = {{Gen=0, Thick=40, X1=TreeX,Y1=TreeY, X2=TreeX,Y2=TreeY-.35*CanvasH}}
+
+	R = (1.6*.2)
+	G = (1.6*.15)
+	B = (1.6*.1)
+	grad       (.3*R) (.3*G) (.3*B)
+	grad-clear (.8*R) (.8*G) (.8*B)
+	grad-clear (1*R) (1*G) (1*B) scale.9
+	# color a.4 #debug
+
+	setbuf"wood"
+		fori Branch Branches; push
+			Thick   = (Branch.Thick)
+			Thin    = (.8*Thick)
+			Len     = (len(Branch.X2-Branch.X1, Branch.Y2-Branch.Y1))
+			Radius  = ((Branch.Gen == 0 and .1 or .5) * Thick)
+
+			FullLen = (Len+2*Radius)
+			Y2      = Radius
+			Y1      = (Y2-FullLen)
+			Y1X1    = (-Thin/2)
+			Y1X2    = ( Thin/2)
+			Y2X1    = (-Thick/2)
+			Y2X2    = ( Thick/2)
+
+			move (Branch.X1) (Branch.Y1)
+			rotate (atan(Branch.Y2-Branch.Y1, Branch.X2-Branch.X1)+Tau/4)
+			for 0 8; point clear(I==1) (-Thin/2*cos(I/8*Tau/2)) (-Len-Radius*sin(I/8*Tau/2)); end
+			for 0 8; point-clear       (Thick/2*cos(I/8*Tau/2)) (     Radius*sin(I/8*Tau/2)); end
+			poly
+
+			# Sub-branches.
+			if (Branch.Gen < rand(6,8))
+				Subs     = ((randf() < .1) and 1 or rand(2, 3))
+				DeltaRot = (randf(.07, .12)*Tau)
+				Tilt     = (.04*randf(-1, 1)*Tau)
+
+				move 0 -Len
+				rotate (Tilt-DeltaRot*(Subs-1)/2)
+
+				for 1 Subs
+					Len = (max(lerp(.75*Len-10, .85*Len-15, rand()), 12))
+					End = (screen(0, -Len))
+					add Branches {Gen=Branch.Gen+1, Thick=Thin, X1=Branch.X2,Y1=Branch.Y2, X2=End.X,Y2=End.Y}
+					rotate DeltaRot
+				end
+			end
+		pop; end
+	setbuf"tree" -clear
+	grad rgb.4, rgb1 rot90deg scale.15 y-.05; buf"wood" +origin -filter
+
+	# Leaves.
+	func Leaf  X Y  Len W  Rot  Light
+		Segs = (FastRender and 2 or 5)
+
+		point 0 -Len
+		for 1 (Segs-1)
+			T = (I/Segs)
+			X = (W * sin(T*Tau/2))
+			Y = (lerp(-Len, Len, T))
+			point-clear -X Y
+			point-clear  X Y
+		end
+		point-clear 0 Len
+
+		color .18 .25 .15; scalecolor rgb.15
+		overlaycolor .25 .3 .17 Light
+
+		poly"strip" X Y rotRot
+	end
+
+	randseed4
+	move TreeX (TreeY-.55*CanvasH)
+	LeafCount = (FastRender and 1500 or 8000)
+
+	for 1 LeafCount
+		Pos = (randc((randf(.39,.47))*CanvasW))
+
+		if (Pos.Y < 50*noise(.0163*Pos.X))
+			T = (I/LeafCount)
+
+			Len = (1.2 * (randf(5,9) + 4*(1-T))) #half
+			W   = (.6  * Len) #half
+
+			LightDist = (len(50-Pos.X, 30-Pos.Y))
+			Light     = (lerp(.3, 1, T^1.3) * (1-(LightDist/450)^1.6))
+
+			Leaf  (Pos.X) (Pos.Y)  Len W  (randf(Tau))  Light
+		end
+	end
+pop
+
+# Big tree shadow.
+grad rgb0 0, rgb0 .4 scale.01 rot42deg
+buf"tree" TreeX TreeY ax(TreeX/CanvasW) ay(TreeY/CanvasH) kx.9 sy.22 -filter
+
+# Big tree shadow grass.
+randseed0
+
+func Grass  X Y  SizeScale PolyScale ScaleH  ColorT ColorScale
+	W = (SizeScale * randf(.005, .007))
+	H = (SizeScale * randf(.015, .03) * ScaleH)
+
+	point       (X+.001*randf(-1,1)) (Y-H) #t
+	point-clear (X-W/2) (Y+.002*SizeScale) #br
+	point-clear (X+W/2) (Y+.002*SizeScale) #bl
+
+	color (lerp(GrassR1,GrassR2,ColorT)) (lerp(GrassG1,GrassG2,ColorT)) (lerp(GrassB1,GrassB2,ColorT))
+	scalecolor rgbColorScale
+
+	poly-shift scalePolyScale
+end
+
+func GrassLine  X1 X2  Y1 Y2  ColorT1 ColorT2 ColorScale;  push
+	for X X1 X2 3.5
+		X = (X + .002*CanvasW*rand())
+		T = (norm(X1, X2, X))
+		Y = (lerp(Y1, Y2, T))
+
+		ColorT = (lerp(ColorT1,ColorT2,norm(-100,0,Y)))
+		Grass  X Y  CanvasW 1 1  ColorT ColorScale
+	end
+pop; end
+
+push
+	move TreeX TreeY
+	GrassLine  -210 0  -55 -5  .34 .66 .6
+	GrassLine  -210 0  -45 5   .34 .66 1
+pop
+
+
+
+#
+# House.
+#
+push
+	X0 = -.25 #shadow
+	X1 = -.04
+	X2 = 0
+	X3 = .50
+
+	X0Y  = .30 #shadow
+	X1Y1 = .08
+	X2Y1 = .00
+	X3Y1 = .04
+	X1Y2 = .32
+	X2Y2 = .40
+	X3Y2 = .36
+
+	Scale = 1
+
+	move (.14*CanvasW) (.30*CanvasH) #top mid wall corner
+
+	# Shadow.
+	point       X0 .23 #tl
+	point-clear X1 .23 #tr
+	point-clear X2 .40 #br
+	point-clear X0 .30 #bl
+	grad rgb0 0, rgb0 .5, rgb0 .5 rot90deg +smooth
+	poly-shift scale(Scale*CanvasW)
+
+	#
+	# Roof, back.
+	#
+	point       ((X1+X2)/2-.025) -.12 #tl
+	point-clear ((X2+X3)/2) .09 #br
+	point-clear (X1-.02) X1Y1 #bl
+	grey.02
+	poly-shift scale(Scale*CanvasW)
+
+	#
+	# Wall, left.
+	#
+	point       X1 X1Y1 #tl
+	point-clear ((X1+X2)/2) -.06 #peak
+	point-clear X2 X2Y1 #tr
+	point-clear X2 X2Y2 #br
+	point-clear X1 X1Y2 #bl
+	grad .7 .15 .15
+	scalecolor rgb.3
+	grad-clear .7 .15 .15 rot70deg scale.5 y-.22 +smooth
+	scalecolor rgb.2
+	poly-shift scale(Scale*CanvasW)
+
+	#
+	# Wall, right.
+	#
+	func RectOnWall Mode RectX1T RectWT RectYT RectHT Prot
+		RectX2T = (RectX1T+RectWT)
+
+		RectX1 = (lerp(X2,X3,RectX1T))
+		RectX2 = (lerp(X2,X3,RectX2T))
+
+		RectX1Y2 = (lerp(X2Y2,X3Y2,RectX1T))
+		RectX2Y2 = (lerp(X2Y2,X3Y2,RectX2T))
+		RectX1H  = (RectX1Y2 - lerp(X2Y1,X3Y1,RectX1T))
+		RectX2H  = (RectX2Y2 - lerp(X2Y1,X3Y1,RectX2T))
+
+		RectX1Y2 = (RectX1Y2 - RectX1H*RectYT)
+		RectX2Y2 = (RectX2Y2 - RectX2H*RectYT)
+		RectX1Y1 = (RectX1Y2 - RectHT*RectX1H)
+		RectX2Y1 = (RectX2Y2 - RectHT*RectX2H)
+
+		point       RectX1 RectX1Y2 #tl
+		point-clear RectX2 RectX2Y2 #tr
+		point-clear RectX2 RectX2Y1 #br
+		point-clear RectX1 RectX1Y1 #bl
+		poly-shift Mode scale(Scale*CanvasW) thick(1.5/(Scale*CanvasW))
+
+		if (Prot ~= 0)
+			if (Prot > 0)
+				RectX2   ^= RectX1
+				RectX1   ^= (RectX2-Prot/(Scale*CanvasW))
+				RectX2Y1 ^= RectX1Y1
+				RectX2Y2 ^= RectX1Y2
+			else
+				RectX1   ^= RectX2
+				RectX2   ^= (RectX1-Prot/(Scale*CanvasW))
+				RectX1Y1 ^= RectX2Y1
+				RectX1Y2 ^= RectX2Y2
+			end
+
+			point       RectX1 RectX1Y2 #tl
+			point-clear RectX2 RectX2Y2 #tr
+			point-clear RectX2 RectX2Y1 #br
+			point-clear RectX1 RectX1Y1 #bl
+			scalecolor rgb.1
+			poly-shift "fill" scale(Scale*CanvasW)
+		end
+	end
+
+	# Main part.
+	setbuf"section"
+		point       X2 X2Y1 #tl
+		point-clear X3 X3Y1 #tr
+		point-clear X3 X3Y2 #br
+		point-clear X2 X2Y2 #bl
+		grad .7 .15 .15
+		scalecolor rgb.5
+		grad-clear .7 .15 .15 rot91deg scale.4 y-.3 +smooth
+		poly-shift scale(Scale*CanvasW)
+	color; buf"section" +origin -filter
+
+	# Texture and seams.
+	setbuf"noise"
+		color; noise sx(1/(5*Scale/.9)) sy(1/(70*Scale/.9))
+		remap rgb"1" "g"
+	setbuf
+
+	mask"section" +alpha
+		randseed0
+		color rgb0 a.2
+		buf"noise" +origin
+		for X X2 X3 .03
+			color rgb0 (randf(.15, .3))
+			rect (X*CanvasW*Scale/.9) 0 1.5 1000
+		end
+	maskFalse
+
+	# Roof shadow.
+	grey0 .4; RectOnWall"fill" 0 1 1 -.07 0
+
+	# Window.
+	grey1 .7; RectOnWall"fill" (.202-.025) (.334+2*.025) (.35-.039) (.3+2*.039) 2 #frame
+	grey0 .4; RectOnWall"line" (.202-.025) (.334+2*.025) (.35-.039) (.3+2*.039) 0 #line
+	color .05 .07 .05; RectOnWall"fill" .202 .334 .35 .3 0 #window
+	grad rgb1 0, rgb1 .6, rgb1 .6, rgb1 0 +smooth scale.3 rot-30deg x-.25; RectOnWall"fill" .202 .334 .35 .3 0 #reflection
+	grad rgb1 0, rgb1 .4, rgb1 .4, rgb1 0 +smooth scale.2 rot-30deg x .25; RectOnWall"fill" .202 .334 .35 .3 0 #reflection
+
+	# Door.
+	setbuf+mask
+		fill 1 1 1
+		grey0; RectOnWall"fill" .669 .134 0 .6 0 #door cutout for frame
+	mask
+		grey1 .7; RectOnWall"fill" (.669-.025) (.134+2*.025) 0 (.6+.045) 2 #frame
+	maskFalse
+	grey0 .5; RectOnWall"line" (.669-.025) (.134+2*.025) 0 (.6+.045) 0 #outer line
+	grey0 .5; RectOnWall"line" .669 .134 0 .6 -2 #inner line
+	grey.27;  RectOnWall"fill" .685 .025 .33 .012 1.5 #handle
+
+	#
+	# Roof, front.
+	#
+	setbuf"section"
+		point       ((X1+X2)/2-.025) -.12 #tl
+		point-clear (X3-.04+.02) -.05 #tr
+		point-clear (X3    +.02) .045 #br
+		point-clear (X2       -.025) .005 #bl
+		grad rgb.18, rgb.08 rot95deg
+		poly-shift scale(Scale*CanvasW)
+	color; buf"section" +origin -filter
+
+	# Wetness.
+	mask"section" +alpha
+		randseed631
+		grey0 .15
+
+		for T 0 1 (1/200)
+			Offset = (randf())
+			X      = (lerp(X2-.02, X3-.02, T)*CanvasW + Offset*lerp(-15,-38,T))
+			Y      = (lerp(10,40,T)                   + Offset*lerp(-100,-80,T))
+			Rot    = (lerp(-rad(7), -rad(24), T))
+			circle (X*Scale/.9) (Y*Scale/.9) 8 15 segs32 rotRot scale(lerp(1, .7, T)*Scale)
+		end
+	maskFalse
+
+	# Rain splashes.
+	randseed63
+
+	for T 0 1 (1/50)
+		Offset = (randf())
+		X      = (lerp(X2-.02, X3-.03, T)*CanvasW + Offset*lerp(-15,-30,T))
+		Y      = (lerp(4,32,T)                    + Offset*lerp(-88,-68,T))
+
+		grey1 (randf(.04, .06))
+
+		circle (X*Scale/.9) (Y*Scale/.9) 1 2 segs8 ay1 scaleScale rot(rad(randf(5,30)+0))
+		circle (X*Scale/.9) (Y*Scale/.9) 1 2 segs8 ay1 scaleScale rot(rad(randf(5,30)+40))
+		circle (X*Scale/.9) (Y*Scale/.9) 1 2 segs8 ay1 scaleScale rot(rad(randf(5,30)+-40))
+	end
+
+	#
+	# Wall grass.
+	#
+	randseed833
+
+	for X X0 X3 (3.5/CanvasW)
+		X = (X + .002*rand())
+
+		IsLeft = (X < X2)
+		T      = (IsLeft and norm(X0, X2, X) or norm(X2, X3, X))
+
+		Y      = (IsLeft and lerp(X0Y, X2Y2, T) or lerp(X2Y2, X3Y2, T))
+		ScaleH = ((not IsLeft and T > .67 and T < .81) and .4 or 1)
+		ColorT = (lerp(.4,.69,norm(X0Y,X2Y2,Y)))
+
+		Grass  X Y  1 (Scale*CanvasW) ScaleH  ColorT 1
+	end
+pop
+
+# Big tree.
+color; buf"tree" -filter
+
+# Big tree grass.
+push
+	move TreeX TreeY
+	GrassLine  -30 30  8 8  .34 .66 1
+pop
+
+# Falling leaves.
+push
+	randseed677
+	move TreeX (TreeY-.55*CanvasH)
+
+	for to20
+		Len = (randf(8,12)) #half
+		W   = (.6*Len) #half
+		T   = (rand())
+		Y   = (lerp(40, 400, T))
+		X   = (rand(lerp(-350,-450,T), 80))
+
+		LightDist = (len(50-X))
+		Light     = (1-(LightDist/1000))
+
+		Leaf  X Y  Len W  (randf(Tau))  Light
+	end
+pop
+
+
+
+#
+# Weather.
+#
+
+if HideEffects; stopTrue; end
+
+# Fog.
+setbuf"fog"
+	color; clouds scale.15
+	contrast 1.5
+	grad rgb0 0, rgb0 .4 rot90deg; rect 0 CanvasH CanvasW (-.5*CanvasH)
+	grad rgb0 .5, rgb0 0 +radial; circle (.35*CanvasW) (.65*CanvasH) r1 sx(.4*CanvasW) sy(.3*CanvasW)
+	# color; buf"fog"; stopTrue #debug
+	remap rgb"1" "g"
+color .7 .9 1 .2; scalecolor rgb.6; buf"fog"
+
+# Rain.
+randseed0
+
+for X 0 CanvasW 7
+	H = (randf(70, 120))
+	Y = (randf(-H, CanvasH+1*H))
+
+	color .9 .9 1 (randf(.5, .8)); scalecolor rgb.15
+	blend"add"
+	circle X Y (randf(1.2, 1.6)) (H/2)
+	blend"alpha"
+end
+
+# Light.
+grad rgb1 0, rgb1 .07 rot20deg; rect 0 0 CanvasW CanvasH
+
+
+
+#
+# Post-processing.
+#
+gamma .97
+
+# Softness.
+setbuf"soft"
+	color
+	buf -filter
+	brightness 1.1
+	contrast 1.5
+	saturation .8
+	blur xy20
+setbuf
+# color; buf"soft"; stop #debug
+
+color a.1
+buf"soft"
+
+# Vignette.
+grad rgb0 0, rgb0 0, rgb0 0, rgb0 (.3*.2), rgb0 .2 +radial scale1.7
+rect 0 0 CanvasW CanvasH
+
+# Grain.
+color a.015
+random color0  # May increases file size a bunch!
+
+
