@@ -68,6 +68,8 @@ mask     mask=true  buf="mask"  alpha=false
 map      r="r" g="g" b="b" a="a"      rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 channel  r=true g=true b=true a=true  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
+image  path=""  recurse=0  aa=1(canvasMsaa)
+
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
 
@@ -77,7 +79,7 @@ rotate  rot=0
 scale   x=1 y=1  xy=x&y
 shear   x=1 y=1  xy=x&y
 
-setbuf  name=""(autoIfMask)  path=""  w=0(context.canvasWidth) h=0(context.canvasHeight)  aa=0(context.canvasMsaa)  mask=false clear=true  size=w&h
+setbuf  name=""(autoIfMask) template=""  w=0(templateWidth|canvasWidth) h=0(templateHeight|canvasHeight)  aa=1(templateMsaa|canvasMsaa)  mask=false clear=true  size=w&h
 
 randseed  seed=0
 
@@ -95,8 +97,7 @@ poly    mode="fill"  x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=
 line                 x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  shift=true                                                             xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
 bezier               x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thick=1  shift=true  depth=5                                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
 text    text=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  wrap=1/0  align="left"  lineh=1  filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-image   path=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  recurse=0                        filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
-buf     name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  recurse=0                        filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
+buf     name=""      x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false                                   filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky
 pat     buf=""       x=0 y=0             ax=0  ay=0   sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  mirrorx=false mirrory=false      filter=true                                    xy=x&y  anchor=ax&ay  scale=sx&sy  shear=kx&ky  mirror=mirrorx&mirrory
 iso     mode="sdf"   x=0 y=0                          sx=1 sy=1  rot=0  kx=0 ky=0  origin=false  thres=0 limit=9999  k=.1  debug=false                                           xy=x&y                scale=sx&sy  shear=kx&ky
 

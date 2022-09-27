@@ -485,7 +485,7 @@ local function ensureCanvasAndInitted(context)
 
 	local settingsCanvas = {
 		format = "rgba16",
-		msaa   = (context.canvasMsaa > 1 and context.canvasMsaa or nil),
+		msaa   = (context.canvasMsaa > 1 and context.canvasMsaa^2 or nil),
 	}
 	context.art.canvas   = LG.newCanvas(context.canvasWidth,context.canvasHeight, settingsCanvas)
 	context.workCanvas1  = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="rgba16"}) -- No MSAA!
@@ -1471,7 +1471,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		context.canvasWidth  = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
 		context.canvasHeight = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
-		context.canvasMsaa   = args.aa^2
+		context.canvasMsaa   = args.aa
 
 		context.readonly.CanvasW.value = context.canvasWidth
 		context.readonly.CanvasH.value = context.canvasHeight
@@ -1623,6 +1623,55 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			))
 		end
 		context.gfxState.blendMode = args.mode
+
+	----------------------------------------------------------------
+	elseif command == "image" then
+		if args.path == "" then  return (tokenError(context, (visited.path or startTok), "[%s] Missing path.", command))  end
+
+		ensureCanvasAndInitted(context)
+
+		local texture = getOrLoadImage(context, startTok, args.path, args.recurse) -- @Incomplete: Handle args.recurse having different values for the same path.
+		if not texture then  return nil  end
+
+		local bufName      = args.path
+		local iw,ih        = texture:getDimensions()
+		local msaa         = visited.aa and args.aa or context.canvasMsaa
+		local canvasFormat = "rgba16"
+
+		-- :ReuseOrCreateBuffer
+		if not (
+			context.buffers[bufName]
+			and context.buffers[bufName]:getWidth () == iw
+			and context.buffers[bufName]:getHeight() == ih
+			and context.buffers[bufName]:getMSAA  () == msaa
+			and context.buffers[bufName]:getFormat() == canvasFormat
+		) then
+			if iw > context.canvasWidth or ih > context.canvasHeight then -- @Cleanup: Validate size in getOrLoadImage().
+				return (tokenError(context, (visited.path or startTok),
+					"[%s] Image size cannot currently be larger than the canvas. (Canvas is %dx%d, got %dx%d)",
+					command, context.canvasWidth,context.canvasHeight, iw,ih
+				))
+			end
+
+			if context.buffers[bufName] then
+				-- Don't accidentally release the active canvas, or one in the stack!
+				LG.setCanvas(nil)
+				if isCanvasReferencedInStack(context, context.buffers[bufName]) then
+					return (tokenError(context, (visited.path or startTok), "[%s] Cannot replace existing buffer '%s' with image at this point.", command, bufName))
+				end
+				context.buffers[bufName]:release()
+			end
+
+			context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=(msaa > 1 and msaa^2 or nil)})
+			gfxStateSetCanvas(context, context.buffers[bufName])
+		end
+
+		texture:setFilter("nearest")
+		pushTransformAndReset("replace")
+		LG.setCanvas(context.buffers[bufName])
+		LG.clear(0, 0, 0, 0)
+		LG.draw(texture)
+		LG.pop()
 
 	----------------------------------------------------------------
 	elseif command == "font" then
@@ -1777,31 +1826,31 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "setbuf" then
+		if args.template ~= "" and not context.buffers[args.template] then
+			return (tokenError(context, (visited.template or startTok), "[%s] No buffer '%s' to use as template.", command, args.template))
+		end
+
 		ensureCanvasAndInitted(context)
 
 		local bufName      = (args.mask and not visited.name) and "mask"  or args.name
-		local iw           = visited.w                        and args.w  or context.canvasWidth
-		local ih           = visited.h                        and args.h  or context.canvasHeight
-		local msaa         = visited.aa                       and args.aa or context.canvasMsaa
+		local iw           = visited.w                        and args.w  or (context.buffers[args.template] or context.art.canvas):getWidth ()
+		local ih           = visited.h                        and args.h  or (context.buffers[args.template] or context.art.canvas):getHeight()
+		local msaa         = visited.aa                       and args.aa or (context.buffers[args.template] or context.art.canvas):getMSAA  ()
 		local canvasFormat = args.mask                        and "r16"   or "rgba16"
 		local texture
 
 		-- Main buffer (the "canvas").
 		if bufName == "" then
-			if args.path ~= ""        then  return (tokenError(context, (visited.name           or startTok), "[%s] Missing buffer name to load image to.", command))  end
-			if visited.w or visited.h then  return (tokenError(context, (visited.w or visited.h or startTok), "[%s] Cannot set the size of the main buffer. Use the 'canvas' command instead.", command))  end
+			if args.template ~= "" then  return (tokenError(context, startTok, "[%s] Missing buffer name.", command))  end
+
+			if visited.w or visited.h then
+				return (tokenError(context, (visited.w or visited.h or startTok), "[%s] Cannot set the size of the main buffer. Use the 'canvas' command instead.", command))
+			end
 
 			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
 
-		-- Custom buffer.
+		-- Custom buffer. :ReuseOrCreateBuffer
 		else
-			if args.path ~= "" then
-				texture = getOrLoadImage(context, startTok, args.path, args.recurse)
-				if not texture then  return nil  end
-
-				iw,ih = texture:getDimensions()
-			end
-
 			-- Reuse existing.
 			if
 				context.buffers[bufName]
@@ -1812,7 +1861,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			then
 				gfxStateSetCanvas(context, context.buffers[bufName])
 
-				if args.clear then
+				if args.clear and not (args.template ~= "" and args.template == bufName) then
 					LG.setCanvas(context.gfxState.canvas)
 					LG.clear(0, 0, 0, (args.mask and 1 or 0))
 				end
@@ -1835,11 +1884,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 					if isCanvasReferencedInStack(context, context.buffers[bufName]) then
 						return (tokenError(context, (visited.buf or startTok), "[%s] Cannot replace existing buffer '%s' at this point.", command, bufName))
 					end
-
 					context.buffers[bufName]:release()
 				end
 
-				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=msaa})
+				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=(msaa > 1 and msaa^2 or nil)})
 				gfxStateSetCanvas(context, context.buffers[bufName])
 
 				if args.mask then
@@ -1854,11 +1902,11 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			end
 		end
 
-		if args.path ~= "" then
-			texture:setFilter("nearest")
+		if args.template ~= "" and args.template ~= bufName then
+			context.buffers[args.template]:setFilter("nearest")
 			pushTransformAndReset("replace")
 			LG.setCanvas(context.gfxState.canvas)
-			LG.draw(texture)
+			LG.draw(context.buffers[args.template])
 			LG.pop()
 		end
 
@@ -2123,26 +2171,6 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		LG.printf(args.text, 0,0, w, args.align)
 		shaderSend(A.shaders.main, "textBlendFix", false)
 		LG.pop()
-
-	----------------------------------------------------------------
-	elseif command == "image" then
-		if args.path == "" then  return (tokenError(context, (visited.path or startTok), "[%s] Missing path.", command))  end
-
-		ensureCanvasAndInitted(context)
-
-		local texture = getOrLoadImage(context, startTok, args.path, args.recurse)
-		if not texture then  return nil  end
-
-		local iw,ih = texture:getDimensions()
-
-		applyCanvas(context, nil)
-		applyColor(context, nil, "rectangle", iw,ih)
-		texture:setFilter(args.filter and "linear" or "nearest")
-		texture:setWrap("clamp")
-
-		if args.origin then  LG.push() ; LG.origin()  end
-		LG.draw(texture, args.x,args.y, args.rot, args.sx,args.sy, args.ax*iw,args.ay*ih, args.kx,args.ky)
-		if args.origin then  LG.pop()  end
 
 	----------------------------------------------------------------
 	elseif command == "buf" or command == "pat" then

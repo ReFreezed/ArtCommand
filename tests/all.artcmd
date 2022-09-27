@@ -31,8 +31,7 @@ backdrop0 .3 0 .5
 fill.4 .4 .4 .6
 # zoom 2
 
-default "image" "filter" False  # MSAA+filters tend to make things blurry.
-default "pat"   "filter" False
+default "pat"   "filter" False  # MSAA+filters tend to make things blurry.
 default "text"  "filter" False
 default "buf"   "filter" False
 default "quad"  "filter" False
@@ -235,16 +234,17 @@ push
 pop
 
 # Images.
-color rgb1           ; image "face.png" 100 250 +filter sx.5
-grad 1 .4 .4, .4 1 .4; image "face.png" 155 270 +filter sx.3 sy.2
+image"face.png"
+color rgb1           ; buf"face.png" 100 250 +filter sx.5
+grad 1 .4 .4, .4 1 .4; buf"face.png" 155 270 +filter sx.3 sy.2
 
 color rgb1 .13
-image "face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5
+buf"face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5
 
-Circles = "circles.artcmd"
-color rgb1  1                 ; imageCircles (185+0*50) 230
-color rgb1 .5                 ; imageCircles (185+1*50) 230
-grad a.5,a1,a0,a1,a.5 rot90deg; imageCircles (185+2*50) 230
+Circles = "circles.artcmd"; imageCircles
+color rgb1  1                 ; bufCircles (185+0*50) 230
+color rgb1 .5                 ; bufCircles (185+1*50) 230
+grad a.5,a1,a0,a1,a.5 rot90deg; bufCircles (185+2*50) 230
 
 # Buffers.
 setbuf+mask
@@ -373,6 +373,7 @@ buf"fx"
 # tint 0 .5 0 1   # 50% saturated green. (Between black[000] and green[010].)
 # tint .5 1 .5 1  # 50% saturated green. (Between green[010] and white[111].)
 
+image"forest.png"
 setbuf"forest" "forest.png"
 	levels .5 1  .25 .75  mid.25
 color; buf"forest" 450 80 rot5deg
@@ -427,8 +428,8 @@ push
 	setbuf+mask; color
 		circle r80
 	mask
-		color 1 .6 .2; pat   "forest"     anchor.5 rot-30deg scale.35 ky.2 +filter +mirror
-		color;         image "forest.png" anchor.5 rot-30deg scale.35 ky.2 +filter
+		color 1 .6 .2;            pat"forest"     anchor.5 rot-30deg scale.35 ky.2 +filter +mirror
+		color; image"forest.png"; buf"forest.png" anchor.5 rot-30deg scale.35 ky.2 +filter
 	maskFalse
 pop
 
@@ -438,7 +439,7 @@ push
 	rotate -5deg
 	scale xy.3
 	grey0 .2; rect 0 0 CanvasW CanvasH
-	# color .4 .9 1; image "all.artcmd" recurse3
+	# color .4 .9 1; image"all.artcmd" recurse3; buf"all.artcmd"
 pop
 
 # Isolines.
@@ -523,8 +524,8 @@ fori V Arr
 end
 
 # Blend modes.
-blend"add"     ; color a.50; image"face.png" 510 145 scale.5 anchor.5 rot-5deg
-blend"subtract"; color a.45; image"face.png" 580 145 scale.5 anchor.5 rot10deg
+blend"add"     ; color a.50; buf"face.png" 510 145 scale.5 anchor.5 rot-5deg
+blend"subtract"; color a.45; buf"face.png" 580 145 scale.5 anchor.5 rot10deg
 blend"alpha"
 
 # Distorted quads
