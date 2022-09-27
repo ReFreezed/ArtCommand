@@ -359,15 +359,15 @@ local function applyColor(context, shader, shape, w,h)
 	local texture      = gfxState.colorTexture
 	local radial       = false
 	local smooth       = false
-	local sx           = 1 -- colorTextureLayout
-	local sy           = 1 -- colorTextureLayout
-	local dirX         = 1 -- colorTextureLayout
-	local dirY         = 0 -- colorTextureLayout
+	local dirX         = 1
+	local dirY         = 0
 	local radialOffset = 1
 	local preSx        = 1
 	local preSy        = 1
 	local postSx       = 1
 	local postSy       = 1
+	local finalAngleX  = 1
+	local finalAngleY  = 0
 
 	if gfxState.colorMode == "gradient" then
 		if not texture then
@@ -387,11 +387,20 @@ local function applyColor(context, shader, shape, w,h)
 		end
 
 		if gfxState.colorTextureRadial then
-			local iw     = texture:getWidth()
-			local scale  = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
-			radial       = true
-			sx           = gfxState.colorTextureScaleX * iw/(iw-1) * scale
-			sy           = gfxState.colorTextureScaleY * iw/(iw-1) * scale * w/h
+			local iw,ih = texture:getDimensions()
+			local angle = gfxState.colorTextureAngle
+
+			local scale = (gfxState.colorTextureFit and math.min(h/w, 1)) or (shape == "rectangle" and math.sqrt(w^2+h^2)/w) or math.max(h/w, 1)
+			scale       = scale * iw/(iw-1)
+
+			radial = true
+
+			-- finalAngleX = math.cos(angle) -- Doesn't work for non-square shapes! (Maybe we need to move some post-scale values to pre-scale?) @Incomplete
+			-- finalAngleY = math.sin(angle)
+
+			postSx = gfxState.colorTextureScaleX * scale
+			postSy = gfxState.colorTextureScaleY * scale * w/h
+
 			radialOffset = .5/iw
 
 		else
@@ -403,7 +412,7 @@ local function applyColor(context, shader, shape, w,h)
 			local angleCompensationScale = (shape == "rectangle") and math.abs(math.sin(scaledAngle))+math.abs(math.cos(scaledAngle)) or 1
 
 			local iw = texture:getWidth()
-			sx       = gfxState.colorTextureScaleX * iw/(iw-1) * angleCompensationScale -- colorTextureScaleY isn't used.
+			preSx    = gfxState.colorTextureScaleX * iw/(iw-1) * angleCompensationScale -- Note: colorTextureScaleY is useless for non-radial gradients.
 
 			dirX = math.cos(scaledAngle)
 			dirY = math.sin(scaledAngle)
@@ -431,14 +440,14 @@ local function applyColor(context, shader, shape, w,h)
 			scale              = scale * math.max(boundsW/normalizedIw, boundsH/normalizedIh)
 		end
 
+		preSx = gfxState.colorTextureScaleX
+		preSy = gfxState.colorTextureScaleY * ih/iw
+
 		dirX = math.cos(angle)
 		dirY = math.sin(angle)
 
-		preSx = scale
-		preSy = scale * w/h
-
-		postSx = gfxState.colorTextureScaleX
-		postSy = gfxState.colorTextureScaleY * ih/iw
+		postSx = scale
+		postSy = scale * w/h
 
 		texture:setWrap(WRAP_TO_LOVE_WRAP[gfxState.colorTextureWrapX], WRAP_TO_LOVE_WRAP[gfxState.colorTextureWrapY])
 
@@ -446,15 +455,16 @@ local function applyColor(context, shader, shape, w,h)
 		error(gfxState.colorMode)
 	end
 
-	shaderSend    (shader, "useColorTexture"         , true)
-	shaderSend    (shader, "colorTexture"            , texture)
-	shaderSend    (shader, "colorTextureRadial"      , radial)
-	shaderSend    (shader, "colorTextureSmooth"      , smooth)
-	shaderSendVec4(shader, "colorTextureLayout"      , sx,sy, dirX,dirY)
-	shaderSend    (shader, "colorTextureRadialOffset", radialOffset)
-	shaderSendVec2(shader, "colorTextureOffset"      , gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
-	shaderSendVec4(shader, "colorTextureScale"       , preSx,preSy, postSx,postSy)
-	shaderSend    (shader, "gradientSize"            , #gfxState.gradient/4)
+	shaderSend    (shader, "useColorTexture"          , true)
+	shaderSend    (shader, "colorTexture"             , texture)
+	shaderSend    (shader, "colorTextureRadial"       , radial)
+	shaderSend    (shader, "colorTextureSmooth"       , smooth)
+	shaderSendVec2(shader, "colorTextureDirection"    , dirX,dirY)
+	shaderSend    (shader, "colorTextureRadialOffset" , radialOffset)
+	shaderSendVec2(shader, "colorTextureOffset"       , gfxState.colorTextureOffsetX,gfxState.colorTextureOffsetY)
+	shaderSendVec4(shader, "colorTextureScale"        , preSx,preSy, postSx,postSy)
+	shaderSendVec2(shader, "colorTextureFinalAngle"   , finalAngleX,finalAngleY)
+	shaderSend    (shader, "gradientSize"             , #gfxState.gradient/4)
 end
 
 

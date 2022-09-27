@@ -202,8 +202,9 @@ push
 	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 +radial -fit
 	rect 0 30 60 50
 	circle 70 0 r40 anchor0
-	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 +radial sy.7 x-.15 y-.15
+	grad 1 0 0, 1 1 0, 0 1 0, 0 1 1, 0 0 1, 1 0 1, 1 0 0 1 +radial sy.7 x-.15 y-.15 rot45deg
 	rect 152 0 size24 anchor.5
+	rect 152 40 12 24 ax0 ay.5
 	circle 152 80 r12
 pop
 

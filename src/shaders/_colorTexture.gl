@@ -17,10 +17,11 @@ uniform bool  useColorTexture;
 uniform bool  colorTextureRadial;
 uniform bool  colorTextureSmooth; // For gradients.
 uniform Image colorTexture;
-uniform vec4  colorTextureLayout; // {scaleX,scaleY, directionX,directionY}  @Cleanup: Split scale and direction. (Is scale needed with colorTextureScale? Probably not.)
+uniform vec2  colorTextureDirection;
 uniform float colorTextureRadialOffset;
 uniform vec2  colorTextureOffset;
 uniform vec4  colorTextureScale; // {preScaleX,preScaleY, postScaleX,postScaleY}
+uniform vec2  colorTextureFinalAngle;
 uniform int   gradientSize; // @Cleanup: Have a `vec2 colorTextureSize` instead?
 
 vec4 colorTextureTexel(vec2 texPos) {

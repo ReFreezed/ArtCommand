@@ -17,9 +17,6 @@
 #include "_mask"
 #include "_utils"
 
-#define LAYOUT_SCALE     colorTextureLayout.xy
-#define LAYOUT_DIRECTION colorTextureLayout.zw
-
 #define PRE_SCALE  colorTextureScale.xy
 #define POST_SCALE colorTextureScale.zw
 
@@ -36,21 +33,20 @@ vec4 applyMainEffect(vec4 sample, vec2 uv, vec2 screenPos, vec4 loveColor) {
 		colorTexUv      -= colorTextureOffset;
 		colorTexUv       = colorTexUv*2 - 1; // Center.
 
-		colorTexUv /= PRE_SCALE;
+		// colorTexUv = _main_rotateCcw(colorTexUv, colorTextureFinalAngle); // Just no good, at least for the radials that need this.
+		colorTexUv /= POST_SCALE;
 
 		if (colorTextureRadial) {
-			colorTexUv   /= LAYOUT_SCALE; // Scale.
 			vec2 angle    = colorTexUv / length(colorTexUv);
-			colorTexUv    = _main_rotateCcw(colorTexUv, angle); // Make radial.
+			colorTexUv    = _main_rotateCcw(colorTexUv, angle); // Make radial (along diameter).
 			colorTexUv.x += colorTextureRadialOffset; // Offset. (Should be half a pixel.)
-			colorTexUv.x  = (colorTexUv.x - .5) * 2;
+			colorTexUv.x  = (colorTexUv.x - .5) * 2; // Translate from diameter to radius.
 
 		} else {
-			colorTexUv  = _main_rotateCcw(colorTexUv, LAYOUT_DIRECTION); // Rotate.
-			colorTexUv /= LAYOUT_SCALE; // Scale.
+			colorTexUv = _main_rotateCcw(colorTexUv, colorTextureDirection); // Rotate.
 		}
 
-		colorTexUv /= POST_SCALE;
+		colorTexUv /= PRE_SCALE;
 
 		colorTexUv  = (colorTexUv+1) * .5; // Uncenter.
 		sample     *= colorTextureTexel(colorTexUv);
