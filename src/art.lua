@@ -2717,12 +2717,18 @@ function _G.loadArtFile(path, isLocal)
 	-- @Incomplete @Robustness: Argument validation.
 
 	-- Functions: misc.
-	vars.num  = {token=dummyTok, value=tonumber}
-	vars.rev  = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
-	vars.sel  = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
-	vars.selx = {token=dummyTok, value=select}
-	vars.str  = {token=dummyTok, value=tostring}
-	vars.type = {token=dummyTok, value=type}
+	vars.num     = {token=dummyTok, value=tonumber}
+	vars.rev     = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
+	vars.sel     = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
+	vars.selx    = {token=dummyTok, value=select}
+	vars.str     = {token=dummyTok, value=tostring}
+	vars.type    = {token=dummyTok, value=type}
+
+	vars.default = {token=dummyTok, value=function(command, k, defaultDefault) -- default( command, argumentName [, getDefaultDefault=false ] )
+		local commandInfo = (defaultDefault and COMMANDS or context.commands)[command] or errorf(2, "No command '%s'.", tostring(command))
+		local argInfo     = itemWith1(commandInfo, "name", k)                          or errorf(2, "Command '%s' has no argument '%s'.", command, tostring(k))
+		return argInfo.value
+	end}
 
 	-- Functions: math and numbers.
 	vars.abs    = {token=dummyTok, value=math.abs}
