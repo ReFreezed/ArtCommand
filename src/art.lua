@@ -1633,7 +1633,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local texture = getOrLoadImage(context, startTok, args.path, args.recurse) -- @Incomplete: Handle args.recurse having different values for the same path.
 		if not texture then  return nil  end
 
-		local bufName      = args.path
+		local bufName = visited.buf and args.buf or args.path
+		if bufName == "" then  return (tokenError(context, (visited.buf or startTok), "[%s] Missing buffer name.", command))  end
+
 		local iw,ih        = texture:getDimensions()
 		local msaa         = visited.aa and args.aa or context.canvasMsaa
 		local canvasFormat = "rgba16"
@@ -1657,7 +1659,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				-- Don't accidentally release the active canvas, or one in the stack!
 				LG.setCanvas(nil)
 				if isCanvasReferencedInStack(context, context.buffers[bufName]) then
-					return (tokenError(context, (visited.path or startTok), "[%s] Cannot replace existing buffer '%s' with image at this point.", command, bufName))
+					return (tokenError(context, (visited.buf or visited.path or startTok), "[%s] Cannot replace existing buffer '%s' with image at this point.", command, bufName))
 				end
 				context.buffers[bufName]:release()
 			end
@@ -2838,7 +2840,7 @@ function _G.loadArtFile(path, isLocal)
 	vars.pointstr = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.s  end}
 
 	-- Functions: images and buffers.
-	vars.imagewh = {token=dummyTok, value=function(path)  if not context.images[path] then errorf(2, "No image '%s' loaded.", path) end ; local w, h = context.images[path]:getDimensions() ; return {W=w, H=h}  end} -- @Incomplete: Load image if it's not loaded.
+	vars.imagewh = {token=dummyTok, value=function(path)  if not context.images[path] then errorf(2, "No image '%s' loaded.", path) end ; local w, h = context.images[path]:getDimensions() ; return {W=w, H=h}  end}
 	vars.imagew  = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end}
 	vars.imageh  = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
 

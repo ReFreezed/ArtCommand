@@ -68,7 +68,7 @@ mask     mask=true  buf="mask"  alpha=false
 map      r="r" g="g" b="b" a="a"      rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 channel  r=true g=true b=true a=true  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
-image  path=""  recurse=0  aa=1(canvasMsaa)
+image  path="" buf=""(path)  recurse=0  aa=1(canvasMsaa)
 
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
