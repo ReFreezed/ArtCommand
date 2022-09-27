@@ -9,7 +9,7 @@
 *
 ***************************************************************/
 
-#include "_colorSpaces.gl"
+#include "_colorSpaces"
 
 uniform vec4 params; // {r, g, b, tintAmount}
 

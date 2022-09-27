@@ -9,8 +9,8 @@
 *
 ***************************************************************/
 
-#include "_colorSpaces.gl"
-#include "_main.gl"
+#include "_colorSpaces"
+#include "_main"
 
 uniform vec3 target; // {r,g,b}
 uniform vec2 params; // {reach, ramp}

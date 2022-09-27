@@ -145,60 +145,39 @@ local function ScopeStackEntry()return{
 	calledFunction = nil, -- FunctionInfo
 }end
 
-local function GfxState()return{
-	canvas          = nil, -- @Cleanup: Store bufferName instead.
-	useMask         = "",
-	maskAlphaMode   = false,
-	blendMode       = "alpha", -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
-	channelMapping  = {0,1,2,3},
-	writeToChannels = {true,true,true,true},
-
-	-- Color.
-	colorMode           = "flatcolor", -- "flatcolor" | "gradient" | "texture"
-	flatColor           = {1,1,1,1},
-	gradient            = {--[[ r1,g1,b1,a1, ... ]]},
-	colorTexture        = nil,
-	colorTextureRadial  = false,
-	colorTextureSmooth  = false,
-	colorTextureFit     = true, -- Used with colorTextureRadial.
-	colorTextureScaleX  = 1.0,
-	colorTextureScaleY  = 1.0,
-	colorTextureAngle   = 0.0,
-	colorTextureOffsetX = 0.0,
-	colorTextureOffsetY = 0.0,
-	colorTextureBuffer  = "",
-	colorTextureWrapX   = "clamp",
-	colorTextureWrapY   = "clamp",
-
-	-- Font.
-	font = A.fonts.artDefault,
-}end
-
-local function resetGfxState(gfxState)
-	gfxState.canvas          = nil
+local function initGfxState(gfxState)
+	gfxState.canvas          = nil -- @Cleanup: Store bufferName instead.
 	gfxState.useMask         = ""
 	gfxState.maskAlphaMode   = false
-	gfxState.blendMode       = "alpha"
-	updateVec4(gfxState.channelMapping , 0,1,2,3)
-	updateVec4(gfxState.writeToChannels, true,true,true,true)
+	gfxState.blendMode       = "alpha" -- "alpha" | "replace" | "screen" | "add" | "subtract" | "multiply" | "lighten" | "darken"
+	gfxState.channelMapping  = gfxState.channelMapping  or {} ; updateVec4(gfxState.channelMapping , 0,1,2,3) -- See _utils.gl
+	gfxState.writeToChannels = gfxState.writeToChannels or {} ; updateVec4(gfxState.writeToChannels, true,true,true,true)
 
-	gfxState.colorMode = "flatcolor"
-	updateVec4(gfxState.flatColor, 1,1,1,1)
-	table.clear(gfxState.gradient)
-	gfxState.colorTexture        = nil -- @Memory: Release image. (Consider gfxStack!)
+	-- Color.
+	gfxState.colorMode           = "flatcolor" -- "flatcolor" | "gradient" | "texture"
+	gfxState.flatColor           = gfxState.flatColor or {} ; updateVec4(gfxState.flatColor, 1,1,1,1)
+	gfxState.gradient            = gfxState.gradient  or {--[[ r1,g1,b1,a1, ... ]]} ; table.clear(gfxState.gradient)
+	gfxState.colorTexture        = nil -- @Memory: Release any old image. (Consider gfxStack!)
 	gfxState.colorTextureRadial  = false
 	gfxState.colorTextureSmooth  = false
-	gfxState.colorTextureFit     = true
-	gfxState.colorTextureScaleX  = 1
-	gfxState.colorTextureScaleY  = 1
-	gfxState.colorTextureAngle   = 0
-	gfxState.colorTextureOffsetX = 0
-	gfxState.colorTextureOffsetY = 0
+	gfxState.colorTextureFit     = true -- Used with colorTextureRadial.
+	gfxState.colorTextureScaleX  = 1.0
+	gfxState.colorTextureScaleY  = 1.0
+	gfxState.colorTextureAngle   = 0.0
+	gfxState.colorTextureOffsetX = 0.0
+	gfxState.colorTextureOffsetY = 0.0
 	gfxState.colorTextureBuffer  = ""
-	gfxState.colorTextureWrapX   = "clamp"
-	gfxState.colorTextureWrapY   = "clamp"
+	gfxState.colorTextureWrapX   = "clamp" -- "clamp" | "cut" | "repeat" | "mirror"
+	gfxState.colorTextureWrapY   = "clamp" -- "clamp" | "cut" | "repeat" | "mirror"
 
+	-- Font.
 	gfxState.font = A.fonts.artDefault
+end
+
+local function GfxState()
+	local gfxState = {}
+	initGfxState(gfxState)
+	return gfxState
 end
 
 local function copyGfxState(gfxState)return{
@@ -1492,7 +1471,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "reset" then
 		ensureCanvasAndInitted(context)
 		if args.gfx then
-			resetGfxState(context.gfxState)
+			initGfxState(context.gfxState)
 			context.gfxState.canvas = context.art.canvas
 		end
 		if args.transform then
@@ -2276,7 +2255,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		local glsl = [[//GLSL
-			#include "_main.gl"
+			#include "_main"
 
 			float sdfSmoothMin(float a, float b) {
 				float res = exp(-$k*a) + exp(-$k*b);

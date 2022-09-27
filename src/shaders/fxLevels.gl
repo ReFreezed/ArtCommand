@@ -9,7 +9,7 @@
 *
 ***************************************************************/
 
-#include "_colorSpaces.gl"
+#include "_colorSpaces"
 
 uniform vec2 rangeIn;  // {min, max}
 uniform vec2 rangeOut; // {min, max}

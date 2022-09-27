@@ -9,7 +9,7 @@
 *
 ***************************************************************/
 
-#include "_main.gl"
+#include "_main"
 
 uniform bool textBlendFix;
 

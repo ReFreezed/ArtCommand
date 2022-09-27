@@ -9,13 +9,13 @@
 *
 ***************************************************************/
 
-// #include "_noise2D.gl"
-#include "_noise3D.gl"
-// #include "_noise4D.gl"
+// #include "_noise2D"
+#include "_noise3D"
+// #include "_noise4D"
 
-#include "_colorTexture.gl"
-#include "_mask.gl"
-#include "_utils.gl"
+#include "_colorTexture"
+#include "_mask"
+#include "_utils"
 
 uniform bool clouds;
 uniform vec3 offset;

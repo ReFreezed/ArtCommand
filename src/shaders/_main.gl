@@ -13,9 +13,9 @@
 
 ***************************************************************/
 
-#include "_colorTexture.gl"
-#include "_mask.gl"
-#include "_utils.gl"
+#include "_colorTexture"
+#include "_mask"
+#include "_utils"
 
 #define LAYOUT_SCALE     colorTextureLayout.xy
 #define LAYOUT_DIRECTION colorTextureLayout.zw

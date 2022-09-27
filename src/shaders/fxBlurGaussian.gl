@@ -11,7 +11,7 @@
 *
 ***************************************************************/
 
-#include "_utils.gl"
+#include "_utils"
 
 uniform vec2 direction;
 

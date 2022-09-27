@@ -9,7 +9,7 @@
 *
 ***************************************************************/
 
-#include "_colorSpaces.gl"
+#include "_colorSpaces"
 
 uniform float threshold;
 uniform bool  alphaMode;

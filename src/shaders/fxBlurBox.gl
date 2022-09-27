@@ -9,7 +9,7 @@
 *
 ***************************************************************/
 
-#include "_utils.gl"
+#include "_utils"
 
 uniform int radius;
 uniform vec2 direction;

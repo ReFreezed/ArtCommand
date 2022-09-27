@@ -151,10 +151,10 @@ local function includeShader(paths, lines, lineFiles, lineLines, s, path)
 
 	for line in s:gsub("\n", " \n"):gmatch"[^\n]+" do
 		ln                = ln + 1
-		local includePath = line:match'^%s*#include%s+"(.-)"'
+		local includeName = line:match'^%s*#include%s+"(.-)"'
 
-		if includePath then
-			includePath = "src/shaders/"..includePath
+		if includeName then
+			local includePath = "src/shaders/"..includeName..".gl"
 			includeShader(paths, lines, lineFiles, lineLines, assert(LF.read(includePath)), includePath)
 		else
 			table.insert(lines, line)
