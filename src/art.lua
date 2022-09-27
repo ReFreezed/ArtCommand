@@ -174,6 +174,33 @@ local function GfxState()return{
 	font = A.fonts.artDefault,
 }end
 
+local function resetGfxState(gfxState)
+	gfxState.canvas          = nil
+	gfxState.useMask         = ""
+	gfxState.maskAlphaMode   = false
+	gfxState.blendMode       = "alpha"
+	updateVec4(gfxState.channelMapping , 0,1,2,3)
+	updateVec4(gfxState.writeToChannels, true,true,true,true)
+
+	gfxState.colorMode = "flatcolor"
+	updateVec4(gfxState.flatColor, 1,1,1,1)
+	table.clear(gfxState.gradient)
+	gfxState.colorTexture        = nil -- @Memory: Release image. (Consider gfxStack!)
+	gfxState.colorTextureRadial  = false
+	gfxState.colorTextureSmooth  = false
+	gfxState.colorTextureFit     = true
+	gfxState.colorTextureScaleX  = 1
+	gfxState.colorTextureScaleY  = 1
+	gfxState.colorTextureAngle   = 0
+	gfxState.colorTextureOffsetX = 0
+	gfxState.colorTextureOffsetY = 0
+	gfxState.colorTextureBuffer  = ""
+	gfxState.colorTextureWrapX   = "clamp"
+	gfxState.colorTextureWrapY   = "clamp"
+
+	gfxState.font = A.fonts.artDefault
+end
+
 local function copyGfxState(gfxState)return{
 	canvas          = gfxState.canvas,
 	useMask         = gfxState.useMask,
@@ -862,7 +889,7 @@ end
 
 local function pushGfxState(context)
 	table.insert(context.gfxStack, copyGfxState(context.gfxState))
-	LG.push()
+	LG.push() -- Only the transform.
 end
 
 -- success = popGfxState( context )
@@ -1457,10 +1484,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		ensureCanvasAndInitted(context)
 		pushGfxState(context)
 
-	----------------------------------------------------------------
 	elseif command == "pop" then
 		if not popGfxState(context) then -- Will fail if there was no push - otherwise ensureCanvasAndInitted() will have been called.
 			tokenWarning(context, startTok, "pop: Too many 'pop' commands. Ignoring.")
+		end
+
+	elseif command == "reset" then
+		ensureCanvasAndInitted(context)
+		if args.gfx then
+			resetGfxState(context.gfxState)
+			context.gfxState.canvas = context.art.canvas
+		end
+		if args.transform then
+			LG.origin()
 		end
 
 	----------------------------------------------------------------

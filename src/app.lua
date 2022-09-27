@@ -74,6 +74,8 @@ end
 
 local function tryLoadingTheArtFile(showSuccessStatus)
 	local art = loadArtFile(thePathIn, thePathIsTest)
+	collectgarbage()
+
 	if not art then
 		setStatus("Failed loading %s", thePathIn)
 		return

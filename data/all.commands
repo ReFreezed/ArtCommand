@@ -50,8 +50,9 @@ canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
 #
 # State.
 #
-push 
-pop  
+push
+pop
+reset gfx=true transform=true
 
 color    r=1 g=1 b=1 a=1                                                                             rgb=r&g&b rg=r&g rb=r&b gb=g&b
 grey     grey=1      a=1  # Short for `color rgbN`.
@@ -70,7 +71,7 @@ channel  r=true g=true b=true a=true  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a
 font       path=""(builtinFont)  size=12
 imagefont  path=""  chars=""  spacing=0
 
-origin 
+origin
 move    x=0 y=0  xy=x&y
 rotate  rot=0
 scale   x=1 y=1  xy=x&y
