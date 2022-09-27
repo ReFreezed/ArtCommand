@@ -399,8 +399,8 @@ setbuf"rainbow" 148 128
 color; buf"rainbow" 720 260 scale.5
 
 # Generator: noise.
-setbuf+mask; color; rect 440 (390+2*50) 40 40 r10; mask; color;             noise       scale.2
-setbuf+mask; color; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale.15
+setbuf+mask; color; rect 440 (390+2*50) 40 40 r10; mask; color;             noise       scale5
+setbuf+mask; color; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale6.667
 maskFalse
 
 # Generator: clouds.
@@ -409,7 +409,7 @@ setbuf+mask; color
 	blur xy100
 mask
 	color
-	clouds scale3
+	clouds scale.333
 maskFalse
 
 # Generator: random noise.

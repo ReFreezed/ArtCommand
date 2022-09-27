@@ -60,7 +60,7 @@ mask
 	# Texture.
 	setbuf"noise"
 		color
-		noise scale.1
+		noise scale10
 		contrast 3
 	setbuf
 	# buf"noise" anchor.5 #debug
@@ -73,7 +73,7 @@ mask
 	# Age.
 	setbuf"noise"
 		color
-		clouds scale1.5
+		clouds scale.667
 		contrast 6
 		gamma .5
 	setbuf
@@ -115,11 +115,12 @@ mask
 		K = (.00*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K)) scale(Ring.Scale)
 		rect 0 0 W RingH anchor.5
 
-		setbuf"noise" hRingH
+		push; setbuf"noise" hRingH
+			maskFalse
 			color
-			noise scale.2 y(Ring.Y)
+			noise scale5 y(Ring.Y)
 			contrast 1.5
-		setbuf
+		pop
 		# buf"noise" anchor.5 #debug
 
 		grey.05

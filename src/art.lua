@@ -67,6 +67,10 @@ for line in LF.lines"data/all.commands" do
 				table.insert(COMMANDS[command], {name=k,value=v})
 			end
 		end
+
+		if DEV and not itemWith1(COMMANDS[command], "name", "debug") then
+			table.insert(COMMANDS[command], {name="debug",value=false})
+		end
 	end
 end
 

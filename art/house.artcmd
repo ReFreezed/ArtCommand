@@ -16,7 +16,7 @@ backdrop a.8
 # Sky.
 HorizonY = (.5*CanvasH)
 
-clouds sx.8 sy1.5
+clouds sx1.25 sy.667
 contrast .5
 gamma .45
 grad rgb.15 0, rgb.15 1 rot90deg; rect 0 0 CanvasW HorizonY
@@ -371,7 +371,7 @@ push
 
 	# Texture and seams.
 	setbuf"noise"
-		color; noise sx(1/(5*Scale/.9)) sy(1/(70*Scale/.9))
+		color; noise sx(5*Scale/.9) sy(70*Scale/.9)
 		remap rgb"1" "g"
 	setbuf
 
@@ -504,7 +504,7 @@ if HideEffects; stopTrue; end
 
 # Fog.
 setbuf"fog"
-	color; clouds scale.15
+	color; clouds scale7
 	contrast 1.5
 	grad rgb0 0, rgb0 .4 rot90deg; rect 0 CanvasH CanvasW (-.5*CanvasH)
 	grad rgb0 .5, rgb0 0 +radial; circle (.35*CanvasW) (.65*CanvasH) r1 sx(.4*CanvasW) sy(.3*CanvasW)
