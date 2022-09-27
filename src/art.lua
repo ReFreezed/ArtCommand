@@ -1783,6 +1783,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			-- Create new.
 			else
+				if iw < 1 then  return (tokenError(context, (visited.w or startTok), "[%s] The width must be a positive number." , command))  end
+				if ih < 1 then  return (tokenError(context, (visited.h or startTok), "[%s] The height must be a positive number.", command))  end
+
 				if iw > context.canvasWidth or ih > context.canvasHeight then
 					return (tokenError(context, (iw > context.canvasWidth and visited.w or visited.h or startTok),
 						"[%s] Buffer size cannot currently be larger than the canvas. (Canvas is %dx%d, got %dx%d)",
