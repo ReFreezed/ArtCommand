@@ -4,7 +4,7 @@
 canvas 400 500 aa4
 backdrop rgb.45 .7
 
-move (CanvasW/2) (CanvasH/2)
+move CanvasW/2 CanvasH/2
 
 W = 300
 H = 400
@@ -35,26 +35,26 @@ setbuf+mask
 
 	# Ring protrusions.
 	fori Ring Rings
-		circle (-W/2*Ring.Scale) (Ring.Y) rx(.1*RingH) ry(RingH/2) kx(-Ring.Kx)
-		circle ( W/2*Ring.Scale) (Ring.Y) rx(.1*RingH) ry(RingH/2) kx( Ring.Kx)
+		circle -W/2*Ring.Scale Ring.Y rx(.1*RingH) ry(RingH/2) kx(-Ring.Kx)
+		circle  W/2*Ring.Scale Ring.Y rx(.1*RingH) ry(RingH/2) kx( Ring.Kx)
 	end
 
 	# Top/bottom.
 	grey0
-	rect 0 (-H/2) 1000 1000 ax.5 ay1
-	rect 0 ( H/2) 1000 1000 ax.5 ay0
+	rect 0 -H/2 1000 1000 ax.5 ay1
+	rect 0  H/2 1000 1000 ax.5 ay0
 
 mask
 	# Wood fill.
-	R1 = (0x67/255); G1 = (0x57/255); B1 = (0x4d/255)
-	R2 = (0xbd/255); G2 = (0x9c/255); B2 = (0x7d/255)
-	K = .3; grad       (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-	K = .0; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-	K = .5; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-	K = .9; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-	K = 1.; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-	K = .9; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-	K = .5; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	R1 = 0x67/255; G1 = 0x57/255; B1 = 0x4d/255
+	R2 = 0xbd/255; G2 = 0x9c/255; B2 = 0x7d/255
+	K  = .3; grad       (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	K  = .0; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	K  = .5; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	K  = .9; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	K  = 1.; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	K  = .9; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+	K  = .5; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
 	rect 0 0 W H anchor.5
 
 	# Texture.
@@ -86,33 +86,33 @@ mask
 
 	# Plank seams.
 	Count = 8
-	for (-.5-(Count-1)) (.5+(Count-1))
-		grey0 (.05+.3*noise((100+I)^2*.1382))
-		point 0 -510, (W*sin(I*Tau/4/Count)) 0, 0 510; bezier thick1.5
+	for -.5-(Count-1) .5+(Count-1)
+		grey0 .05+.3*noise((100+I)^2*.1382)
+		point 0 -510, W*sin(I*Tau/4/Count) 0, 0 510; bezier thick1.5
 	end
 
 	# Metal rings.
 	fori Ring Rings; push
-		move y(Ring.Y)
+		move 0 Ring.Y
 
 		# Shadow.
-		grey0 .3; rect 0 1 W (RingH+3) anchor.5
+		grey0 .3; rect 0 1 W RingH+3 anchor.5
 
 		# Ring.
-		R1 = (0x25/255); G1 = (0x1e/255); B1 = (0x1c/255)
-		R2 = (0xb2/255); G2 = (0xa5/255); B2 = (0x9e/255)
-		K = (.30*Ring.Light); grad       (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.00*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.00*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.00*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.20*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.45*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (1.0*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (1.0*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (1.0*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.45*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.20*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
-		K = (.00*Ring.Light); grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K)) scale(Ring.Scale)
+		R1 = 0x25/255; G1 = 0x1e/255; B1 = 0x1c/255
+		R2 = 0xb2/255; G2 = 0xa5/255; B2 = 0x9e/255
+		K = .30*Ring.Light ; grad       (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .00*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .00*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .00*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .20*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .45*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = 1.0*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = 1.0*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = 1.0*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .45*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .20*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K))
+		K = .00*Ring.Light ; grad-clear (lerp(R1,R2,K)) (lerp(G1,G2,K)) (lerp(B1,B2,K)) scale(Ring.Scale)
 		rect 0 0 W RingH anchor.5
 
 		push; setbuf"noise" hRingH
@@ -129,10 +129,10 @@ mask
 		blend"alpha"
 
 		# Bolts.
-		move (8*(noise((Ring.Y/H*4.341))*2-1))  # Rotate ring.
+		move 8*(noise((Ring.Y/H*4.341))*2-1)  # Rotate ring.
 
 		fori X {60, 76, 90}
-			X = (X*Ring.Scale)
+			X = X*Ring.Scale
 
 			# Shadow.
 			grad rgb0 0, rgb0 .3  rot90deg y.5
@@ -149,17 +149,17 @@ mask
 
 		# Seam.
 		grey0 .25
-		rect (97*Ring.Scale) 0 1 RingH anchor.5 kx(Ring.Kx)
+		rect 97*Ring.Scale 0 1 RingH anchor.5 kx(Ring.Kx)
 	pop; end
 
 	# Highlight.
 	blend"add"
 	grad       rgb1 0
 	grad-clear rgb1 .05 rot-90deg
-	rect 0 (-H/2) W (.5*H) ax.5 ay0
+	rect 0 -H/2 W .5*H ax.5 ay0
 	# Shading.
 	blend"alpha"
 	grad       rgb.0 0
 	grad-clear rgb.0 .2 rot90deg
-	rect 0 (H/2) W (.5*H) ax.5 ay1
+	rect 0 H/2 W .5*H ax.5 ay1
 maskFalse

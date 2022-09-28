@@ -1,13 +1,13 @@
 #
 # "Grass" by ReFreezed, 2022-09-13
 #
-set W 5 #half
-set H 40
+W = 5 #half
+H = 40
 
-set Dx 10
-set Dy 6
+Dx = 10
+Dy = 6
 
-set Bend 7
+Bend = 7
 
 canvas size200 aa8
 
@@ -15,10 +15,10 @@ canvas size200 aa8
 fill .12 .32 .12
 
 func Straw X Y
-	set H         (H * randf(.7, 1))
-	set BendAngle (1.5 * Tau/4 * randf(-1, 1))
+	H         = (H * randf(.7, 1))
+	BendAngle = (1.5 * Tau/4 * randf(-1, 1))
 
-	point (Bend*(cos(BendAngle)-1)) -H
+	point Bend*(cos(BendAngle)-1) -H
 	for 1 10  1; point-clear (lerp(0,  W, I/10) + Bend*(cos(lerp(BendAngle, 0, I/10))-1)) (lerp(-H, 0, I/10)); end
 	for 10 1 -1; point-clear (lerp(0, -W, I/10) + Bend*(cos(lerp(BendAngle, 0, I/10))-1)) (lerp(-H, 0, I/10)); end
 
@@ -26,10 +26,10 @@ func Straw X Y
 	poly X Y
 end
 
-for Y -Dy (CanvasH+H+Dy) Dy
-	for X -Dx (CanvasW+Dx) Dx
-		set X (X+Dx*randf(-.45, .45))
-		set Y (Y+Dy*randf(-.45, .45))
+for Y -Dy CanvasH+H+Dy Dy
+	for X -Dx CanvasW+Dx Dx
+		X = X+Dx*randf(-.45,.45)
+		Y = Y+Dy*randf(-.45,.45)
 		Straw X Y
 	end
 end

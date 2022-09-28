@@ -1,73 +1,73 @@
 #
 # "Forest" by ReFreezed, 2022-09-14
 #
-set Cw 800
-set Ch 600
+Cw = 800
+Ch = 600
 canvas Cw Ch aa4
 
-set CamW .4
-set CamH (CamW*Ch/Cw)
-set CamX 0
-set CamY 0
-set CamZ 10
-set CamZoom 1
+CamW    = .4
+CamH    = CamW*Ch/Cw
+CamX    = 0
+CamY    = 0
+CamZ    = 10
+CamZoom = 1
 
-set TreeYNear  68
-set TreeYFar   (TreeYNear+100)
-set TreeXLeft  -30
-set TreeXRight -TreeXLeft
+TreeYNear  = 68
+TreeYFar   = TreeYNear+100
+TreeXLeft  = -30
+TreeXRight = -TreeXLeft
 
-set TreeWMin (5/2*.8)
-set TreeWMax (5/2)
-set TreeHMin 14
-set TreeHMax 18
+TreeWMin = 5/2*.8
+TreeWMax = 5/2
+TreeHMin = 14
+TreeHMax = 18
 
-set TrunkW (.8/2)
-set TrunkHMin .5
-set TrunkHMax 2.5
+TrunkW    = .8/2
+TrunkHMin = .5
+TrunkHMax = 2.5
 
-set TreeSegsMin 6
-set TreeSegsMax 8
+TreeSegsMin = 6
+TreeSegsMax = 8
 
-set TreeDist   5
-set TreeSpread .35
+TreeDist   = 5
+TreeSpread = .35
 
 # Debug.
-# set CamZ (TrunkHMin/2)
+# CamZ = TrunkHMin/2
 
 # Sky.
-set SkyH (.5*Ch)
+SkyH = .5*Ch
 
-set SkyR .6, SkyG .8, SkyB 1
-set FogR (lerp(.6, 1, .5)), FogG (lerp(.8, 1, .5)), FogB (lerp(1, 1, .5))
+SkyR = .6, SkyG .8, SkyB 1
+FogR = (lerp(.6, 1, .5)), FogG (lerp(.8, 1, .5)), FogB (lerp(1, 1, .5))
 
 grad SkyR SkyG SkyB, FogR FogG FogB rot90deg
 rect 0 0 Cw SkyH
 
 # Clouds.
 func Cloud X Y Size Sx Sy
-	if (Size == 1)
-		set A .015, B .020
+	if Size==1
+		A = .015, B .020
 		point -.02 0 B, 0 0 B, .02 0 B
 		point-clear -.005 -.03 A
-	elseif (Size == 2)
-		set A .020, B .025
+	elseif Size==2
+		A = .020, B .025
 		point -.04 0 A, -.02 .003 A, 0 .003 A, .02 .003 A, .04 0 A
 		point-clear -.01 -.015 B
 	else
-		set A .020, B .025, C .035
+		A = .020, B .025, C .035
 		point -.06 0 A, -.04 .001 A, -.02 .003 A, 0 .003 A, .02 .003 A, .04 .001 A, .06 0 A
 		point-clear -.04 -.02 B, .01 -.02 C
 	end
-	iso"metaballramp" (X*Cw) (Y*Ch) sx(Cw*Sx) sy(Cw*Sy)
+	iso"metaballramp" X*Cw Y*Ch sx(Cw*Sx) sy(Cw*Sy)
 end
 
 setbuf"clouds" Cw SkyH
 	color
 	for to10
-		set X (lerp(-.2, 1.2, rand()))
-		set Y (lerp(-.1, .4, rand()))
-		set Scale (randf(.6, 1.4))
+		X     = (lerp(-.2, 1.2, rand()))
+		Y     = (lerp(-.1, .4, rand()))
+		Scale = (randf(.6, 1.4))
 		Cloud X Y size(rand(3)) sx(2*Scale*(rand(2)*2-3)) syScale
 	end
 setbuf
@@ -79,18 +79,18 @@ buf"clouds" -filter
 # Ground.
 grad .1 .3 .2; scalecolor rgb.7
 grad-clear FogR FogG FogB rot-90deg
-rect 0 SkyH Cw (Ch-SkyH)
+rect 0 SkyH Cw Ch-SkyH
 
 # Setup camera.
-scale (Cw/CamW) (Ch/CamH)
-move (.5*CamW) (.5*CamH)
+scale Cw/CamW Ch/CamH
+move .5*CamW .5*CamH
 scale y-1
 
 func StartRenderAt X Y
 	push
-	set Depth (Y-CamY)
+	Depth = Y-CamY
 	scale xy(CamZoom/Depth)
-	move (-CamX-X) -CamZ
+	move -CamX-X -CamZ
 end
 func StopRender
 	pop
@@ -101,11 +101,11 @@ func Tree X Y
 	StartRenderAt X Y
 	# color; rect -.1 0 .2 .2; StopRender; stop  # DEBUG: Show tree positions.
 
-	set RelativeCloseness ((Y-TreeYNear)/(TreeYFar-TreeYNear))
+	RelativeCloseness = ((Y-TreeYNear)/(TreeYFar-TreeYNear))
 
-	set TreeW (randf(TreeWMin, TreeWMax))
-	set TreeH (randf(TreeHMin, TreeHMax))
-	set TrunkH (randf(TrunkHMin, TrunkHMax))
+	TreeW  = (randf(TreeWMin , TreeWMax ))
+	TreeH  = (randf(TreeHMin , TreeHMax ))
+	TrunkH = (randf(TrunkHMin, TrunkHMax))
 
 	# Shadow.  @Robustness: Render all shadows before any tress.
 	grad rgb0 .4, rgb0 0 +radial
@@ -113,44 +113,44 @@ func Tree X Y
 
 	# Trunk.
 	color .2 .15 .1; scalecolor rgb.4
-	overlaycolor FogR FogG FogB (.5*RelativeCloseness)
-	rect -TrunkW 0 (2*TrunkW) TrunkH trx99 try(.125*TrunkW)
+	overlaycolor FogR FogG FogB .5*RelativeCloseness
+	rect -TrunkW 0 2*TrunkW TrunkH trx99 try(.125*TrunkW)
 
 	# Top.
-	set Segs (rand(TreeSegsMin, TreeSegsMax))
-	set Droop .07
+	Segs  = (rand(TreeSegsMin, TreeSegsMax))
+	Droop = .07
 	point 0 TreeH
 	for Seg 1 Segs
-		set Y (lerp(TreeH, TrunkH, Seg/Segs))
+		Y = (lerp(TreeH, TrunkH, Seg/Segs))
 		point-clear ( lerp(0, TreeW   , Seg/Segs)) Y
-		point-clear ( lerp(0, TreeW*.5, Seg/Segs)) (Y-Droop)
+		point-clear ( lerp(0, TreeW*.5, Seg/Segs)) Y-Droop
 	end
 	for Seg Segs 1 -1
-		set Y (lerp(TreeH, TrunkH, Seg/Segs))
-		point-clear (-lerp(0, TreeW*.5, Seg/Segs)) (Y-Droop)
+		Y = (lerp(TreeH, TrunkH, Seg/Segs))
+		point-clear (-lerp(0, TreeW*.5, Seg/Segs)) Y-Droop
 		point-clear (-lerp(0, TreeW   , Seg/Segs)) Y
 	end
 	grad .6 1 .8, .2 .4 .25 rot-90deg; scalecolor rgb.3
-	overlaycolor FogR FogG FogB (.5*RelativeCloseness)
+	overlaycolor FogR FogG FogB .5*RelativeCloseness
 	poly
 
 	StopRender
 end
 
-set Trees {}
+Trees = {}
 for Y TreeYNear TreeYFar TreeDist
-	set Shift (randf(TreeDist))
+	Shift = (randf(TreeDist))
 	for X TreeXLeft TreeXRight TreeDist
-		set X (X + TreeDist*randf(-TreeSpread, TreeSpread) + Shift)
-		set Y (Y + TreeDist*randf(-TreeSpread, TreeSpread)        )
+		X = (X + TreeDist*randf(-TreeSpread, TreeSpread) + Shift)
+		Y = (Y + TreeDist*randf(-TreeSpread, TreeSpread)        )
 		add Trees {X=X, Y=Y}
 	end
 end
-set Trees (sortby(Trees, "Y"))
+Trees = (sortby(Trees, "Y"))
 
 fori Tree Trees +rev
-	if (Tree.Y > CamY)
-		Tree (Tree.X) (Tree.Y)
+	if Tree.Y>CamY
+		Tree Tree.X Tree.Y
 	end
 end
 
@@ -172,9 +172,9 @@ color a.3
 buf"soft" -filter
 
 # Vignette.
-grad rgb0 0, rgb0 0, rgb0 0, rgb0 (.3*.2), rgb0 .2 +radial scale1.7
+grad rgb0 0, rgb0 0, rgb0 0, rgb0 .3*.2, rgb0 .2 +radial scale1.7
 rect 0 0 Cw Ch
 
 # Grain.
 color a.02
-random color0  # May increases file size a bunch!
+random color0  # May increase file size a bunch!

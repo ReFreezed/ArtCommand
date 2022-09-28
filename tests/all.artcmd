@@ -1,5 +1,5 @@
 # Parsing tests.
-setFoo value"a\'b\"c\nw\\e"; setFoo+5,Foo'd
+setFoo value"a\'b\"c\nw\\e"; setFoo +5,Foo 'd
 setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)
 
 setFoo +value; setFoo value True ; setFoo valueTrue ; setFoo value(true )
@@ -10,14 +10,17 @@ Foo^=False
 Foo  = False
 Foo ^= False
 
+point 1, 2.0, 3., .4, 0xCafeB4be
+point-1,-2.0,-3.,-.4,-0xCafeB4be
+
 func TestBlobs X Y Size
 	Col = -1
 	func TestBlobColumn R G B
-		Col ^= (Col+1)
-		color R G B 1  ; circle (X+(Col+.5)*Size) (Y+(0+.5)*Size) r(Size/2)
-		color R G B .75; circle (X+(Col+.5)*Size) (Y+(1+.5)*Size) r(Size/2)
-		color R G B .50; circle (X+(Col+.5)*Size) (Y+(2+.5)*Size) r(Size/2)
-		color R G B .25; circle (X+(Col+.5)*Size) (Y+(3+.5)*Size) r(Size/2)
+		Col ^= Col+1
+		color R G B 1  ; circle X+(Col+.5)*Size Y+(0+.5)*Size r(Size/2)
+		color R G B .75; circle X+(Col+.5)*Size Y+(1+.5)*Size r(Size/2)
+		color R G B .50; circle X+(Col+.5)*Size Y+(2+.5)*Size r(Size/2)
+		color R G B .25; circle X+(Col+.5)*Size Y+(3+.5)*Size r(Size/2)
 	end
 	TestBlobColumn 1 1 1, 0 0 0, 1 0 0
 end
@@ -27,19 +30,19 @@ end
 # Settings.
 canvas 940 740 aa4
 backdrop0 .3 0 .5
-# backdrop (40/255) (40/255) (40/255)
+# backdrop 40/255 40/255 40/255
 fill.4 .4 .4 .6
 # zoom 2
 
-default "pat"   "filter" False  # MSAA+filters tend to make things blurry.
-default "text"  "filter" False
-default "buf"   "filter" False
-default "quad"  "filter" False
+default "pat"  "filter" False  # MSAA+filters tend to make things blurry.
+default "text" "filter" False
+default "buf"  "filter" False
+default "quad" "filter" False
 
 # Draw stuff.
 color 1 1 1 .1
 font 62  # Big boy!
-text (CanvasW-5) -5 ax1 kx-.15 wrap(CanvasW-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST TEST TEST
+text CanvasW-5 -5 ax1 kx-.15 wrap(CanvasW-20) lineh.9 align"right" "TEST TEST TEST TEST TEST TEST TEST TEST
 
 color 0 0 0
 circle 50 50 r10
@@ -87,9 +90,9 @@ setbuf+mask; color
 	TestBlobs 1 65 4
 	TestBlobs 1 90 4
 
-	grad rgb1 1, rgb0 1; rect 24 (40+0*14) 12 10
-	grad rgb1 1, rgb1 0; rect 24 (40+1*14) 12 10
-	grad rgb0 1, rgb0 0; rect 24 (40+2*14) 12 10
+	grad rgb1 1, rgb0 1; rect 24 40+0*14 12 10
+	grad rgb1 1, rgb1 0; rect 24 40+1*14 12 10
+	grad rgb0 1, rgb0 0; rect 24 40+2*14 12 10
 
 mask
 	color 1 50% 1; rect w1000 h1000 anchor.5
@@ -117,20 +120,20 @@ func DrawCircle X Y
 	func DrawCircle X Y #inner
 		circle X Y r10
 	end
-	DrawCircle (2*X) Y #inner
+	DrawCircle 2*X Y #inner
 end
 
 set "RG" .7
 color RG RG 1
 set  Tens "foo"
-setx Tens (2*15)
+setx Tens 2*15
 DrawCircle y170 x80
 DrawCircle(50+25) (220 - Tens)
 
 # Loops.
 color .5 0 0 .5
 for 1 7 2
-	rect (200+I*10) 160 10 50
+	rect 200+I*10 160 10 50
 end
 
 # Blocks.
@@ -139,15 +142,15 @@ set X 0
 do
 	set X 100
 end
-assert (X==0)
+assert X==0
 circle "line" thick4 X 250 r10
 
 # Gradients.
 push
 	move 320 90
-	grad 0 1 1, 0 0 1 1               ; rect (0*40) 0 30 60
-	grad 0 1 1, 0 0 1 1 45deg scale2.5; rect (1*40) 0 30 60
-	grad 0 1 1, 0 0 1 1 -75deg        ; rect (2*40) 0 30 60 "line" thick4
+	grad 0 1 1, 0 0 1 1               ; rect 0*40 0 30 60
+	grad 0 1 1, 0 0 1 1 45deg scale2.5; rect 1*40 0 30 60
+	grad 0 1 1, 0 0 1 1 -75deg        ; rect 2*40 0 30 60 "line" thick4
 
 	move 0 85
 	grad 0 1 1, 0 0 1 1               ; circle x(15+0*40) r15
@@ -210,12 +213,12 @@ pop
 
 # State.
 color 0 0 1
-rect 20 (300+0*15) 30 10
+rect 20 300+0*15 30 10
 push
 	grad .5 0 0, 0 1 0
-	rect 20 (300+1*15) 30 10
+	rect 20 300+1*15 30 10
 pop
-rect 20 (300+2*15) 30 10
+rect 20 300+2*15 30 10
 
 push
 	move 60 300; color 1 .2 .2; rect
@@ -243,9 +246,9 @@ color rgb1 .13
 buf"face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5
 
 Circles = "circles.artcmd"; imageCircles
-color rgb1  1                 ; bufCircles (185+0*50) 230
-color rgb1 .5                 ; bufCircles (185+1*50) 230
-grad a.5,a1,a0,a1,a.5 rot90deg; bufCircles (185+2*50) 230
+color rgb1  1                 ; bufCircles 185+0*50 230
+color rgb1 .5                 ; bufCircles 185+1*50 230
+grad a.5,a1,a0,a1,a.5 rot90deg; bufCircles 185+2*50 230
 
 # Buffers.
 setbuf+mask
@@ -261,8 +264,8 @@ color 0 1 1 ; buf"foo" 40 190 anchor.5 rot45deg
 color 0 1 .5; buf"foo" 80 190 anchor.5 rot55deg
 
 # Debug.
-assert (1 < 5)
-print Circles, (3^7), (rep("Hey",3))
+assert 1<5
+print Circles, 3^7, (rep("Hey",3))
 
 # Lines, curves, and polygons.
 O = -40  # Offset.
@@ -292,62 +295,62 @@ color 1 gb.5; poly"strip" 15 485
 
 # Arcs.
 func Arc X Y Mode1 Mode2 From To Segs
-	circle Mode1 X (Y   ) r15  fromFrom toTo segsSegs thick4
-	circle Mode2 X (Y+38) r15  fromFrom toTo segsSegs thick4
-	circle Mode2 X (Y+70) 15 5 fromFrom toTo segsSegs thick4
+	circle Mode1 X Y    r15  fromFrom toTo segsSegs thick4
+	circle Mode2 X Y+38 r15  fromFrom toTo segsSegs thick4
+	circle Mode2 X Y+70 15 5 fromFrom toTo segsSegs thick4
 end
 
 grad .3 .5 1, rgb1 +radial
-Arc (195+0*33) 515 "fill"       "line"       0deg   999deg 8
-Arc (195+1*33) 515 "fill"       "line"       -90deg 135deg 5
-Arc (195+2*33) 515 "fill"       "linepie"    -90deg 135deg 5
-Arc (195+3*33) 515 "fillclosed" "lineclosed" -90deg 135deg 5
-Arc (195+4*33) 515 "fill"       "linepie"    90deg  135deg 3
+Arc 195+0*33 515 "fill"       "line"       0deg   999deg 8
+Arc 195+1*33 515 "fill"       "line"       -90deg 135deg 5
+Arc 195+2*33 515 "fill"       "linepie"    -90deg 135deg 5
+Arc 195+3*33 515 "fillclosed" "lineclosed" -90deg 135deg 5
+Arc 195+4*33 515 "fill"       "linepie"    90deg  135deg 3
 
 # Rounded rectangles.
 push
 	move 340 390
 	grad .9 .4 1, .9 .1 1 1 45deg
 
-	rect"fill" (0*50) (0*50) size40 thick4 segs2
-	rect"fill" (0*50) (1*50) size40 thick4 segs2 r10
-	rect"fill" (0*50) (2*50) size40 thick4 segs2 r999
-	rect"fill" (0*50) (3*50) size40 thick4 segs2 rx17 ry9
+	rect"fill" 0*50 0*50 size40 thick4 segs2
+	rect"fill" 0*50 1*50 size40 thick4 segs2 r10
+	rect"fill" 0*50 2*50 size40 thick4 segs2 r999
+	rect"fill" 0*50 3*50 size40 thick4 segs2 rx17 ry9
 
-	rect"line" (1*50) (0*50) size40 thick4 segs2
-	rect"line" (1*50) (1*50) size40 thick4 segs2 r10
-	rect"line" (1*50) (2*50) size40 thick4 segs2 r999
-	rect"line" (1*50) (3*50) size40 thick4 segs2 rx999 ry10
+	rect"line" 1*50 0*50 size40 thick4 segs2
+	rect"line" 1*50 1*50 size40 thick4 segs2 r10
+	rect"line" 1*50 2*50 size40 thick4 segs2 r999
+	rect"line" 1*50 3*50 size40 thick4 segs2 rx999 ry10
 pop
 
 push
 	move 490 360
 	grey .9
 
-	rect"fill" (0*32) (0*32) size24 thick4 tlr10  brr10
-	rect"line" (1*32) (0*32) size24 thick4 tlr10  brr10
-	rect"fill" (2*32) (0*32) size24 thick4 tlr999 brr999
-	rect"line" (3*32) (0*32) size24 thick4 tlr999 brr999
-	rect"fill" (4*32) (0*32) size24 thick4 tlrx99 tlry10 brrx99 brry10
-	rect"line" (5*32) (0*32) size24 thick4 tlrx99 tlry10 brrx99 brry10
+	rect"fill" 0*32 0*32 size24 thick4 tlr10  brr10
+	rect"line" 1*32 0*32 size24 thick4 tlr10  brr10
+	rect"fill" 2*32 0*32 size24 thick4 tlr999 brr999
+	rect"line" 3*32 0*32 size24 thick4 tlr999 brr999
+	rect"fill" 4*32 0*32 size24 thick4 tlrx99 tlry10 brrx99 brry10
+	rect"line" 5*32 0*32 size24 thick4 tlrx99 tlry10 brrx99 brry10
 
-	rect"fill" (0*32) (1*32) size24 thick4 trr10  blr10
-	rect"line" (1*32) (1*32) size24 thick4 trr10  blr10
-	rect"fill" (2*32) (1*32) size24 thick4 trr999 blr999
-	rect"line" (3*32) (1*32) size24 thick4 trr999 blr999
-	rect"fill" (4*32) (1*32) size24 thick4 trrx99 trry10 blrx99 blry10
-	rect"line" (5*32) (1*32) size24 thick4 trrx99 trry10 blrx99 blry10
+	rect"fill" 0*32 1*32 size24 thick4 trr10  blr10
+	rect"line" 1*32 1*32 size24 thick4 trr10  blr10
+	rect"fill" 2*32 1*32 size24 thick4 trr999 blr999
+	rect"line" 3*32 1*32 size24 thick4 trr999 blr999
+	rect"fill" 4*32 1*32 size24 thick4 trrx99 trry10 blrx99 blry10
+	rect"line" 5*32 1*32 size24 thick4 trrx99 trry10 blrx99 blry10
 pop
 
 # Effect: blur.
 setbuf"fx"
-	grey0; rect (440   ) (390+0*50   ) 40 40
-	grey1; rect (440+10) (390+0*50+10) 20 20
+	grey0; rect 440    390+0*50    40 40
+	grey1; rect 440+10 390+0*50+10 20 20
 	boxblur xy10
 buf"fx"
 setbuf"fx"
-	grey0; rect (440   ) (390+1*50   ) 40 40
-	grey1; rect (440+10) (390+1*50+10) 20 20
+	grey0; rect 440    390+1*50    40 40
+	grey1; rect 440+10 390+1*50+10 20 20
 	blur xy30
 buf"fx"
 
@@ -401,8 +404,8 @@ setbuf"rainbow" 148 128
 color; buf"rainbow" 720 260 scale.5
 
 # Generator: noise.
-setbuf+mask; color; rect 440 (390+2*50) 40 40 r10; mask; color;             noise       scale5
-setbuf+mask; color; rect 440 (390+3*50) 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale6.667
+setbuf+mask; color; rect 440 390+2*50 40 40 r10; mask; color;             noise       scale5
+setbuf+mask; color; rect 440 390+3*50 40 40 r10; mask; grad 1 0 0, 0 0 1; noise z21.5 scale6.667
 maskFalse
 
 # Generator: clouds.
@@ -488,15 +491,15 @@ circle"line" 550 77 r25 thick25 rot-5deg
 # Lexical scopes.
 Bar = 1
 func F
-	Bar ^= (Bar*2)
+	Bar ^= Bar*2
 end
-Bar = (Bar*2)
+Bar = Bar*2
 do
 	Bar = "a"
 	F
-	assert (Bar=="a")
+	assert Bar=="a"
 end
-assert (Bar==4)
+assert Bar==4
 
 # Conditions.
 if  False; print "Bad 1"; assertFalse
@@ -521,7 +524,7 @@ rem Arr -2 #foo
 
 print (sort(Arr)), Arr
 fori V Arr
-	X = (2*V)
+	X = 2*V
 end
 
 # Blend modes.

@@ -491,7 +491,108 @@ local function validateVariableName(context, tokForError, term, varName)
 	return true
 end
 
-local function tokenize(context, path)
+local function parseExpression(context, pos)
+	local s             = context.source
+	local startPos      = pos
+	local depth         = 0 -- @Robustness: Keep track of expected closing brackets.
+	local exprParseMode = s:find("^[({]", pos) and "bracket" or "plain"
+
+	local pat = (
+		exprParseMode == "bracket"
+		and "[-\"'%w_(){}%[%]\n]"
+		or  "[-\"'%w_(){}%[%]%s;,]"
+	)
+
+	while true do
+		-- Simplified Lua parsing, o'hoy!
+		pos          = s:find(pat, pos)
+		local luaPos = pos
+
+		if not pos or s:find("^\n", pos) then
+			if exprParseMode == "bracket" then
+				return (parseError(context, startPos, "Expression: Could not find end of expression."))
+			end
+			pos = pos and pos-1 or #s
+			break
+
+		elseif s:find("^[({]", pos) then
+			depth = depth + 1
+
+		elseif s:find("^[)}%]]", pos) then
+			depth = depth - 1
+			if depth == 0 and exprParseMode == "bracket" then  break  end
+			if depth <  0 then  return (parseError(context, pos, "Expression: Unexpected closing bracket."))  end
+
+		elseif s:find("^[\"']", pos) then -- Quoted string.
+			local pat = "["..s:sub(pos, pos).."\\\n]"
+			while true do
+				pos = s:find(pat, pos+1)
+				if not pos or s:find("^\n", pos) then
+					return (parseError(context, luaPos, "Expression: Missing end of Lua string."))
+				elseif s:find("^\\", pos) then
+					pos = pos + 1 -- '\'
+				else
+					break
+				end
+			end
+
+		elseif s:find("^%[", pos) then -- Long-form string or square bracket.
+			if s:find("^=*%[", pos+1) then -- String.
+				local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+1)
+				if not _pos then  return (parseError(context, luaPos, "Expression: Missing end of Lua string."))  end
+				pos = _pos
+			else
+				depth = depth + 1
+			end
+
+		elseif s:find("^%-", pos) then -- Maybe a comment.
+			if not s:find("^%-", pos+1) then
+				-- void
+			elseif s:find("^%[=*%[", pos+2) then -- Long-form comment.
+				local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+3)
+				if not _pos then  return (parseError(context, startPos, "Expression: Could not find end of expression."))  end
+				pos = _pos
+			else -- Line comment.
+				return (parseError(context, startPos, "Expression: Could not find end of expression."))
+			end
+
+		elseif s:find("^[%a_]", pos) then -- Identifier/keyword.
+			local _, _pos = s:find("^[%w_]*", pos+1)
+			if s:sub(pos, _pos) == "function" then  return (parseError(context, luaPos, "Expression: Disallowed Lua code."))  end
+			pos = _pos
+
+		elseif s:find("^%d", pos) then -- Number.
+			local _, _pos = s:find("^[%w_]+", pos)
+			pos = _pos
+
+		elseif s:find("^[;,]", pos) then -- Non-Lua command separator.
+			if depth == 0 then
+				pos = pos - 1
+				break
+			end
+
+		elseif s:find("^%s", pos) then -- Non-newline whitespace.
+			if exprParseMode == "plain" and depth == 0 then
+				pos = pos - 1
+				break
+			end
+			local _, _pos = s:find("^[^%S\n]+", pos)
+			pos = _pos
+
+		else
+			return (parseError(context, pos, "Internal error: Unhandled case in expression."))
+		end
+
+		pos = pos + 1
+	end
+
+	local i2 = pos -- Should be at ')' or '}' if exprParseMode=bracket.
+	pos      = pos + 1 -- ')' or '}' if exprParseMode=bracket
+
+	return s:sub(startPos, i2), pos
+end
+
+local function tokenize(context)
 	local s       = context.source
 	local pos     = 1
 	local tokens  = {}
@@ -518,7 +619,8 @@ local function tokenize(context, path)
 		-- Assignment:  Name^=
 		-- (Declaration is same as `set  Name`.)
 		-- (Assignment  is same as `setx Name`.)
-		elseif s:find("^%a%w*[ \t]*^?=", pos) then
+		elseif s:find("^%a%w*[ \t]*^?=[^=]", pos) then
+			-- @Incomplete: Always parse the next token as an expression? (Will probably make the syntax too inconsistent.)
 			local namePos,name, punctPos,punct, _pos = s:match("^()(%w+)%s*()(^?=)()", pos)
 			pos = _pos
 
@@ -526,6 +628,20 @@ local function tokenize(context, path)
 			table.insert(tokens, {position=namePos , type="username", value=name, negated=false})
 
 			if not validateVariableName(context, getLast(tokens), "variable name", name) then  return nil  end
+
+		-- Non-bracket expression: simple_lua_expression
+		elseif
+			s:find("^%-?%u%w*"      .."[-+*/^%%~=<>.:%[]"   , pos) or
+			s:find("^%-?%.?%d[%d.]*".."[-+*/^%%~=<>][^%s;,]", pos) or
+			s:find("^%-?0[Xx]%x+"   .."[-+*/^%%~=<>][^%s;,]", pos)
+		then
+			local expr, _pos = parseExpression(context, pos)
+			if not expr then  return  end
+			pos = _pos
+
+			table.insert(tokens, {position=startPos, type="expression", value=expr})
+
+			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
 		-- Name: name OR +name OR -name
 		elseif s:find("^[-+]?%l", pos) then
@@ -608,78 +724,13 @@ local function tokenize(context, path)
 
 			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
-		-- Brackets: (lua_expression) OR {lua_table_constructor}
+		-- Bracket expression: (lua_expression) OR {lua_table_constructor}
 		elseif s:find("^[({]", pos) then
-			local i1    = pos
-			local pat   = s:find("^%(", pos) and "[-\"'%[\n%w_()]" or "[-\"'%[\n%w_{}]"
-			local depth = 1
+			local expr, _pos = parseExpression(context, pos)
+			if not expr then  return  end
+			pos = _pos
 
-			while true do
-				-- Simplified Lua parsing, o'hoy!
-				pos          = s:find(pat, pos+1)
-				local luaPos = pos
-
-				if not pos or s:find("^\n", pos) then
-					return (parseError(context, startPos, "Missing end bracket."))
-
-				elseif s:find("^[({]", pos) then
-					depth = depth + 1
-
-				elseif s:find("^[)}]", pos) then
-					depth = depth - 1
-					if depth == 0 then  break  end
-
-				elseif s:find("^[\"']", pos) then -- Quoted string.
-					local pat = "["..s:sub(pos, pos).."\\\n]"
-					while true do
-						pos = s:find(pat, pos+1)
-						if not pos or s:find("^\n", pos) then
-							return (parseError(context, luaPos, "Missing end of Lua string."))
-						elseif s:find("^\\", pos) then
-							pos = pos + 1 -- '\'
-						else
-							break
-						end
-					end
-
-				elseif s:find("^%[", pos) then -- Maybe a long-form string.
-					if s:find("^=*%[", pos+1) then -- String.
-						local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+1)
-						if not _pos then  return (parseError(context, luaPos, "Missing end of Lua string."))  end
-						pos = _pos
-					else
-						-- void
-					end
-
-				elseif s:find("^%-", pos) then -- Maybe a comment.
-					if not s:find("^%-", pos+1) then
-						-- void
-					elseif s:find("^%[=*%[", pos+2) then -- Long-form comment.
-						local _, _pos = s:find("^(=*)%[[^\n]-%]%1%]", pos+3)
-						if not _pos then  return (parseError(context, startPos, "Missing end bracket."))  end
-						pos = _pos
-					else -- Line comment.
-						return (parseError(context, startPos, "Missing end bracket."))
-					end
-
-				elseif s:find("^[%a_]", pos) then -- Identifier/keyword.
-					local _, _pos = s:find("^[%w_]*", pos+1)
-					if s:sub(pos, _pos) == "function" then  return (parseError(context, luaPos, "Disallowed Lua code."))  end
-					pos = _pos
-
-				elseif s:find("^%d", pos) then -- Number.
-					local _, _pos = s:find("^[%w_]+", pos)
-					pos = _pos
-
-				else
-					return (parseError(context, pos, "Internal error: Unhandled case in brackets."))
-				end
-			end
-
-			local i2 = pos -- Should be at ')' or '}'.
-			pos      = pos + 1 -- ')' or '}'
-
-			table.insert(tokens, {position=startPos, type="expression", value=s:sub(i1, i2)})
+			table.insert(tokens, {position=startPos, type="expression", value=expr})
 
 			if lastWasName and lastTok.type == "name" then  lastTok.hasAttachment = true  end
 
@@ -783,8 +834,8 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 				end,
 			})
 
-			local chunk, err = loadstring("return"..expr, "@", "t", env) -- @Robustness: Don't use loadstring()!
-			if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", expr, (err:gsub("^:%d+: ", ""))))  end
+			local chunk, err = loadstring("return("..expr.."\n)", "@", "t", env) -- @Robustness: Don't use loadstring()!
+			if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", (expr:find"[({]" and expr or F("'%s'", expr)), (err:gsub("^:%d+: ", ""))))  end
 
 			local ok, vOrErr = pcall(chunk)
 			if not ok then  return (tokenError(context, tokens[tokPos], "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", ""))))  end
@@ -1087,7 +1138,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	end
 
 	if not isToken((commandTok or tokens[tokPos]), "name") then
-		return (tokenError(context, startTok, "Expected a command."))
+		local tok = commandTok or tokens[tokPos]
+		return (tokenError(context, startTok, "Expected a command. (Got %s)", (tok and tok.type or "nothing")))
 	end
 	local command = (commandTok or tokens[tokPos]).value
 	if not commandTok then  tokPos = tokPos + 1  end -- name
@@ -1345,7 +1397,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local step = (command == "fori") and 1   or args.step
 
 		if args.rev then
-			from, to, step = to, from, -step
+			if command == "fori" then  from, to, step = #args.value, 1   , -1
+			else                       from, to, step = to         , from, -step  end
 		end
 
 		local loops   = 0
@@ -2682,7 +2735,7 @@ function _G.loadArtFile(path, isLocal)
 	if not s then  print("Error: "..err) ; return nil  end
 	context.source = s
 
-	local tokens = tokenize(context, path)
+	local tokens = tokenize(context)
 	if not tokens then  return nil  end
 
 	for command, commandInfo in pairs(COMMANDS) do
