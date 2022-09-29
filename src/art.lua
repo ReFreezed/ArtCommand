@@ -764,6 +764,8 @@ local function isToken(tok, tokType, tokValue)
 	return tok ~= nil and tok.type == tokType and (tokValue == nil or tok.value == tokValue)
 end
 
+local dummyStringMetatable = {}
+
 local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInfos, args, visited)
 	while true do
 		if not tokens[tokPos] or isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ",") or isToken(tokens[tokPos], ";") then
@@ -830,14 +832,18 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 				__index = function(_, k)
 					local var = findInStack(context, "variables", tokens[tokPos].position, k) or context.readonly[k]
 					if var then  return var.value  end
-					error("No variable '"..tostring(k).."'.", 0)
+					error("No variable or function '"..tostring(k).."'.", 0)
 				end,
 			})
 
 			local chunk, err = loadstring("return("..expr.."\n)", "@", "t", env) -- @Robustness: Don't use loadstring()!
 			if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", (expr:find"[({]" and expr or F("'%s'", expr)), (err:gsub("^:%d+: ", ""))))  end
 
+			local strMt = debug.getmetatable("")
+			debug.setmetatable("", dummyStringMetatable)
 			local ok, vOrErr = pcall(chunk)
+			debug.setmetatable("", strMt)
+
 			if not ok then  return (tokenError(context, tokens[tokPos], "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", ""))))  end
 			v = vOrErr
 
@@ -2711,6 +2717,16 @@ local function getReversedArray(arr)
 	return reversed
 end
 
+local function argError(argNum, expected, v)
+	errorf(3, "bad argument #%d to '%s' (%s expected, got %s)", argNum, (debug.getinfo(2, "n").name or "?"), expected, type(v))
+end
+local function assertArg(argNum, v, ...)
+	for i = 1, select("#", ...) do
+		if type(v) == select(i, ...) then  return  end
+	end
+	errorf(3, "bad argument #%d to '%s' (%s expected, got %s)", argNum, (debug.getinfo(2, "n").name or "?"), table.concat({...}, " or "), type(v))
+end
+
 -- art|nil = loadArtFile( path, isLocal )
 -- Note: art.canvas has premultiplied alpha.
 function _G.loadArtFile(path, isLocal)
@@ -2749,11 +2765,17 @@ function _G.loadArtFile(path, isLocal)
 		end
 	end
 
-	local function getRandom(...)
-		return context.rng and context.rng:random(...) or love.math.random(...)
+	local function getRandom(from, to)
+		assertArg(1, from, "number","nil")
+		assertArg(2, to  , "number","nil")
+		return context.rng and context.rng:random(from, to) or love.math.random(from, to)
 	end
 
 	local function getRandomCircle(radius, x, y)
+		assertArg(1, radius, "number","nil")
+		assertArg(2, x     , "number","nil")
+		assertArg(3, y     , "number","nil")
+
 		local a = getRandom()
 		local b = getRandom()
 		if b < a then  a, b = b, a  end
@@ -2785,16 +2807,15 @@ function _G.loadArtFile(path, isLocal)
 	vars.CanvasH    = {token=dummyTok, value=context.canvasHeight}
 	vars.PointCount = {token=dummyTok, value=#context.points}
 
-	-- These functions are just for the Lua/bracket expressions.
-	-- @Incomplete @Robustness: Argument validation.
+	-- These functions are just for expressions.  @Incomplete: Argument validation for all functions.
 
 	-- Functions: misc.
-	vars.num     = {token=dummyTok, value=tonumber}
-	vars.rev     = {token=dummyTok, value=function(v)  return type(v) == "table" and getReversedArray(v) or string.reverse(v)  end}
-	vars.sel     = {token=dummyTok, value=function(n, ...)  return (select(n, ...))  end}
-	vars.selx    = {token=dummyTok, value=select}
-	vars.str     = {token=dummyTok, value=tostring}
-	vars.type    = {token=dummyTok, value=type}
+	vars.num  = {token=dummyTok, value=tonumber}
+	vars.rev  = {token=dummyTok, value=function(v)  return (type(v) == "string" and string.reverse(v)) or (type(v) == "table" and getReversedArray(v)) or argError(1, v, "string or table")  end}
+	vars.sel  = {token=dummyTok, value=function(n, ...)  if n ~= "#" then assertArg(1, n, "number") end ; return (select(n, ...))  end}
+	vars.selx = {token=dummyTok, value=select}
+	vars.str  = {token=dummyTok, value=tostring}
+	vars.type = {token=dummyTok, value=type}
 
 	vars.default = {token=dummyTok, value=function(command, k, defaultDefault) -- default( command, argumentName [, getDefaultDefault=false ] )
 		local commandInfo = (defaultDefault and COMMANDS or context.commands)[command] or errorf(2, "No command '%s'.", tostring(command))
@@ -2806,7 +2827,7 @@ function _G.loadArtFile(path, isLocal)
 	vars.abs    = {token=dummyTok, value=math.abs}
 	vars.acos   = {token=dummyTok, value=math.acos}
 	vars.asin   = {token=dummyTok, value=math.asin}
-	vars.atan   = {token=dummyTok, value=function(y, x)  return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
+	vars.atan   = {token=dummyTok, value=function(y, x)  assertArg(1, y, "number") ; assertArg(2, x, "number","nil") ; return x and math.atan2(y, x) or math.atan(y)  end} -- atan( y [, x=1 ] )
 	vars.ceil   = {token=dummyTok, value=math.ceil}
 	vars.cos    = {token=dummyTok, value=math.cos}
 	vars.cosh   = {token=dummyTok, value=math.cosh}
@@ -2814,24 +2835,24 @@ function _G.loadArtFile(path, isLocal)
 	vars.exp    = {token=dummyTok, value=math.exp}
 	vars.floor  = {token=dummyTok, value=math.floor}
 	vars.fmod   = {token=dummyTok, value=math.fmod}
-	vars.frac   = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return frac  end}
-	vars.frexp  = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return {M=m, E=e}  end}
-	vars.frexpe = {token=dummyTok, value=function(n)  local m, e = math.frexp(n) ; return e  end}
-	vars.frexpm = {token=dummyTok, value=function(n)  return (math.frexp(n))  end}
-	vars.int    = {token=dummyTok, value=function(n)  return (math.modf(n))  end}
+	vars.frac   = {token=dummyTok, value=function(n)  assertArg(1, n, "number") ; local int, frac = math.modf(n) ; return frac  end}
+	vars.frexp  = {token=dummyTok, value=function(n)  assertArg(1, n, "number") ; local m, e = math.frexp(n) ; return {M=m, E=e}  end}
+	vars.frexpe = {token=dummyTok, value=function(n)  assertArg(1, n, "number") ; local m, e = math.frexp(n) ; return e  end}
+	vars.frexpm = {token=dummyTok, value=function(n)  assertArg(1, n, "number") ; return (math.frexp(n))  end}
+	vars.int    = {token=dummyTok, value=function(n)  assertArg(1, n, "number") ; return (math.modf(n))  end}
 	vars.ldexp  = {token=dummyTok, value=math.ldexp}
-	vars.len    = {token=dummyTok, value=function(x, y, z)  return math.sqrt(x*x + (y and y*y or 0) + (z and z*z or 0))  end} -- len( x [, y=0, z=0 ] )
+	vars.len    = {token=dummyTok, value=function(x, y, z)  assertArg(1, x, "number") ; assertArg(2, y, "number","nil") ; assertArg(3, z, "number","nil") ; return math.sqrt(x*x + (y and y*y or 0) + (z and z*z or 0))  end} -- len( x [, y=0, z=0 ] )
 	vars.lerp   = {token=dummyTok, value=math.lerp}
 	vars.log    = {token=dummyTok, value=math.log} -- log( n [, base=e ] )
 	vars.max    = {token=dummyTok, value=math.max}
 	vars.min    = {token=dummyTok, value=math.min}
-	vars.modf   = {token=dummyTok, value=function(n)  local int, frac = math.modf(n) ; return {I=int, F=frac}  end}
+	vars.modf   = {token=dummyTok, value=function(n)  assertArg(1, n, "number") ; local int, frac = math.modf(n) ; return {I=int, F=frac}  end}
 	vars.noise  = {token=dummyTok, value=love.math.noise} -- noise( x [, y, z, w ] )
 	vars.norm   = {token=dummyTok, value=math.normalize} -- normalize( v1, v2, v )
 	vars.rad    = {token=dummyTok, value=math.rad}
-	vars.rand   = {token=dummyTok, value=getRandom}
-	vars.randf  = {token=dummyTok, value=function(n1, n2)  return n2 and n1+(n2-n1)*getRandom() or (n1 or 1)*getRandom()  end} -- randf( [[ n1=0, ] n2=1 ] )
-	vars.randc  = {token=dummyTok, value=getRandomCircle} -- randc( [ radius=1, centerX=0, centerY=0 ] )
+	vars.rand   = {token=dummyTok, value=getRandom} -- rand( ) | rand( [ from=1, ] to )
+	vars.randf  = {token=dummyTok, value=function(n1, n2)  assertArg(1, n1, "number","nil") ; assertArg(2, n2, "number","nil") ; return n2 and n1+(n2-n1)*getRandom() or (n1 or 1)*getRandom()  end} -- randf( [[ from=0, ] to=1 ] )
+	vars.randc  = {token=dummyTok, value=getRandomCircle} -- randc( [ radius=1, centerX=0,centerY=0 ] )
 	vars.round  = {token=dummyTok, value=math.round}
 	vars.sin    = {token=dummyTok, value=math.sin}
 	vars.sinh   = {token=dummyTok, value=math.sinh}
@@ -2846,11 +2867,11 @@ function _G.loadArtFile(path, isLocal)
 	vars.time  = {token=dummyTok, value=os.time}
 
 	-- Functions: strings.
-	vars.byte   = {token=dummyTok, value=string.byte} -- @Robustness: Handle the string metatable.
+	vars.byte   = {token=dummyTok, value=string.byte}
 	vars.char   = {token=dummyTok, value=string.char}
 	vars.find   = {token=dummyTok, value=string.find}
 	vars.format = {token=dummyTok, value=F}
-	vars.gsub   = {token=dummyTok, value=function(s, pat, repl, n)  return (string.gsub(s, pat, repl, n))  end}
+	vars.gsub   = {token=dummyTok, value=function(s, pat, repl, n)  assertArg(1, s, "string") ; assertArg(2, pat, "string") ; assertArg(3, repl, "string","table") ; assertArg(4, n, "number","nil") ; return (string.gsub(s, pat, repl, n))  end}
 	vars.lower  = {token=dummyTok, value=string.lower}
 	vars.match  = {token=dummyTok, value=string.match}
 	vars.rep    = {token=dummyTok, value=string.rep}
@@ -2861,35 +2882,35 @@ function _G.loadArtFile(path, isLocal)
 	-- Functions: arrays and tables.
 	vars.unpack = {token=dummyTok, value=unpack}
 	vars.concat = {token=dummyTok, value=table.concat}
-	vars.sort   = {token=dummyTok, value=function(arr)     arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
-	vars.sortby = {token=dummyTok, value=function(arr, k)  arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
+	vars.sort   = {token=dummyTok, value=function(arr)     assertArg(1, arr, "table") ; arr = {unpack(arr)} ; table.sort(arr                                         ) ; return arr  end}
+	vars.sortby = {token=dummyTok, value=function(arr, k)  assertArg(1, arr, "table") ; arr = {unpack(arr)} ; table.sort(arr, function(a, b)  return a[k] < b[k]  end) ; return arr  end}
 	-- Also: rev
 
 	-- Functions: coordinate system.
-	vars.screen  = {token=dummyTok, value=function(x, y)  x, y = LG.transformPoint       (x, y) ; return {X=x, Y=y}  end}
-	vars.screenx = {token=dummyTok, value=function(x, y)  x, y = LG.transformPoint       (x, y) ; return x           end}
-	vars.screeny = {token=dummyTok, value=function(x, y)  x, y = LG.transformPoint       (x, y) ; return y           end}
-	vars.world   = {token=dummyTok, value=function(x, y)  x, y = LG.inverseTransformPoint(x, y) ; return {X=x, Y=y}  end}
-	vars.worldx  = {token=dummyTok, value=function(x, y)  x, y = LG.inverseTransformPoint(x, y) ; return x           end}
-	vars.worldy  = {token=dummyTok, value=function(x, y)  x, y = LG.inverseTransformPoint(x, y) ; return y           end}
+	vars.screen  = {token=dummyTok, value=function(x, y)  assertArg(1, x, "number") ; assertArg(2, y, "number") ; x, y = LG.transformPoint       (x, y) ; return {X=x, Y=y}  end}
+	vars.screenx = {token=dummyTok, value=function(x, y)  assertArg(1, x, "number") ; assertArg(2, y, "number") ; x, y = LG.transformPoint       (x, y) ; return x           end}
+	vars.screeny = {token=dummyTok, value=function(x, y)  assertArg(1, x, "number") ; assertArg(2, y, "number") ; x, y = LG.transformPoint       (x, y) ; return y           end}
+	vars.world   = {token=dummyTok, value=function(x, y)  assertArg(1, x, "number") ; assertArg(2, y, "number") ; x, y = LG.inverseTransformPoint(x, y) ; return {X=x, Y=y}  end}
+	vars.worldx  = {token=dummyTok, value=function(x, y)  assertArg(1, x, "number") ; assertArg(2, y, "number") ; x, y = LG.inverseTransformPoint(x, y) ; return x           end}
+	vars.worldy  = {token=dummyTok, value=function(x, y)  assertArg(1, x, "number") ; assertArg(2, y, "number") ; x, y = LG.inverseTransformPoint(x, y) ; return y           end}
 
 	-- Functions: points.
-	vars.point    = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and {x=point.x,y=point.y, a=point.a,b=point.b, s=point.s}  end}
-	vars.pointx   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.x  end}
-	vars.pointy   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.y  end}
-	vars.pointa   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.a  end}
-	vars.pointb   = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.b  end}
-	vars.pointstr = {token=dummyTok, value=function(i)  local point = context.points[i] ; return point and point.s  end}
+	vars.point    = {token=dummyTok, value=function(i)  assertArg(1, i, "number") ; local point = context.points[i] ; return point and {x=point.x,y=point.y, a=point.a,b=point.b, s=point.s}  end}
+	vars.pointx   = {token=dummyTok, value=function(i)  assertArg(1, i, "number") ; local point = context.points[i] ; return point and point.x  end}
+	vars.pointy   = {token=dummyTok, value=function(i)  assertArg(1, i, "number") ; local point = context.points[i] ; return point and point.y  end}
+	vars.pointa   = {token=dummyTok, value=function(i)  assertArg(1, i, "number") ; local point = context.points[i] ; return point and point.a  end}
+	vars.pointb   = {token=dummyTok, value=function(i)  assertArg(1, i, "number") ; local point = context.points[i] ; return point and point.b  end}
+	vars.pointstr = {token=dummyTok, value=function(i)  assertArg(1, i, "number") ; local point = context.points[i] ; return point and point.s  end}
 
 	-- Functions: images and buffers.
-	vars.imagewh = {token=dummyTok, value=function(path)  if not context.images[path] then errorf(2, "No image '%s' loaded.", path) end ; local w, h = context.images[path]:getDimensions() ; return {W=w, H=h}  end}
-	vars.imagew  = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end}
-	vars.imageh  = {token=dummyTok, value=function(path)  return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
+	vars.imagewh = {token=dummyTok, value=function(path)  assertArg(1, path, "string") ; if not context.images[path] then errorf(2, "No image '%s' loaded.", path) end ; local w, h = context.images[path]:getDimensions() ; return {W=w, H=h}  end}
+	vars.imagew  = {token=dummyTok, value=function(path)  assertArg(1, path, "string") ; return context.images[path] and context.images[path]:getWidth () or errorf(2, "No image '%s' loaded.", path)  end}
+	vars.imageh  = {token=dummyTok, value=function(path)  assertArg(1, path, "string") ; return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
 
-	vars.bufwh = {token=dummyTok, value=function(name)  if not context.buffers[name] then errorf(2, "No buffer '%s'.", name) end ; local w, h = context.buffers[name]:getDimensions() ; return {W=w, H=h}  end}
-	vars.bufw  = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getWidth () or errorf(2, "No buffer '%s'.", name)  end}
-	vars.bufh  = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getHeight() or errorf(2, "No buffer '%s'.", name)  end}
-	vars.bufaa = {token=dummyTok, value=function(name)  return context.buffers[name] and context.buffers[name]:getMSAA()   or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufwh = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; if not context.buffers[name] then errorf(2, "No buffer '%s'.", name) end ; local w, h = context.buffers[name]:getDimensions() ; return {W=w, H=h}  end}
+	vars.bufw  = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getWidth () or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufh  = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getHeight() or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufaa = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getMSAA()   or errorf(2, "No buffer '%s'.", name)  end}
 
 	local entry = ScopeStackEntry()
 	table.insert(context.scopeStack, entry)
