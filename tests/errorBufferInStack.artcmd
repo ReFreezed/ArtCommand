@@ -4,3 +4,5 @@ push
 	# be replaced. (We may change how this works at some point.)
 	setbuf"theone" size2
 pop
+
+text "END

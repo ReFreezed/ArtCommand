@@ -1,0 +1,5 @@
+if True
+elseif Nope  # Should not raise an error.
+end
+
+text "END

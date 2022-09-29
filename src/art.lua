@@ -766,7 +766,7 @@ end
 
 local dummyStringMetatable = {}
 
-local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInfos, args, visited)
+local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInfos, args, visited, eval)
 	while true do
 		if not tokens[tokPos] or isToken(tokens[tokPos], "linebreak") or isToken(tokens[tokPos], ",") or isToken(tokens[tokPos], ";") then
 			return tokPos
@@ -815,68 +815,76 @@ local function parseArguments(context, tokens, tokPos, commandOrFuncName, argInf
 			v = tokens[tokPos].value
 
 		elseif isToken(tokens[tokPos], "username") then
-			local varName = tokens[tokPos].value
-			local var     = findInStack(context, "variables", tokens[tokPos].position, varName) or context.readonly[varName]
-			if not var then  return (tokenError(context, tokens[tokPos], "No variable '%s'.", varName))  end
-			v = var.value
+			if eval then
+				local varName = tokens[tokPos].value
+				local var     = findInStack(context, "variables", tokens[tokPos].position, varName) or context.readonly[varName]
+				if not var then  return (tokenError(context, tokens[tokPos], "No variable '%s'.", varName))  end
+				v = var.value
 
-			if tokens[tokPos].negated then
-				if type(v) ~= "number" then  return (parseError(context, tokens[tokPos].position-1, "Cannot negate value. ('%s' contains a %s)", varName, type(v)))  end
-				v = -v
+				if tokens[tokPos].negated then
+					if type(v) ~= "number" then  return (parseError(context, tokens[tokPos].position-1, "Cannot negate value. ('%s' contains a %s)", varName, type(v)))  end
+					v = -v
+				end
 			end
 
 		elseif isToken(tokens[tokPos], "expression") then
-			local expr = tokens[tokPos].value
+			if eval then
+				local expr = tokens[tokPos].value
 
-			local env = setmetatable({}, {
-				__index = function(_, k)
-					local var = findInStack(context, "variables", tokens[tokPos].position, k) or context.readonly[k]
-					if var then  return var.value  end
-					error("No variable or function '"..tostring(k).."'.", 0)
-				end,
-			})
+				local env = setmetatable({}, {
+					__index = function(_, k)
+						local var = findInStack(context, "variables", tokens[tokPos].position, k) or context.readonly[k]
+						if var then  return var.value  end
+						error("No variable or function '"..tostring(k).."'.", 0)
+					end,
+				})
 
-			local chunk, err = loadstring("return("..expr.."\n)", "@", "t", env) -- @Robustness: Don't use loadstring()!
-			if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", (expr:find"[({]" and expr or F("'%s'", expr)), (err:gsub("^:%d+: ", ""))))  end
+				local chunk, err = loadstring("return("..expr.."\n)", "@", "t", env) -- @Robustness: Don't use loadstring()!
+				if not chunk then  return (tokenError(context, tokens[tokPos], "Invalid expression %s. (Lua: %s)", (expr:find"[({]" and expr or F("'%s'", expr)), (err:gsub("^:%d+: ", ""))))  end
 
-			local strMt = debug.getmetatable("")
-			debug.setmetatable("", dummyStringMetatable)
-			local ok, vOrErr = pcall(chunk)
-			debug.setmetatable("", strMt)
+				local strMt = debug.getmetatable("")
+				debug.setmetatable("", dummyStringMetatable)
+				local ok, vOrErr = pcall(chunk)
+				debug.setmetatable("", strMt)
 
-			if not ok then  return (tokenError(context, tokens[tokPos], "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", ""))))  end
-			v = vOrErr
+				if not ok then  return (tokenError(context, tokens[tokPos], "Failed evaluating expression %s. (Lua: %s)", expr, (vOrErr:gsub("^:%d+: ", ""))))  end
+				v = vOrErr
+			end
 
 		else
 			return (tokenError(context, tokens[tokPos], "Failed parsing argument value."))
 		end
 
-		-- Implicit name.
-		if argName == "" then
-			-- We use the value type to determine the argument (which might be a bit confusing).
-			for _, _argInfo in ipairs(argInfos) do
-				if not visited[_argInfo.name] and (type(_argInfo.value) == type(v) or _argInfo.value == nil) then
-					argName = _argInfo.name
-					break
+		if eval then
+			-- Implicit name.
+			if argName == "" then
+				-- We use the value type to determine the argument (which might be a bit confusing).
+				for _, _argInfo in ipairs(argInfos) do
+					if not visited[_argInfo.name] and (type(_argInfo.value) == type(v) or _argInfo.value == nil) then
+						argName = _argInfo.name
+						break
+					end
 				end
+
+				if argName == "" then  return (tokenError(context, startTok, "Unknown argument of type '%s' for '%s'.", type(v), commandOrFuncName))  end
+
+			-- Validate value.
+			elseif not (type(v) == type(argInfo.value) or argInfo.value == nil) then
+				return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName0, type(argInfo.value), type(v)))
 			end
-
-			if argName == "" then  return (tokenError(context, startTok, "Unknown argument of type '%s' for '%s'.", type(v), commandOrFuncName))  end
-
-		-- Validate value.
-		elseif not (type(v) == type(argInfo.value) or argInfo.value == nil) then
-			return (tokenError(context, tokens[tokPos], "Bad value for argument '%s'. (Expected %s, got %s)", argName0, type(argInfo.value), type(v)))
 		end
 
 		-- Finalize argument.
-		if argNames then
-			for _, _argName in ipairs(argNames) do
-				args   [_argName] = v
-				visited[_argName] = valueStartTok
+		if eval then
+			if argNames then
+				for _, _argName in ipairs(argNames) do
+					args   [_argName] = v
+					visited[_argName] = valueStartTok
+				end
+			else
+				args   [argName] = v
+				visited[argName] = valueStartTok
 			end
-		else
-			args   [argName] = v
-			visited[argName] = valueStartTok
 		end
 		tokPos = tokPos + 1 -- the value
 	end
@@ -1116,7 +1124,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			argInfos[i] = {name=(argName:lower()), value=nil} -- Argument "FooBar" gets the name "foobar".  @Speed @Memory
 		end
 
-		tokPos = parseArguments(context, tokens, tokPos, funcName, argInfos, args, visited)
+		tokPos = parseArguments(context, tokens, tokPos, funcName, argInfos, args, visited, true)
 		if not tokPos then  return nil  end
 
 		-- Run function.
@@ -1215,7 +1223,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	end
 
 	-- Parse arguments and run command.
-	tokPos = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited)
+	tokPos = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited, true)
 	if not tokPos then  return nil  end
 
 	local isFollowedBySequence = isToken(tokens[tokPos], ",")
@@ -1324,19 +1332,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			table.clear(visited)
 			setArgumentsToDefault(args, commandInfo) -- @Speed: This is not necessary, just convenient.
 
-			-- @Incomplete @Speed: Don't evaluate arguments if executedSomeBlock=true. (Low priority because evaluating expressions currently has no side effects. 2022-09-19)
-			tokPos = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited)
+			local eval = not executedSomeBlock
+			tokPos     = parseArguments(context, tokens, tokPos, command, context.commands[command], args, visited, eval)
 			if not tokPos then  return nil  end
 
 			if isToken(tokens[tokPos], ",") then  return (tokenError(context, tokens[tokPos], "[elseif] Invalid ','. Cannot chain 'elseif' using ','."))  end
-			if not visited.value            then  return (tokenError(context, startTok, "[elseif] Missing value."))  end
+			if eval and not visited.value   then  return (tokenError(context, startTok, "[elseif] Missing value."))  end
 			--
 
 			table.clear(bodyTokens)
 			tokPos = collectBodyTokens(context, tokens, startTok, tokPos, bodyTokens, true)
 			if not tokPos then  return nil  end
 
-			if not executedSomeBlock then
+			if eval then
 				passes = evaluateCondition(context, "elseif", (visited.value or startTok), args.value)
 				if passes == nil then  return nil  end
 
