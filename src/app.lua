@@ -17,13 +17,16 @@
 _G.TAU = 2*math.pi
 _G.DEV = love.filesystem.getInfo"local/dev" ~= nil
 
+local VERSION_STRING = "v1.0"
 
 
-local GUI_TEXT_PADDING_X = 10
-local GUI_TEXT_PADDING_Y = 5
-local GUI_SPACING        = 10
 
-local GUI_BUTTONS_SPEED = 20
+local GUI_TEXT_PADDING_X = 8
+local GUI_TEXT_PADDING_Y = 4
+local GUI_SPACING        = 8
+
+local GUI_BOX_SPEED   = 20
+local GUI_INPUT_WIDTH = 180
 
 local GUI_STATUS_DISPLAY_TIME = 1.50
 local GUI_STATUS_SPEED        = 1.5
@@ -32,16 +35,12 @@ local GUI_OPACITY = .8
 
 
 
-local guiButtons = {x=0,y=0, w=0,h=0,
-	{x=0,y=0, w=0,h=0, name="zoom"  , text="Auto-zoom"},
-	{x=0,y=0, w=0,h=0, name="reload", text="Reload"},
-	{x=0,y=0, w=0,h=0, name="save"  , text="Export"},
-}
-
-
-
 _G.guiMode          = true
+local guiBox        = nil
 local guiVisibility = 0
+
+local guiPressedItem = nil
+local guiFocusedItem = nil
 
 
 
@@ -87,9 +86,10 @@ local function tryLoadingTheArtFile(showSuccessStatus)
 	theArt = art
 
 	love.window.setTitle(F(
-		"%s (%dx%d) - Art Command",
+		"%s (%dx%d) - Art Command %s",
 		thePathIn:gsub("^.*[/\\]", ""),
-		theArt.canvas:getWidth(), theArt.canvas:getHeight()
+		theArt.canvas:getWidth(), theArt.canvas:getHeight(),
+		VERSION_STRING
 	))
 end
 
@@ -234,28 +234,40 @@ end
 local function updateGuiLayout()
 	local ww,wh = LG.getDimensions()
 
-	guiButtons.w = ww
-	guiButtons.h = A.fonts.gui:getHeight() + 2*(GUI_TEXT_PADDING_Y+GUI_SPACING)
-	guiButtons.x = 0
-	guiButtons.y = wh - guiButtons.h
+	guiBox.w = ww
+	guiBox.h = A.fonts.gui:getHeight() + 2*(GUI_TEXT_PADDING_Y+GUI_SPACING)
+	guiBox.x = 0
+	guiBox.y = wh - guiBox.h
 
-	local x = guiButtons.x + GUI_SPACING
-	local y = guiButtons.y + GUI_SPACING
+	local x = guiBox.x + GUI_SPACING
+	local y = guiBox.y + GUI_SPACING
 
-	for _, button in ipairs(guiButtons) do
-		button.w = A.fonts.gui:getWidth(button.text) + 2*GUI_TEXT_PADDING_X
-		button.h = A.fonts.gui:getHeight()           + 2*GUI_TEXT_PADDING_Y
-		button.x = x
-		button.y = y
+	for _, guiItem in ipairs(guiBox) do
+		if guiItem.type == "button" then
+			guiItem.w = A.fonts.gui:getWidth(guiItem.text) + 2*GUI_TEXT_PADDING_X
+			guiItem.h = A.fonts.gui:getHeight()            + 2*GUI_TEXT_PADDING_Y
+		elseif guiItem.type == "text" then
+			guiItem.w = A.fonts.gui:getWidth(guiItem.text)
+			guiItem.h = A.fonts.gui:getHeight() + 2*GUI_TEXT_PADDING_Y
+		elseif guiItem.type == "input" then
+			guiItem.w = GUI_INPUT_WIDTH         + 2*GUI_TEXT_PADDING_X
+			guiItem.h = A.fonts.gui:getHeight() + 2*GUI_TEXT_PADDING_Y
+			guiItem.field:setFont(A.fonts.gui)
+			guiItem.field:setWidth(guiItem.w-2*GUI_TEXT_PADDING_X)
+		else
+			error(guiItem.type)
+		end
 
-		x = x + button.w + GUI_SPACING
+		guiItem.x = x
+		guiItem.y = y
+		x         = x + guiItem.w + GUI_SPACING
 	end
 
 	if x < ww then
 		local offsetX = math.floor((ww-x)/2)
 
-		for _, button in ipairs(guiButtons) do
-			button.x = button.x + offsetX
+		for _, guiItem in ipairs(guiBox) do
+			guiItem.x = guiItem.x + offsetX
 		end
 	end
 end
@@ -324,7 +336,7 @@ function love.load(args, rawArgs)
 			display   = DEV and 2 or 1,
 		})
 
-		love.window.setTitle("Art Command")
+		love.window.setTitle("Art Command "..VERSION_STRING)
 		-- if not love.filesystem.isFused() then  love.window.setIcon(love.image.newImageData("gfx/appIcon32.png"))  end -- @Incomplete
 
 		love.graphics.clear()
@@ -355,8 +367,8 @@ function love.load(args, rawArgs)
 	end
 
 	A.fonts.artDefault = LG.newFont(12)
-	A.fonts.gui        = LG.newFont(14)
-	A.fonts.status     = A.fonts.gui--LG.newFont(20)
+	A.fonts.gui        = LG.newFont(13)
+	A.fonts.status     = LG.newFont(14)
 
 	A.images.rectangle = newImageUsingPalette({
 		"xx",
@@ -377,7 +389,20 @@ function love.load(args, rawArgs)
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
 	initFilesystem()
-	updateGuiLayout()
+
+	if guiMode then
+		love.keyboard.setKeyRepeat(true)
+
+		guiBox = {x=0,y=0, w=0,h=0,
+			{type="button", x=0,y=0, w=0,h=0, name="zoom"    , text="Auto-zoom"},
+			{type="button", x=0,y=0, w=0,h=0, name="reload"  , text="Reload"},
+			{type="button", x=0,y=0, w=0,h=0, name="save"    , text="Export"},
+			{type="text"  , x=0,y=0, w=0,h=0,                  text="Export path:"},
+			{type="input" , x=0,y=0, w=0,h=0, name="savePath", placeholder="(auto)", field=require"InputField"(thePathOut)},
+		}
+
+		updateGuiLayout()
+	end
 
 	if not guiMode then
 		tryLoadingTheArtFile(true)
@@ -538,19 +563,43 @@ function _G.normalizeImageAndMultiplyAlpha(imageData)
 	return imageData16
 end
 
-function love.keypressed(key)
-	if key == "escape" then
+function love.keypressed(key, scancode, isRepeat)
+	if guiFocusedItem then
+		if key == "escape" or key == "return" or key == "kpenter" then
+			if not guiFocusedItem.field:isBusy() then
+				guiFocusedItem = nil
+			end
+		elseif guiFocusedItem.field:keypressed(key, isRepeat) then
+			if guiFocusedItem.name == "savePath" then
+				thePathOut = guiFocusedItem.field:getText()
+			end
+			-- void
+		end
+
+	elseif key == "escape" then
 		love.event.quit()
 
 	elseif key == "space" then
+		if isRepeat then  return  end
 		autoZoom = autoZoom % 3 + 1
 		setStatus(AUTO_ZOOM_TEXTS[autoZoom])
 
 	elseif key == "r" and love.keyboard.isDown("lctrl","rctrl") then
+		if isRepeat then  return  end
 		tryLoadingTheArtFile(true)
 
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
+		if isRepeat then  return  end
 		saveTheArt(love.keyboard.isDown("lshift","rshift") and "tga" or "png")
+	end
+end
+
+function love.textinput(text)
+	if guiFocusedItem then
+		guiFocusedItem.field:textinput(text)
+		if guiFocusedItem.name == "savePath" then
+			thePathOut = guiFocusedItem.field:getText()
+		end
 	end
 end
 
@@ -564,19 +613,25 @@ local isMeasuring   = false
 local measureStartX = 0
 local measureStartY = 0
 
-local pressedButton = nil
-
-function love.mousepressed(mx,my, mbutton)
+function love.mousepressed(mx,my, mbutton, pressCount)
 	if mbutton == 1 then
-		for _, button in ipairs(guiButtons) do
-			if isOverRect(button, mx,my) then
+		guiFocusedItem = nil
+
+		for _, guiItem in ipairs(guiBox) do
+			if isOverRect(guiItem, mx,my) then
 				love.mouse.setGrabbed(true)
-				pressedButton = button
+				guiPressedItem = guiItem
+
+				if guiPressedItem.type == "input" then
+					guiFocusedItem = guiItem
+					guiPressedItem.field:mousepressed(mx-(guiPressedItem.x+GUI_TEXT_PADDING_X), my-(guiPressedItem.y+GUI_TEXT_PADDING_Y), mbutton, pressCount)
+				end
+
 				return
 			end
 		end
 
-		if isOverRect(guiButtons, mx,my) then  return  end
+		if isOverRect(guiBox, mx,my) then  return  end
 
 		isMeasuring   = true
 		measureStartX = mx
@@ -585,23 +640,33 @@ function love.mousepressed(mx,my, mbutton)
 	end
 end
 
-function love.mousereleased(mx,my, mbutton)
+function love.mousemoved(mx,my, dx,dy)
+	if guiPressedItem and guiPressedItem.type == "input" then
+		guiPressedItem.field:mousemoved(mx-(guiPressedItem.x+GUI_TEXT_PADDING_X), my-(guiPressedItem.y+GUI_TEXT_PADDING_Y))
+	end
+end
+
+function love.mousereleased(mx,my, mbutton, pressCount)
 	if mbutton == 1 then
-		if pressedButton then
+		if guiPressedItem then
 			love.mouse.setGrabbed(false)
 
-			if not isOverRect(pressedButton, mx,my) then
+			if guiPressedItem.type == "input" then
+				guiPressedItem.field:mousereleased(mx-(guiPressedItem.x+GUI_TEXT_PADDING_X), my-(guiPressedItem.y+GUI_TEXT_PADDING_Y), mbutton, pressCount)
+			end
+
+			if not isOverRect(guiPressedItem, mx,my) then
 				-- void
-			elseif pressedButton.name == "zoom" then
+			elseif guiPressedItem.name == "zoom" then
 				autoZoom = autoZoom % 3 + 1
 				setStatus(AUTO_ZOOM_TEXTS[autoZoom])
-			elseif pressedButton.name == "reload" then
+			elseif guiPressedItem.name == "reload" then
 				tryLoadingTheArtFile(true)
-			elseif pressedButton.name == "save" then
+			elseif guiPressedItem.name == "save" then
 				saveTheArt(nil)
 			end
 
-			pressedButton = nil
+			guiPressedItem = nil
 
 		elseif isMeasuring then
 			isMeasuring = false
@@ -634,8 +699,9 @@ function love.update(dt)
 	end
 
 	-- Update GUI.
-	local showGui = (pressedButton ~= nil) or (love.window.hasMouseFocus() and not isMeasuring and love.mouse.getY() > guiButtons.y-20)
-	guiVisibility = math.clamp01(guiVisibility + GUI_BUTTONS_SPEED*dt*(showGui and 1 or -1))
+	local showGui = (guiPressedItem ~= nil) or (guiFocusedItem ~= nil) or (love.window.hasMouseFocus() and not isMeasuring and love.mouse.getY() > guiBox.y-20)
+	guiVisibility = math.clamp01(guiVisibility + GUI_BOX_SPEED*dt*(showGui and 1 or -1))
+	-- guiVisibility = 1 -- DEBUG
 end
 
 
@@ -728,29 +794,87 @@ function love.draw()
 
 	-- GUI.
 	LG.push()
-	LG.translate(0, (1-guiVisibility) * (wh-guiButtons.y))
+	LG.translate(0, (1-guiVisibility) * (wh-guiBox.y))
 
 	LG.setColor(0, 0, 0, GUI_OPACITY)
-	LG.rectangle("fill", guiButtons.x,guiButtons.y, guiButtons.w,guiButtons.h)
+	LG.rectangle("fill", guiBox.x,guiBox.y, guiBox.w,guiBox.h)
 
-	for _, button in ipairs(guiButtons) do
-		local highlight = (button == pressedButton or not pressedButton) and not isMeasuring and isOverRect(button, mx,my)
+	local highlightedGuiItem = nil
+
+	for _, guiItem in ipairs(guiBox) do
+		local highlight = (guiItem == guiPressedItem or not guiPressedItem) and not isMeasuring and isOverRect(guiItem, mx,my)
 
 		if highlight then
-			LG.setColor(1, 1, 1, .3)
-			LG.rectangle("fill", button.x,button.y, button.w,button.h)
-			LG.setColor(1, 1, 1, 1)
-			LG.rectangle("line", button.x+.5,button.y+.5, button.w-1,button.h-1)
-		else
-			LG.setColor(1, 1, 1, .5)
-			LG.rectangle("line", button.x+.5,button.y+.5, button.w-1,button.h-1)
+			highlightedGuiItem = guiItem
 		end
 
-		LG.setColor(1, 1, 1, 1)
-		LG.print(button.text, button.x+GUI_TEXT_PADDING_X,button.y+GUI_TEXT_PADDING_Y)
+		if guiItem.type == "button" then
+			if highlight then
+				LG.setColor(1, 1, 1, .3)
+				LG.rectangle("fill", guiItem.x,guiItem.y, guiItem.w,guiItem.h)
+				LG.setColor(1, 1, 1)
+				LG.rectangle("line", guiItem.x+.5,guiItem.y+.5, guiItem.w-1,guiItem.h-1)
+			else
+				LG.setColor(1, 1, 1, .5)
+				LG.rectangle("line", guiItem.x+.5,guiItem.y+.5, guiItem.w-1,guiItem.h-1)
+			end
+
+			LG.setColor(1, 1, 1)
+			LG.print(guiItem.text, guiItem.x+GUI_TEXT_PADDING_X,guiItem.y+GUI_TEXT_PADDING_Y)
+
+		elseif guiItem.type == "input" then
+			if guiItem == guiFocusedItem then
+				LG.setColor(1, 1, 1, .3)
+				LG.rectangle("fill", guiItem.x,guiItem.y, guiItem.w,guiItem.h)
+				LG.setColor(1, 1, 1)
+				LG.rectangle("line", guiItem.x+.5,guiItem.y+.5, guiItem.w-1,guiItem.h-1)
+			elseif highlight then
+				LG.setColor(1, 1, 1, .3)
+				LG.rectangle("fill", guiItem.x,guiItem.y, guiItem.w,guiItem.h)
+				LG.setColor(1, 1, 1)
+				LG.rectangle("line", guiItem.x+.5,guiItem.y+.5, guiItem.w-1,guiItem.h-1)
+			else
+				LG.setColor(1, 1, 1, .5)
+				LG.rectangle("line", guiItem.x+.5,guiItem.y+.5, guiItem.w-1,guiItem.h-1)
+			end
+
+			LG.setScissor(guiItem.x+1, guiItem.y+1, guiItem.w-2, guiItem.h-2)
+
+			if guiItem == guiFocusedItem then
+				LG.setColor(.6, .6, .7)
+				for _, x, y, w, h in guiItem.field:eachSelection() do
+					love.graphics.rectangle("fill", guiItem.x+GUI_TEXT_PADDING_X+x, guiItem.y+GUI_TEXT_PADDING_Y+y, w, h)
+				end
+			end
+
+			if guiItem.field:getText() == "" then
+				LG.setColor(1, 1, 1, .5)
+				love.graphics.print(guiItem.placeholder, guiItem.x+GUI_TEXT_PADDING_X, guiItem.y+GUI_TEXT_PADDING_Y)
+			else
+				LG.setColor(1, 1, 1)
+				for _, text, x, y in guiItem.field:eachVisibleLine() do
+					love.graphics.print(text, guiItem.x+GUI_TEXT_PADDING_X+x, guiItem.y+GUI_TEXT_PADDING_Y+y)
+				end
+			end
+
+			if guiItem == guiFocusedItem and guiItem.field:getBlinkPhase()%1.00 < .5 then
+				local x, y, h = guiItem.field:getCursorLayout()
+				LG.setColor(1, 1, 1, .8)
+				love.graphics.rectangle("fill", guiItem.x+GUI_TEXT_PADDING_X+x-1, guiItem.y+GUI_TEXT_PADDING_Y+y, 2, h)
+			end
+
+			LG.setScissor()
+
+		elseif guiItem.type == "text" then
+			LG.setColor(1, 1, 1)
+			LG.print(guiItem.text, guiItem.x,guiItem.y+GUI_TEXT_PADDING_Y)
+		end
 	end
 
 	LG.pop()
+
+	local mouseGuiItem = (guiPressedItem or highlightedGuiItem)
+	love.mouse.setCursor((mouseGuiItem and mouseGuiItem.type == "input") and love.mouse.getSystemCursor"ibeam" or nil)
 
 	-- Extra info.
 	if love.keyboard.isDown"tab" then
@@ -786,7 +910,7 @@ function love.draw()
 	end
 
 	-- Mouse info.
-	if theArt and love.window.hasMouseFocus() then
+	if theArt and love.window.hasMouseFocus() and not mouseGuiItem then
 		if isMeasuring then
 			local x1 = math.min(measureStartX, mx)
 			local x2 = math.max(measureStartX, mx)
@@ -801,7 +925,7 @@ function love.draw()
 			drawTextBox(F("%d", math.round(math.abs(w/artScale))), (measureStartX+mx)/2,y1, .5,1)
 			drawTextBox(F("%d", math.round(math.abs(h/artScale))), x1,(measureStartY+my)/2, 1,.5)
 
-		elseif my < guiButtons.y then
+		elseif my < guiBox.y then
 			local text = F("[%d, %d]", (mx-artX)/artScale,(my-artY)/artScale)
 			drawTextBox(text, mx+20,my+10, 0,0)
 		end
