@@ -71,6 +71,12 @@ end
 
 
 
+local function freeTheArt()
+	if not theArt then  return  end
+	theArt.canvas:release()
+	theArt = nil
+end
+
 local function tryLoadingTheArtFile(showSuccessStatus)
 	local art = loadArtFile(thePathIn, thePathIsTest)
 	collectgarbage()
@@ -82,7 +88,7 @@ local function tryLoadingTheArtFile(showSuccessStatus)
 
 	setStatus("%s", (showSuccessStatus and "Loaded "..thePathIn:gsub("^.*[/\\]", "") or ""))
 
-	if theArt then  theArt.canvas:release()  end
+	freeTheArt()
 	theArt = art
 
 	love.window.setTitle(F(
@@ -938,6 +944,20 @@ end
 
 function love.resize(ww,wh)
 	updateGuiLayout()
+end
+
+function love.filedropped(file)
+	freeTheArt()
+
+	thePathIn        = file:getFilename()
+	thePathOut       = ""
+	thePathIsTest    = false
+	theModtime       = -1/0
+	modtimeCheckTime = 0
+
+	itemWith1(guiBox, "name", "savePath").field:setText(thePathOut)
+
+	-- love.update will load the new file.
 end
 
 
