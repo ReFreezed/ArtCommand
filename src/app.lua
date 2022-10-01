@@ -320,8 +320,8 @@ function love.load(args, rawArgs)
 		i = i + 1
 	end
 
-	if thePathIn == "" then
-		thePathIn     = "tests/all.artcmd"
+	if thePathIn == "" and DEV then
+		thePathIn     = "tests/all.artc"
 		thePathOut    = ""
 		thePathIsTest = true
 	end
@@ -625,7 +625,7 @@ function love.keypressed(key, scancode, isRepeat)
 		local currentIndex = 0
 
 		for _, filename in ipairs(items) do
-			if filename:find"%.artcmd$" then
+			if filename:find"%.[Aa][Rr][Tt][Cc]$" then -- .artc file.
 				table.insert(filenames, filename)
 				if filename == currentFilename then  currentIndex = #filenames  end
 			end
@@ -1005,7 +1005,7 @@ end
 function love.filedropped(file)
 	freeTheArt()
 
-	thePathIn        = file:getFilename()
+	thePathIn        = normalizePath(file:getFilename())
 	thePathOut       = ""
 	thePathIsTest    = false
 	theModtime       = -1/0

@@ -1010,7 +1010,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 
 	local path = makePathAbsolute(normalizePath(pathIdent), (context.path:gsub("[^/]+$", "")))
 
-	if pathIdent:find"%.artcmd$" then
+	if pathIdent:find"%.[Aa][Rr][Tt][Cc]$" then -- .artc file.
 		local startRecursion = (recursionsAllowed >= 1 and not artFileRecursionAllowed[path])
 
 		if
@@ -1030,7 +1030,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 		local art = loadArtFile(path, context.isLocal)
 		if startRecursion then  artFileRecursionAllowed[path] = nil  end
 
-		if not art then  return (tokenError(context, tokForError, "Could not load .artcmd image."))  end
+		if not art then  return (tokenError(context, tokForError, "Could not load .artc image."))  end
 		imageOrCanvas = art.canvas
 
 		assert(popGfxState(context))

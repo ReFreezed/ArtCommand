@@ -245,7 +245,7 @@ grad 1 .4 .4, .4 1 .4; buf"face.png" 155 270 +filter sx.3 sy.2
 color rgb1 .13
 buf"face.png" 150 (round(.7*500)) ax1 ay.5 scale3.5
 
-Circles = "circles.artcmd"; imageCircles
+Circles = "circles.artc"; imageCircles
 color rgb1  1                 ; bufCircles 185+0*50 230
 color rgb1 .5                 ; bufCircles 185+1*50 230
 grad a.5,a1,a0,a1,a.5 rot90deg; bufCircles 185+2*50 230
@@ -443,7 +443,7 @@ push
 	rotate -5deg
 	scale xy.3
 	grey0 .2; rect 0 0 CanvasW CanvasH
-	# color .4 .9 1; image"all.artcmd" recurse3; buf"all.artcmd"
+	# color .4 .9 1; image"all.artc" recurse3; buf"all.artc"
 pop
 
 # Isolines.
