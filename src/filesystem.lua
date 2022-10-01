@@ -10,7 +10,9 @@
 --==============================================================
 
 	getAppDirectory, getSaveDirectory, getCwd
+	getDirectoryItems
 	initFilesystem
+	normalizePath, makePathAbsolute
 	readFile, readTextFile, writeFile, writeTextFile, getFileModificationTime
 
 --============================================================]]
@@ -124,15 +126,15 @@ function _G.getAppDirectory()
 		or LF.getSource():find"%.love$" and LF.getSourceBaseDirectory() -- Not very robust, but what're ya gonna do...
 		or LF.getSource()
 	)
-	return (dir:gsub("\\", "/"))
+	return normalizePath(dir)
 end
 
 function _G.getSaveDirectory()
-	return (LF.getSaveDirectory():gsub("\\", "/"))
+	return normalizePath(LF.getSaveDirectory())
 end
 
 function _G.getCwd()
-	return (LF.getWorkingDirectory():gsub("\\", "/"))
+	return normalizePath(LF.getWorkingDirectory())
 end
 
 
@@ -142,9 +144,6 @@ end
 local function toPlatformIndependentPath(path)
 	-- @Incomplete: Handle "." and ".." segments.
 	-- @Robustness: Proper parsing!
-
-	-- Only forward slashes.
-	path = path:gsub("\\", "/")
 
 	-- Make absolute.
 	if not (path:find"^/" or path:find"^%a:") then -- Note: We don't support "~/foo".
@@ -179,7 +178,7 @@ end
 local function prepareToRead(piPath)
 	if love.system.getOS() == "Windows" then
 		local drive = piPath:match"^(%a)/"
-		return drive ~= nil and mountSearchPath(drive..":\\", drive)
+		return drive ~= nil and mountSearchPath(drive..":/", drive)
 	else
 		return mountSearchPath("/", "/")
 	end
@@ -189,7 +188,7 @@ end
 local function prepareToWrite(piPath)
 	if love.system.getOS() == "Windows" then
 		local drive = piPath:match"^(%a)/"
-		return drive ~= nil and setWriteDirectory(drive..":\\", drive)
+		return drive ~= nil and setWriteDirectory(drive..":/", drive)
 	else
 		return setWriteDirectory("/", "/")
 	end
@@ -263,6 +262,33 @@ function _G.getFileModificationTime(isLocal, path)
 	end
 
 	return LF.getInfo(piPath, "file", info) and info.modtime
+end
+
+
+
+function _G.getDirectoryItems(path)
+	local piPath
+
+	if isLocal then
+		piPath = path
+	else
+		piPath = toPlatformIndependentPath(path)
+		if not (piPath and prepareToRead(piPath)) then
+			return nil, "Could not access '"..path.."'."
+		end
+	end
+
+	return LF.getDirectoryItems(piPath)
+end
+
+
+
+function _G.normalizePath(path)
+	return (path:gsub("\\", "/"))
+end
+
+function _G.makePathAbsolute(path, baseDirPrefix)
+	return (path:find"^~?/" or path:find"^%a:") and path or baseDirPrefix..path
 end
 
 

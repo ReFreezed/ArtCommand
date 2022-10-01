@@ -51,10 +51,12 @@ _G.A = { -- Assets.
 	shaders = {},
 }
 
-local thePathIn     = ""
-local thePathOut    = "" -- Empty means auto.
-local thePathIsTest = false -- @Cleanup: Make this into _G.isLocal or something.
-local theArt        = nil
+local thePathIn        = ""
+local thePathOut       = "" -- Empty means auto.
+local thePathIsTest    = false -- @Cleanup: Make this into _G.isLocal or something.
+local theArt           = nil
+local theModtime       = -1/0
+local modtimeCheckTime = 0
 
 local autoZoom = 1 --  1 (use art zoom)  |  2 (zoom, linear)  |  3 (zoom, pixelated)
 local AUTO_ZOOM_TEXTS = {"auto-zoom = off", "auto-zoom = on", "auto-zoom = on (pixelated)"}
@@ -67,14 +69,19 @@ local statusTime = -9999.00
 local function setStatus(s, ...)
 	statusText = F(s, ...)
 	statusTime = love.timer.getTime()
+
+	if statusText ~= "" then  print(statusText)  end
 end
 
 
 
 local function freeTheArt()
 	if not theArt then  return  end
+
 	theArt.canvas:release()
 	theArt = nil
+
+	love.window.setTitle("Art Command "..VERSION_STRING) -- @UX: Prevent flickering when updating the title multiple times in quick succession.
 end
 
 local function tryLoadingTheArtFile(showSuccessStatus)
@@ -86,14 +93,14 @@ local function tryLoadingTheArtFile(showSuccessStatus)
 		return
 	end
 
-	setStatus("%s", (showSuccessStatus and "Loaded "..thePathIn:gsub("^.*[/\\]", "") or ""))
+	setStatus("%s", (showSuccessStatus and "Loaded "..thePathIn:gsub("^.*/", "") or ""))
 
 	freeTheArt()
 	theArt = art
 
 	love.window.setTitle(F(
 		"%s (%dx%d) - Art Command %s",
-		thePathIn:gsub("^.*[/\\]", ""),
+		thePathIn:gsub("^.*/", ""),
 		theArt.canvas:getWidth(), theArt.canvas:getHeight(),
 		VERSION_STRING
 	))
@@ -115,7 +122,6 @@ local function saveTheArt(fileType)
 		local imageData = fixImageDataForSaving(theArt.canvas:newImageData()) -- @Incomplete: A flag to disable the transparent pixel color fix.
 		imageData:encode(fileType, pathOut):release() ; imageData:release()
 
-		print("Saving "..pathOut.."... done!")
 		setStatus("Saved %s", pathOut)
 
 	else
@@ -123,8 +129,7 @@ local function saveTheArt(fileType)
 
 		local pathOut = (thePathOut ~= "") and thePathOut or thePathIn:gsub("%.[^.]+$", "").."."..fileType
 		if pathOut == thePathIn then
-			print("Error: Input and output paths are the same: "..pathOut)
-			setStatus("Failed saving %s: Same as input path.", pathOut)
+			setStatus("Failed saving %s: Same as input path", pathOut)
 			return
 		end
 
@@ -136,12 +141,10 @@ local function saveTheArt(fileType)
 		local ok, err   = writeFile(thePathIsTest, pathOut, s)
 
 		if not ok then
-			print("Error: "..err)
 			setStatus("Failed saving %s: %s", pathOut, err)
 			return
 		end
 
-		print("Saving "..pathOut.."... done!")
 		setStatus("Saved %s", pathOut)
 	end
 end
@@ -394,6 +397,7 @@ function love.load(args, rawArgs)
 	A.images.checker:setWrap("repeat")
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
+	thePathIn = normalizePath(thePathIn)
 	initFilesystem()
 
 	if guiMode then
@@ -597,6 +601,61 @@ function love.keypressed(key, scancode, isRepeat)
 	elseif key == "s" and love.keyboard.isDown("lctrl","rctrl") then
 		if isRepeat then  return  end
 		saveTheArt(love.keyboard.isDown("lshift","rshift") and "tga" or "png")
+
+	elseif key == "left" or key == "right" then
+		if isRepeat      then  return  end
+		if thePathIsTest then  return  end
+
+		local currentPath          = makePathAbsolute(thePathIn, (thePathIn:gsub("[^/]+$", "")))
+		local dir, currentFilename = currentPath:match"^(.+)/([^/]+)$"
+
+		if not dir then
+			setStatus("Failed parsing current path: %s", currentPath)
+			return
+		end
+
+		local items, err = getDirectoryItems(dir)
+		if not items then
+			print("Error: "..err)
+			setStatus("Failed getting files in %s", dir)
+			return
+		end
+
+		local filenames    = {}
+		local currentIndex = 0
+
+		for _, filename in ipairs(items) do
+			if filename:find"%.artcmd$" then
+				table.insert(filenames, filename)
+				if filename == currentFilename then  currentIndex = #filenames  end
+			end
+		end
+
+		local direction = (key == "left" and -1 or 1)
+
+		local targetFilename = (
+			(currentIndex > 0)
+			and filenames[(currentIndex+direction-1) % #filenames + 1]
+			or  filenames[1]
+		)
+		if not targetFilename then
+			setStatus("No art in folder %s", dir)
+			return
+		elseif targetFilename == currentFilename then
+			return
+		end
+
+		freeTheArt()
+
+		thePathIn        = dir.."/"..targetFilename
+		thePathOut       = ""
+		thePathIsTest    = false
+		theModtime       = -1/0
+		modtimeCheckTime = 0
+
+		itemWith1(guiBox, "name", "savePath").field:setText(thePathOut)
+
+		-- love.update will load the new file.
 	end
 end
 
@@ -682,9 +741,6 @@ function love.mousereleased(mx,my, mbutton, pressCount)
 end
 
 
-
-local theModtime       = -1/0
-local modtimeCheckTime = 0
 
 function love.update(dt)
 	if DEV then

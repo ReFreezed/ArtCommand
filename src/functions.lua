@@ -13,7 +13,6 @@
 	F
 	getLast, itemWith1, indexOf
 	getLineNumber
-	makePathAbsolute
 	printf, printFileMessage, printFileError, printFileWarning, printFileMessageAt, printFileErrorAt, printFileWarningAt
 	toColor32
 	updateVec4
@@ -123,12 +122,6 @@ function _G.updateVec4(vec4, x,y,z,w)
 	vec4[2] = y
 	vec4[3] = z
 	vec4[4] = w
-end
-
-
-
-function _G.makePathAbsolute(path, baseDirPrefix)
-	return (path:find"^~?[/\\]" or path:find"^%a:") and path or baseDirPrefix..path
 end
 
 

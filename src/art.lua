@@ -1008,7 +1008,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 	local imageOrCanvas = context.images[pathIdent]
 	if imageOrCanvas then  return imageOrCanvas  end
 
-	local path = makePathAbsolute(pathIdent, (context.path:gsub("[^/\\]+$", "")))
+	local path = makePathAbsolute(normalizePath(pathIdent), (context.path:gsub("[^/]+$", "")))
 
 	if pathIdent:find"%.artcmd$" then
 		local startRecursion = (recursionsAllowed >= 1 and not artFileRecursionAllowed[path])
@@ -1743,7 +1743,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			font = LG.newFont(args.size)
 
 		else
-			local path = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
+			local path = makePathAbsolute(normalizePath(args.path), (context.path:gsub("[^/]+$", "")))
 
 			local s, err = readFile(false, path)
 			if not s then  return (tokenError(context, (visited.path or startTok), "[%s] Could not read '%s'. (%s)", command, args.path, err))  end
@@ -1764,7 +1764,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local font = context.fontsByPath[args.path]
 
 		if not font then
-			local fontPath = makePathAbsolute(args.path, (context.path:gsub("[^/\\]+$", "")))
+			local fontPath = makePathAbsolute(normalizePath(args.path), (context.path:gsub("[^/]+$", "")))
 
 			local fontStr, err = readFile(false, fontPath)
 			if not fontStr then  return (tokenError(context, (visited.path or startTok), "[%s] Could not read '%s'. (%s)", command, args.path, err))  end
@@ -1803,7 +1803,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 					))
 				end
 
-				local imagePath = makePathAbsolute(imagePath0, (fontPath:gsub("[^/\\]+$", "")))
+				local imagePath = makePathAbsolute(normalizePath(imagePath0), (fontPath:gsub("[^/]+$", "")))
 
 				local imageStr, err = readFile(false, imagePath)
 				if not imageStr then
