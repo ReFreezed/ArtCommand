@@ -1,1 +1,2 @@
+art1
 rect size( (function() return 10 end) () )

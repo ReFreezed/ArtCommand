@@ -1,6 +1,8 @@
+art1
 #
 # "Forest" by ReFreezed, 2022-09-14
 #
+
 Cw = 800
 Ch = 600
 canvas Cw Ch aa4

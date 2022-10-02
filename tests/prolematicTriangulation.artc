@@ -1,3 +1,4 @@
+art1
 #
 # This simple polygon is too much for love.math.triangulate(),
 # which is why fallback code is needed.

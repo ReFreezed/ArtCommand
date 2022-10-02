@@ -1,3 +1,5 @@
+art1
+
 setbuf"theone" size1
 push
 	# Error because the existing buffer is in the stack and cannot

@@ -1,3 +1,5 @@
+art1
+
 # Parsing tests.
 setFoo value"a\'b\"c\nw\\e"; setFoo +5,Foo 'd
 setFoo (1 --[[)]] + (false and ")))\n"..[[)\]] or 0) - --[=[((]=] 1)

@@ -592,9 +592,8 @@ local function parseExpression(context, pos)
 	return s:sub(startPos, i2), pos
 end
 
-local function tokenize(context)
+local function tokenize(context, pos)
 	local s       = context.source
-	local pos     = 1
 	local tokens  = {}
 	local lastTok = nil
 	local gotName = false
@@ -1010,7 +1009,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 
 	local path = makePathAbsolute(normalizePath(pathIdent), (context.path:gsub("[^/]+$", "")))
 
-	if pathIdent:find"%.[Aa][Rr][Tt][Cc]$" then -- .artc file.
+	if pathIdent:find"%.[Aa][Rr][Tt][Cc]$" then -- .artc file.  @Incomplete: Look at the file signature instead.
 		local startRecursion = (recursionsAllowed >= 1 and not artFileRecursionAllowed[path])
 
 		if
@@ -2759,7 +2758,13 @@ function _G.loadArtFile(path, isLocal)
 	if not s then  print("Error: "..err) ; return nil  end
 	context.source = s
 
-	local tokens = tokenize(context)
+	local version, pos = s:match"^art(%d+)\n()"
+	if not version then  print("Error: Invalid file signature.") ; return nil  end
+	version = tonumber(version)
+
+	if version ~= 1 then  printf("Error: Unsupported file version '%d'.", version) ; return nil  end
+
+	local tokens = tokenize(context, pos)
 	if not tokens then  return nil  end
 
 	for command, commandInfo in pairs(COMMANDS) do

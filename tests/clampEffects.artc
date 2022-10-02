@@ -1,9 +1,11 @@
+art1
 #
 # Work canvases should not work outside the bounds of the
 # active buffer. The blur effects below should thus not
 # consider the (transparent) pixels outside the bounds,
 # and the whole area should stay opaque.
 #
+
 canvas 110 60
 backdrop 1 0 1
 
