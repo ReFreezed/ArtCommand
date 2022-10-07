@@ -66,7 +66,7 @@ setbuf"land"; color
 	circle .25*CanvasW HorizonY 200 250 kx-.5
 	circle .74*CanvasW HorizonY 100 160 kx.3
 	circle .95*CanvasW HorizonY 200 220 kx-.4
-	blur xy400; thres+alpha
+	blur xy40; thres+alpha
 
 	Ranges = {}
 	add Ranges {X1=.100, X2=.160, Y1=.150, Y2=.120, Dist=.006, Bend=0.50}
@@ -80,7 +80,7 @@ setbuf"land"; color
 	add Ranges {X1=.800, X2=1.00, Y1=.310, Y2=.145, Dist=.006, Bend=0.70}
 	TreeLines Ranges .6
 
-	blur xy6 #focus
+	blur xy5 #focus
 setbuf
 # color; buf"land"; stop #debug
 
@@ -97,7 +97,7 @@ setbuf"land"; color
 	circle .9*CanvasW HorizonY 120 50
 	circle 1.*CanvasW HorizonY 150 150 kx-.5
 	rect 0 CanvasH CanvasW HorizonY-CanvasH
-	blur xy1000; thres+alpha
+	blur xy150; thres+alpha
 
 	Ranges = {}
 	add Ranges {X1=.000, X2=.290, Y1=.090, Y2=.340, Dist=.01, Bend=1.45}
@@ -544,7 +544,7 @@ setbuf"soft"
 	brightness 1.1
 	contrast 1.5
 	saturation .8
-	blur xy20
+	blur xy8
 setbuf
 # color; buf"soft"; stop #debug
 

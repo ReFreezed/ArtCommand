@@ -353,7 +353,7 @@ buf"fx"
 setbuf"fx"
 	grey0; rect 440    390+1*50    40 40
 	grey1; rect 440+10 390+1*50+10 20 20
-	blur xy30
+	blur xy10
 buf"fx"
 
 # Effects: color modifications.
@@ -413,7 +413,7 @@ maskFalse
 # Generator: clouds.
 setbuf+mask; color
 	circle 640 240 40 30 anchor0
-	blur xy100
+	blur xy30
 mask
 	color
 	clouds scale.333

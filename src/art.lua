@@ -1700,7 +1700,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			context.buffers[bufName]
 			and context.buffers[bufName]:getWidth () == iw
 			and context.buffers[bufName]:getHeight() == ih
-			and context.buffers[bufName]:getMSAA  () == msaa
+			and context.buffers[bufName]:getMSAA  () == msaa^2
 			and context.buffers[bufName]:getFormat() == canvasFormat
 		) then
 			if iw > context.canvasWidth or ih > context.canvasHeight then -- @Cleanup: Validate size in getOrLoadImage().
@@ -1892,7 +1892,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local bufName      = (args.mask and not visited.name) and "mask"  or args.name
 		local iw           = visited.w                        and args.w  or (context.buffers[args.template] or context.art.canvas):getWidth ()
 		local ih           = visited.h                        and args.h  or (context.buffers[args.template] or context.art.canvas):getHeight()
-		local msaa         = visited.aa                       and args.aa or (context.buffers[args.template] or context.art.canvas):getMSAA  ()
+		local msaa         = visited.aa                       and args.aa or (context.buffers[args.template] or context.art.canvas):getMSAA  ()^.5
 		local canvasFormat = args.mask                        and "r16"   or "rgba16"
 		local texture
 
@@ -1913,7 +1913,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				context.buffers[bufName]
 				and context.buffers[bufName]:getWidth () == iw
 				and context.buffers[bufName]:getHeight() == ih
-				and context.buffers[bufName]:getMSAA  () == msaa
+				and context.buffers[bufName]:getMSAA  () == msaa^2
 				and context.buffers[bufName]:getFormat() == canvasFormat
 			then
 				gfxStateSetCanvas(context, context.buffers[bufName])
@@ -2244,7 +2244,10 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			end
 		elseif texture == context.gfxState.canvas then
 			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
-			-- LG.setCanvas(nil) ; texture:newImageData():encode("png", "buffer.png"):release() -- DEBUG
+		end
+
+		if args.debug then
+			LG.setCanvas(nil) ; texture:newImageData():encode("png", "buffer.png"):release() ; print("Saved buffer.png") -- DEBUG
 		end
 
 		local iw,ih = texture:getDimensions()
@@ -2482,21 +2485,15 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "blur" then
 		applyEffect(context, A.shaders.fxBlurGaussian, function(context, canvasRead, canvasWrite)
-			local BLUR_SIZE  = 13 -- 5|9|13 (See fxBlurGaussian.gl)
-			local BLUR_REACH = ((BLUR_SIZE==5 and 2.5) or (BLUR_SIZE==13 and 3.5) or 3) / BLUR_SIZE -- Magic inaccurate numbers... @Cleanup
+			shaderSend    (A.shaders.fxBlurGaussian, "radius"   , args.x)
+			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 1,0)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
 
-			-- @Incomplete: These loops are probably not exactly correct. I think we wanna
-			-- double the radius each iteration (and iterate fewer times).
-			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", BLUR_REACH,0)
-			for _ = 1, math.clamp(args.x, 0, 1000) do
-				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
-				canvasRead, canvasWrite = canvasWrite, canvasRead
-			end
-			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,BLUR_REACH)
-			for _ = 1, math.clamp(args.y, 0, 1000) do
-				LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
-				canvasRead, canvasWrite = canvasWrite, canvasRead
-			end
+			shaderSend    (A.shaders.fxBlurGaussian, "radius"   , args.y)
+			shaderSendVec2(A.shaders.fxBlurGaussian, "direction", 0,1)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
 
 			return canvasRead
 		end)
@@ -2921,9 +2918,9 @@ function _G.loadArtFile(path, isLocal)
 	vars.imageh  = {token=dummyTok, value=function(path)  assertArg(1, path, "string") ; return context.images[path] and context.images[path]:getHeight() or errorf(2, "No image '%s' loaded.", path)  end}
 
 	vars.bufwh = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; if not context.buffers[name] then errorf(2, "No buffer '%s'.", name) end ; local w, h = context.buffers[name]:getDimensions() ; return {W=w, H=h}  end}
-	vars.bufw  = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getWidth () or errorf(2, "No buffer '%s'.", name)  end}
-	vars.bufh  = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getHeight() or errorf(2, "No buffer '%s'.", name)  end}
-	vars.bufaa = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getMSAA()   or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufw  = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getWidth ()    or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufh  = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getHeight()    or errorf(2, "No buffer '%s'.", name)  end}
+	vars.bufaa = {token=dummyTok, value=function(name)  assertArg(1, name, "string") ; return context.buffers[name] and context.buffers[name]:getMSAA  ()^.5 or errorf(2, "No buffer '%s'.", name)  end}
 
 	local entry = ScopeStackEntry()
 	table.insert(context.scopeStack, entry)

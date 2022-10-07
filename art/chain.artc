@@ -43,6 +43,5 @@ for Pass 1 2
 end
 
 setbuf"light" -clear
-	color a.2
-	blur xy40
-buf"light"
+	blur xy40/3
+color a.2; buf"light"

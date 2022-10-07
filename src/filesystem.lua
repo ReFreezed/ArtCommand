@@ -287,8 +287,11 @@ function _G.normalizePath(path)
 	return (path:gsub("\\", "/"))
 end
 
+-- makePathAbsolute( path, baseDirPrefix=cwd.."/" )
 function _G.makePathAbsolute(path, baseDirPrefix)
-	return (path:find"^~?/" or path:find"^%a:") and path or baseDirPrefix..path
+	return (path:find"^~?/" or path:find"^%a:")
+	   and path
+	   or  (baseDirPrefix or getCwd():gsub("/$", "").."/") .. path
 end
 
 

@@ -397,8 +397,12 @@ function love.load(args, rawArgs)
 	A.images.checker:setWrap("repeat")
 	A.quads.checker = LG.newQuad(0,0, 8,8, A.images.checker:getDimensions())
 
-	thePathIn = normalizePath(thePathIn)
 	initFilesystem()
+
+	thePathIn = normalizePath(thePathIn)
+	if not thePathIsTest then
+		thePathIn = makePathAbsolute(thePathIn, nil)
+	end
 
 	if guiMode then
 		love.keyboard.setKeyRepeat(true)
@@ -606,11 +610,9 @@ function love.keypressed(key, scancode, isRepeat)
 		if isRepeat      then  return  end
 		if thePathIsTest then  return  end
 
-		local currentPath          = makePathAbsolute(thePathIn, (thePathIn:gsub("[^/]+$", "")))
-		local dir, currentFilename = currentPath:match"^(.+)/([^/]+)$"
-
+		local dir, currentFilename = thePathIn:match"^(.+)/([^/]+)$"
 		if not dir then
-			setStatus("Failed parsing current path: %s", currentPath)
+			setStatus("Failed parsing current path: %s", thePathIn)
 			return
 		end
 
