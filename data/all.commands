@@ -122,6 +122,8 @@ tint     r=0 g=0 b=0 a=1  rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
 remap  r="r" g="g" b="b" a="a"  rgba=r&g&b&a rga=r&g&a rba=r&b&a gba=g&b&a ra=r&a ga=g&a ba=b&a rgb=r&g&b rg=r&g rb=r&b gb=g&b
 
+displace  mode="height"  buf=""  strength=1
+
 #
 # Generators.
 #

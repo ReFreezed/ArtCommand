@@ -540,3 +540,22 @@ quad"forest" x10  y600 +filter  0  0   80 0  80  50  0  80
 quad"forest" x10  y680 +filter  30 0   70 0  100 50  0  50
 quad"forest" x100 y600 +filter  0  50  0  0  70  80  20 80
 quad"forest" x120 y690 +filter  0  0   50 0  50  40  0  40   .4 0  .5 0  .5 .4  .4 .4
+
+# Effect: displacement.
+setbuf"displace"
+	fill rgb0; grad,,,,,,a0 +radial +smooth; circle CanvasW/2 CanvasH/2 r.3*CanvasH
+	# color; clouds; contrast.5
+setbuf
+# color; buf"displace"
+# displace"height" "displace" 500
+
+setbuf"displace"
+	fill .5 .5 1
+	grey0; circle CanvasW/2 CanvasH/2 r.3*CanvasH
+	blend"add"
+	grad 1 0,0 0         ; circle CanvasW/2 CanvasH/2 r.3*CanvasH
+	grad 0 1,0 0 rot90deg; circle CanvasW/2 CanvasH/2 r.3*CanvasH
+	blend"alpha"
+setbuf
+# color; buf"displace"
+# displace"bump" "displace" 30

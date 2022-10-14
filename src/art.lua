@@ -2589,6 +2589,34 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			return canvasRead
 		end)
 
+	elseif command == "displace" then
+		if not (args.mode == "height" or args.mode == "bump") then
+			return (tokenError(context, (visited.mode or startTok), "[%s] Bad draw mode '%s'. Must be 'height' or 'bump'.", command, args.mode))
+		end
+
+		ensureCanvasAndInitted(context)
+
+		local bufName = args.buf
+		local texture = (bufName == "") and context.art.canvas or context.buffers[bufName]
+		if not texture then  return (tokenError(context, (visited.buf or startTok), "[%s] No buffer '%s'.", command, bufName))  end
+
+		if bufName == "" then
+			if texture == context.gfxState.canvas then
+				return (tokenError(context, (visited.buf or startTok), "[%s] Cannot draw canvas to itself.", command, bufName))
+			end
+		elseif texture == context.gfxState.canvas then
+			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
+		end
+
+		applyEffect(context, A.shaders.fxDisplace, function(context, canvasRead, canvasWrite)
+			shaderSend(A.shaders.fxDisplace, "mode"    , (args.mode == "height" and 0 or 1))
+			shaderSend(A.shaders.fxDisplace, "map"     , texture) -- Hopefully the map has the same dimensions as the canvas.
+			shaderSend(A.shaders.fxDisplace, "strength", args.strength)
+			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
+			canvasRead, canvasWrite = canvasWrite, canvasRead
+			return canvasRead
+		end)
+
 	--
 	-- Generators.
 	--

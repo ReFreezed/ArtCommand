@@ -1,0 +1,40 @@
+/***************************************************************
+*
+*  Effect: Displace
+*
+*---------------------------------------------------------------
+*
+*  Art Command
+*  by Marcus 'ReFreezed' Thunström
+*
+***************************************************************/
+
+uniform int   mode; // 0=height, 1=bump
+uniform Image map;
+uniform float strength;
+
+vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
+	// Height map.
+	if (mode == 0) {
+		vec3 displacementR = Texel(map, texUv+vec2(+1, 0)/love_ScreenSize.xy).rgb; // Note: Less alpha means smaller value.
+		vec3 displacementD = Texel(map, texUv+vec2( 0,+1)/love_ScreenSize.xy).rgb;
+		vec3 displacementL = Texel(map, texUv+vec2(-1, 0)/love_ScreenSize.xy).rgb;
+		vec3 displacementU = Texel(map, texUv+vec2( 0,-1)/love_ScreenSize.xy).rgb;
+
+		vec2 displacement = vec2(
+			(displacementL.r+displacementL.g+displacementL.b) - (displacementR.r+displacementR.g+displacementR.b),
+			(displacementU.r+displacementU.g+displacementU.b) - (displacementD.r+displacementD.g+displacementD.b)
+		) / 3;
+
+		texUv -= strength * displacement / love_ScreenSize.xy;
+
+	// Bump map.
+	} else if (mode == 1) {
+		// Note that we don't use .5 as the middle point (no displacement) because images generally use bytes for pixels.
+		vec4 displacement  = Texel(map, texUv);
+		displacement.rg    = mix(vec2(127/255.), displacement.rg, displacement.a);
+		texUv             += strength * (displacement.rg*2-1 + (1/255.)) / love_ScreenSize.xy;
+	}
+
+	return Texel(tex, texUv);
+}
