@@ -10,6 +10,7 @@
 --==============================================================
 
 	fixImageDataForSaving, normalizeImageAndMultiplyAlpha
+	maybeApplySrgb
 	newShader
 
 --============================================================]]
@@ -431,6 +432,17 @@ end
 
 
 
+function _G.maybeApplySrgb(r,g,b, srgb, toLinear)
+	if srgb then
+		r = r ^ (toLinear and 2.2 or 1/2.2)
+		g = g ^ (toLinear and 2.2 or 1/2.2)
+		b = b ^ (toLinear and 2.2 or 1/2.2)
+	end
+	return r,g,b
+end
+
+
+
 -- imageData8 = fixImageDataForSaving( imageData16 )
 -- Note: imageData16 is released.
 function _G.fixImageDataForSaving(imageData16)
@@ -448,9 +460,9 @@ function _G.fixImageDataForSaving(imageData16)
 			anyTransparent = true
 		else
 			anyVisible    = true
-			pointer8[i  ] = (pointer16[i  ] * 255) / pointer16[i+3]
-			pointer8[i+1] = (pointer16[i+1] * 255) / pointer16[i+3]
-			pointer8[i+2] = (pointer16[i+2] * 255) / pointer16[i+3]
+			pointer8[i  ] = pointer16[i  ] / pointer16[i+3] * 255
+			pointer8[i+1] = pointer16[i+1] / pointer16[i+3] * 255
+			pointer8[i+2] = pointer16[i+2] / pointer16[i+3] * 255
 			pointer8[i+3] = pointer16[i+3] / 257
 		end
 	end
@@ -562,14 +574,15 @@ function _G.fixImageDataForSaving(imageData16)
 	return imageData8
 end
 
--- imageData16 = normalizeImageAndMultiplyAlpha( imageData )
+-- imageData16 = normalizeImageAndMultiplyAlpha( imageData, srgb )
 -- Note: imageData is released.
-function _G.normalizeImageAndMultiplyAlpha(imageData)
+function _G.normalizeImageAndMultiplyAlpha(imageData, srgb)
 	local iw,ih       = imageData:getDimensions()
 	local imageData16 = love.image.newImageData(iw,ih, "rgba16")
 
 	imageData16:mapPixel(function(x,y, r,g,b,a) -- @Speed
 		r,g,b,a = imageData:getPixel(x,y)
+		r,g,b   = maybeApplySrgb(r,g,b, srgb, true)
 		return r*a, g*a, b*a, a
 	end)
 

@@ -15,6 +15,7 @@
 
 #include "_colorTexture"
 #include "_mask"
+#include "_srgb"
 #include "_utils"
 
 uniform bool clouds;
@@ -59,6 +60,8 @@ vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
 	} else {
 		sample = vec4(v*gradientColor.rgb, gradientColor.a);
 	}
+
+	if (srgbMode)  sample.rgb = pow(sample.rgb, vec3(2.2));
 
 	return remapChannels(applyMaskStuff(sample, screenPos));
 }

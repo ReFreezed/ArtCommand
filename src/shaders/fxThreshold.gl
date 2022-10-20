@@ -9,6 +9,7 @@
 *
 ***************************************************************/
 
+#include "_srgb"
 #include "_colorSpaces"
 
 uniform float threshold;
@@ -17,12 +18,14 @@ uniform bool  alphaMode;
 #define P z
 
 vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
-	vec4 color  = Texel(tex, texUv);
-	color.rgb  /= color.a;
+	vec4 sample  = Texel(tex, texUv);
+	sample.rgb  /= sample.a;
+	if (srgbMode)  sample.rgb = pow(sample.rgb, vec3(1/2.2));
 
-	if (alphaMode)  color.a   =      (color.a            < threshold) ? 0 : 1 ;
-	else            color.rgb = vec3((toHsp(color.rgb).P < threshold) ? 0 : 1);
+	if (alphaMode)  sample.a   =      (sample.a            < threshold) ? 0 : 1 ;
+	else            sample.rgb = vec3((toHsp(sample.rgb).P < threshold) ? 0 : 1);
 
-	color.rgb *= color.a;
-	return color;
+	if (srgbMode)  sample.rgb = pow(sample.rgb, vec3(2.2));
+	sample.rgb *= sample.a;
+	return sample;
 }

@@ -46,6 +46,7 @@ zoom      zoom=1 filter=true  # There is also autoZoom!
 
 # Init.
 canvas  w=0(DEFAULT_ART_SIZE) h=0(DEFAULT_ART_SIZE)  aa=1  size=w&h
+srgb    srgb=true
 
 #
 # State.

@@ -87,6 +87,7 @@ local SCOPE_ENTER_COMMANDS = {
 
 local function Art()return{
 	canvas = nil,
+	srgb   = false,
 
 	backdrop = {0,0,0,0},
 
@@ -127,7 +128,7 @@ local function Context()return{
 	-- Settings.
 	canvasWidth  = DEFAULT_ART_SIZE,
 	canvasHeight = DEFAULT_ART_SIZE,
-	canvasMsaa   = 1,
+	canvasMsaa1D = 1,
 }end
 
 local function FunctionInfo()return{
@@ -313,13 +314,19 @@ end
 
 
 
--- applyCanvas( context, shader=main )
-local function applyCanvas(context, shader)
+local function applyCanvas(context)
+	LG.setCanvas(context.gfxState.canvas)
+end
+
+-- applyShader( context, shader=main )
+-- Note: A canvas must be set before calling this!
+local function applyShader(context, shader)
 	shader = shader or A.shaders.main
 
 	local gfxState     = context.gfxState
-	local makeMaskMode = (gfxState.canvas:getFormat() == "r16")
+	local makeMaskMode = (LG.getCanvas():getFormat() == "r16")
 
+	shaderSend(shader, "srgbMode"    , context.art.srgb)
 	shaderSend(shader, "makeMaskMode", makeMaskMode)
 
 	if gfxState.useMask == "" or makeMaskMode then
@@ -332,13 +339,12 @@ local function applyCanvas(context, shader)
 		shaderSend    (shader, "maskAlphaMode", gfxState.maskAlphaMode)
 	end
 
-	LG.setCanvas(gfxState.canvas)
 	LG.setShader(shader.shader)
 end
 
 -- applyColor( context, shader=main, shapeToDraw, relativeShapeWidth,relativeShapeHeight )
 -- shapeToDraw = "rectangle" | "circle"
-local function applyColor(context, shader, shape, w,h)
+local function applyColor(context, shader, shape, w,h) -- @Cleanup: Remove 'shader' in favor of LG.getShader() or similar.
 	shader = shader or A.shaders.main
 	w      = math.abs(w)
 	h      = math.abs(h)
@@ -474,7 +480,7 @@ local function ensureCanvasAndInitted(context)
 
 	local settingsCanvas = {
 		format = "rgba16",
-		msaa   = (context.canvasMsaa > 1 and context.canvasMsaa^2 or nil),
+		msaa   = (context.canvasMsaa1D > 1 and context.canvasMsaa1D^2 or nil),
 	}
 	context.art.canvas   = LG.newCanvas(context.canvasWidth,context.canvasHeight, settingsCanvas)
 	context.workCanvas1  = LG.newCanvas(context.canvasWidth,context.canvasHeight, {format="rgba16"}) -- No MSAA!
@@ -986,12 +992,12 @@ local function applyEffect(context, shader, cb)
 
 	if shader then
 		shaderSendVec2(shader, "texelClamp", (w-.5)/cw,(h-.5)/ch)
-		LG.setShader(shader.shader)
+		applyShader(context, shader)
 	end
 
 	local canvasOut = cb(context, context.workCanvas1, context.workCanvas2)
 
-	LG.setCanvas(context.gfxState.canvas)
+	applyCanvas(context)
 	LG.setShader(nil)
 	LG.setColor(1, 1, 1)
 	canvasOut:setFilter("nearest")
@@ -999,6 +1005,46 @@ local function applyEffect(context, shader, cb)
 	canvasOut:setFilter("linear")
 	LG.pop()
 	LG.setScissor()
+end
+
+-- Note: canvasSrgb is released.
+local function convertToLinear(canvasSrgb)
+	local cw,ch        = canvasSrgb:getDimensions()
+	local canvasLinear = LG.newCanvas(cw,ch, {format=canvasSrgb:getFormat()})
+
+	pushTransformAndReset("replace")
+	LG.setCanvas(canvasLinear)
+	LG.setShader(A.shaders.toLinear.shader)
+
+	canvasSrgb:setFilter("nearest")
+	LG.draw(canvasSrgb)
+
+	LG.setCanvas(nil)
+	LG.setShader(nil)
+	LG.pop()
+
+	canvasSrgb:release()
+	return canvasLinear
+end
+
+-- Note: canvasLinear is released.
+local function convertToSrgb(canvasLinear)
+	local cw,ch      = canvasLinear:getDimensions()
+	local canvasSrgb = LG.newCanvas(cw,ch, {format=canvasLinear:getFormat()})
+
+	pushTransformAndReset("replace")
+	LG.setCanvas(canvasSrgb)
+	LG.setShader(A.shaders.toSrgb.shader)
+
+	canvasLinear:setFilter("nearest")
+	LG.draw(canvasLinear)
+
+	LG.setCanvas(nil)
+	LG.setShader(nil)
+	LG.pop()
+
+	canvasLinear:release()
+	return canvasSrgb
 end
 
 -- image|canvas = getOrLoadImage( context, tokenForError, pathIdentifier, recursionsAllowed )
@@ -1032,6 +1078,10 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 		if not art then  return (tokenError(context, tokForError, "Could not load .artc image."))  end
 		imageOrCanvas = art.canvas
 
+		if context.art.srgb then
+			imageOrCanvas = convertToLinear(imageOrCanvas)
+		end
+
 		assert(popGfxState(context))
 
 	else
@@ -1041,7 +1091,7 @@ local function getOrLoadImage(context, tokForError, pathIdent, recursionsAllowed
 		local fileData           = LF.newFileData(s, path)
 		local ok, imageDataOrErr = pcall(love.image.newImageData, fileData) ; fileData:release()
 		if not ok then  return (tokenError(context, tokForError, "Could not load '%s'. (%s)", pathIdent, imageDataOrErr))  end
-		local imageData = normalizeImageAndMultiplyAlpha(imageDataOrErr)
+		local imageData = normalizeImageAndMultiplyAlpha(imageDataOrErr, context.art.srgb)
 		imageOrCanvas   = LG.newImage(imageData) ; imageData:release()
 	end
 
@@ -1507,7 +1557,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "backdrop" then
-		context.art.backdrop[1] = args.r
+		context.art.backdrop[1] = args.r -- Ignore sRGB flag.
 		context.art.backdrop[2] = args.g
 		context.art.backdrop[3] = args.b
 		context.art.backdrop[4] = args.a
@@ -1522,14 +1572,21 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "canvas" then
-		if context.art.canvas then  return (tokenError(context, startTok, "[%s] Cannot use 'canvas' after drawing commands.", command))  end
+		if context.art.canvas then  return (tokenError(context, startTok, "[%s] Cannot use '%s' after drawing commands.", command, command))  end
 
 		context.canvasWidth  = (args.w >= 1) and args.w or DEFAULT_ART_SIZE
 		context.canvasHeight = (args.h >= 1) and args.h or DEFAULT_ART_SIZE
-		context.canvasMsaa   = args.aa
+		context.canvasMsaa1D = args.aa
 
 		context.readonly.CanvasW.value = context.canvasWidth
 		context.readonly.CanvasH.value = context.canvasHeight
+
+	elseif command == "srgb" then
+		if context.art.canvas then  return (tokenError(context, startTok, "[%s] Cannot use '%s' after drawing commands.", command, command))  end
+
+		context.art.srgb = args.srgb
+
+		context.readonly.Srgb.value = context.art.srgb
 
 	--
 	-- State.
@@ -1561,8 +1618,13 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local gfxState     = context.gfxState
 		gfxState.colorMode = "flatcolor"
 
-		if command == "color" then  updateVec4(gfxState.flatColor, args.r,args.g,args.b,args.a)
-		else                        updateVec4(gfxState.flatColor, args.grey,args.grey,args.grey,args.a)  end
+		if command == "color" then
+			local r,g,b = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+			updateVec4(gfxState.flatColor, r,g,b,args.a)
+		else
+			local grey = maybeApplySrgb(args.grey,0,0, context.art.srgb, true)
+			updateVec4(gfxState.flatColor, grey,grey,grey,args.a)
+		end
 
 		if gfxState.colorTexture then
 			-- @Memory: Release image. (Consider gfxStack!)
@@ -1573,7 +1635,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	elseif command == "grad" then
 		ensureCanvasAndInitted(context)
 
-		local gfxState               = context.gfxState
+		local gfxState = context.gfxState
+		local r,g,b    = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+
 		gfxState.colorMode           = "gradient"
 		gfxState.colorTextureRadial  = args.radial
 		gfxState.colorTextureSmooth  = args.smooth
@@ -1592,9 +1656,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if args.clear and not isSequence then
 			table.clear(gfxState.gradient)
 		end
-		table.insert(gfxState.gradient, args.r)
-		table.insert(gfxState.gradient, args.g)
-		table.insert(gfxState.gradient, args.b)
+		table.insert(gfxState.gradient, r)
+		table.insert(gfxState.gradient, g)
+		table.insert(gfxState.gradient, b)
 		table.insert(gfxState.gradient, args.a)
 
 	----------------------------------------------------------------
@@ -1624,6 +1688,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "scalecolor" then
+		ensureCanvasAndInitted(context)
+
 		local gfxState = context.gfxState
 
 		gfxState.flatColor[1] = (gfxState.flatColor[1] - args.base) * args.r + args.base
@@ -1639,31 +1705,37 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 	elseif command == "addcolor" then
-		local gfxState = context.gfxState
+		ensureCanvasAndInitted(context)
 
-		gfxState.flatColor[1] = gfxState.flatColor[1] + args.r
-		gfxState.flatColor[2] = gfxState.flatColor[2] + args.g
-		gfxState.flatColor[3] = gfxState.flatColor[3] + args.b
+		local gfxState = context.gfxState
+		local r,g,b    = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+
+		gfxState.flatColor[1] = gfxState.flatColor[1] + r
+		gfxState.flatColor[2] = gfxState.flatColor[2] + g
+		gfxState.flatColor[3] = gfxState.flatColor[3] + b
 		gfxState.flatColor[4] = gfxState.flatColor[4] + args.a
 
 		for i = 1, #gfxState.gradient, 4 do
-			gfxState.gradient[i  ] = gfxState.gradient[i  ] + args.r
-			gfxState.gradient[i+1] = gfxState.gradient[i+1] + args.g
-			gfxState.gradient[i+2] = gfxState.gradient[i+2] + args.b
+			gfxState.gradient[i  ] = gfxState.gradient[i  ] + r
+			gfxState.gradient[i+1] = gfxState.gradient[i+1] + g
+			gfxState.gradient[i+2] = gfxState.gradient[i+2] + b
 			gfxState.gradient[i+3] = gfxState.gradient[i+3] + args.a
 		end
 
 	elseif command == "overlaycolor" then
-		local gfxState = context.gfxState
+		ensureCanvasAndInitted(context)
 
-		gfxState.flatColor[1] = math.lerp(gfxState.flatColor[1], args.r, args.a)
-		gfxState.flatColor[2] = math.lerp(gfxState.flatColor[2], args.g, args.a)
-		gfxState.flatColor[3] = math.lerp(gfxState.flatColor[3], args.b, args.a)
+		local gfxState = context.gfxState
+		local r,g,b    = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+
+		gfxState.flatColor[1] = math.lerp(gfxState.flatColor[1], r, args.a)
+		gfxState.flatColor[2] = math.lerp(gfxState.flatColor[2], g, args.a)
+		gfxState.flatColor[3] = math.lerp(gfxState.flatColor[3], b, args.a)
 
 		for i = 1, #gfxState.gradient, 4 do
-			gfxState.gradient[i  ] = math.lerp(gfxState.gradient[i  ], args.r, args.a)
-			gfxState.gradient[i+1] = math.lerp(gfxState.gradient[i+1], args.g, args.a)
-			gfxState.gradient[i+2] = math.lerp(gfxState.gradient[i+2], args.b, args.a)
+			gfxState.gradient[i  ] = math.lerp(gfxState.gradient[i  ], r, args.a)
+			gfxState.gradient[i+1] = math.lerp(gfxState.gradient[i+1], g, args.a)
+			gfxState.gradient[i+2] = math.lerp(gfxState.gradient[i+2], b, args.a)
 		end
 
 	----------------------------------------------------------------
@@ -1677,6 +1749,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				command, args.mode
 			))
 		end
+
+		ensureCanvasAndInitted(context) -- Not strictly needed for this command.
+
 		context.gfxState.blendMode = args.mode
 
 	----------------------------------------------------------------
@@ -1692,7 +1767,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		if bufName == "" then  return (tokenError(context, (visited.buf or startTok), "[%s] Missing buffer name.", command))  end
 
 		local iw,ih        = texture:getDimensions()
-		local msaa         = visited.aa and args.aa or context.canvasMsaa
+		local msaa1D       = visited.aa and args.aa or context.canvasMsaa1D
 		local canvasFormat = "rgba16"
 
 		-- :ReuseOrCreateBuffer
@@ -1700,7 +1775,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			context.buffers[bufName]
 			and context.buffers[bufName]:getWidth () == iw
 			and context.buffers[bufName]:getHeight() == ih
-			and context.buffers[bufName]:getMSAA  () == msaa^2
+			and context.buffers[bufName]:getMSAA  () == msaa1D^2
 			and context.buffers[bufName]:getFormat() == canvasFormat
 		) then
 			if iw > context.canvasWidth or ih > context.canvasHeight then -- @Cleanup: Validate size in getOrLoadImage().
@@ -1719,7 +1794,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				context.buffers[bufName]:release()
 			end
 
-			context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=(msaa > 1 and msaa^2 or nil)})
+			context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=(msaa1D > 1 and msaa1D^2 or nil)})
 			gfxStateSetCanvas(context, context.buffers[bufName])
 		end
 
@@ -1732,6 +1807,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	----------------------------------------------------------------
 	elseif command == "font" then
+		ensureCanvasAndInitted(context) -- Not strictly needed for this command.
+
 		local fonts = context.fontsBySize[args.path] or {}
 		local font  = fonts[args.size]
 
@@ -1760,6 +1837,9 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	----------------------------------------------------------------
 	elseif command == "imagefont" then
 		if args.path == "" then  return (tokenError(context, (visited.path or startTok), "[%s] Missing path.", command))  end
+
+		ensureCanvasAndInitted(context) -- Not strictly needed for this command.
+
 		local font = context.fontsByPath[args.path]
 
 		if not font then
@@ -1892,7 +1972,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local bufName      = (args.mask and not visited.name) and "mask"  or args.name
 		local iw           = visited.w                        and args.w  or (context.buffers[args.template] or context.art.canvas):getWidth ()
 		local ih           = visited.h                        and args.h  or (context.buffers[args.template] or context.art.canvas):getHeight()
-		local msaa         = visited.aa                       and args.aa or (context.buffers[args.template] or context.art.canvas):getMSAA  ()^.5
+		local msaa1D       = visited.aa                       and args.aa or (context.buffers[args.template] or context.art.canvas):getMSAA  ()^.5
 		local canvasFormat = args.mask                        and "r16"   or "rgba16"
 		local texture
 
@@ -1913,7 +1993,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 				context.buffers[bufName]
 				and context.buffers[bufName]:getWidth () == iw
 				and context.buffers[bufName]:getHeight() == ih
-				and context.buffers[bufName]:getMSAA  () == msaa^2
+				and context.buffers[bufName]:getMSAA  () == msaa1D^2
 				and context.buffers[bufName]:getFormat() == canvasFormat
 			then
 				gfxStateSetCanvas(context, context.buffers[bufName])
@@ -1944,7 +2024,7 @@ local function runCommand(context, tokens, tokPos, commandTok)
 					context.buffers[bufName]:release()
 				end
 
-				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=(msaa > 1 and msaa^2 or nil)})
+				context.buffers[bufName] = LG.newCanvas(iw,ih, {format=canvasFormat, msaa=(msaa1D > 1 and msaa1D^2 or nil)})
 				gfxStateSetCanvas(context, context.buffers[bufName])
 
 				if args.mask then
@@ -1981,6 +2061,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 	--
 	----------------------------------------------------------------
 	elseif command == "point" or command == "relpoint" then
+		-- ensureCanvasAndInitted(context) -- Not needed for this command.
+
 		if args.clear and not isSequence then
 			table.clear(context.points)
 		end
@@ -2003,22 +2085,24 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		local gfxState = context.gfxState
 		local cw,ch    = gfxState.canvas:getDimensions()
+		local r,g,b    = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
 
 		-- Save minimal state.
 		local colorMode = gfxState.colorMode
 		local color     = {unpack(gfxState.flatColor)}
 
 		gfxState.colorMode = "flatcolor"
-		updateVec4(gfxState.flatColor, args.r,args.g,args.b,args.a)
+		updateVec4(gfxState.flatColor, r,g,b,args.a)
 
 		-- Fill!
 		-- Note: We don't use clear() because of shaders and stuff. This is a drawing operation!
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", cw,ch)
 
 		LG.push()
 		LG.origin()
-		LG.rectangle("fill", -1,-1, cw+2,ch+2) -- Not sure if the bleeding is necessary (if msaa>1).
+		LG.rectangle("fill", -1,-1, cw+2,ch+2) -- Not sure if the bleeding is necessary (if MSAA>1).
 		LG.pop()
 
 		-- Restore state.
@@ -2035,7 +2119,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", args.w+lw,args.h+lw)
 
 		local segs = (
@@ -2077,7 +2162,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "circle", args.rx+.5*lw,args.ry+.5*lw)
 
 		LG.push()
@@ -2129,7 +2215,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", colorW,colorH)
 
 		LG.push()
@@ -2181,7 +2268,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", colorW,colorH)
 
 		LG.push()
@@ -2213,7 +2301,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		font:setFilter(args.filter and "linear" or "nearest")
 		font:setLineHeight(args.lineh)
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", 1,1) -- @Incomplete: Handle gradients for text/glyphs like the other shapes, somehow.
 		LG.setFont(font)
 
@@ -2251,7 +2340,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		end
 
 		local iw,ih = texture:getDimensions()
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", iw,ih)
 		texture:setFilter(args.filter and "linear" or "nearest")
 
@@ -2394,7 +2484,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 		ensureCanvasAndInitted(context)
 
-		applyCanvas(context, shaderOrErr)
+		applyCanvas(context)
+		applyShader(context, shaderOrErr) -- @Cleanup: Table constructor.
 		applyColor(context, shaderOrErr, "circle", 1,1) -- @Incomplete: Handle gradients better for isolines.
 		LG.push()
 
@@ -2445,7 +2536,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 			gfxStateSetCanvas(context, nil) -- :SetMainBuffer
 		end
 
-		applyCanvas(context, A.shaders.quad)
+		applyCanvas(context)
+		applyShader(context, A.shaders.quad)
 		applyColor(context, A.shaders.quad, "rectangle", colorW,colorH)
 		texture:setFilter(args.filter and "linear" or "nearest")
 		texture:setWrap("clamp")
@@ -2533,7 +2625,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "replace" then
 		applyEffect(context, A.shaders.fxReplace, function(context, canvasRead, canvasWrite)
-			shaderSendVec3(A.shaders.fxReplace, "target", args.r,args.g,args.b)
+			local r,g,b = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+			shaderSendVec3(A.shaders.fxReplace, "target", r,g,b)
 			shaderSendVec2(A.shaders.fxReplace, "params", args.reach, args.ramp)
 			applyColor(context, A.shaders.fxReplace, "rectangle", context.gfxState.canvas:getDimensions())
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
@@ -2562,7 +2655,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "overlay" then -- Fade pixels toward color.
 		applyEffect(context, A.shaders.fxOverlay, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxOverlay, "params", args.r,args.g,args.b,args.a)
+			local r,g,b = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+			shaderSendVec4(A.shaders.fxOverlay, "params", r,g,b,args.a)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2570,7 +2664,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 	elseif command == "tint" then -- Change hue and saturation, leave brighness.
 		applyEffect(context, A.shaders.fxTint, function(context, canvasRead, canvasWrite)
-			shaderSendVec4(A.shaders.fxTint, "params", args.r,args.g,args.b,args.a)
+			local r,g,b = maybeApplySrgb(args.r,args.g,args.b, context.art.srgb, true)
+			shaderSendVec4(A.shaders.fxTint, "params", r,g,b,args.a)
 			LG.setCanvas(canvasWrite) ; LG.draw(canvasRead)
 			canvasRead, canvasWrite = canvasWrite, canvasRead
 			return canvasRead
@@ -2629,7 +2724,8 @@ local function runCommand(context, tokens, tokPos, commandTok)
 		local cw,ch    = canvas:getDimensions()
 		local iw,ih    = A.images.rectangle:getDimensions()
 
-		applyCanvas(context, A.shaders.generateNoise)
+		applyCanvas(context)
+		applyShader(context, A.shaders.generateNoise)
 		applyColor(context, A.shaders.generateNoise, "rectangle", 1,1)
 
 		local r,g,b,a = unpack(gfxState.flatColor)
@@ -2659,16 +2755,19 @@ local function runCommand(context, tokens, tokPos, commandTok)
 
 			if rng:random() > args.level then  return 0,0,0,0  end
 
-			return r
-			     , math.lerp(r, g, args.color)
-			     , math.lerp(r, b, args.color)
-			     , 1
+			g = math.lerp(r, g, args.color)
+			b = math.lerp(r, b, args.color)
+
+			r,g,b = maybeApplySrgb(r,g,b, context.art.srgb, true)
+
+			return r,g,b,1
 		end)
 
 		local image = LG.newImage(imageData)
 		image:setFilter("nearest")
 
-		applyCanvas(context, nil)
+		applyCanvas(context)
+		applyShader(context, nil)
 		applyColor(context, nil, "rectangle", cw,ch)
 
 		LG.push()
@@ -2843,6 +2942,7 @@ function _G.loadArtFile(path, isLocal)
 	vars.WindowH    = {token=dummyTok, value=LG.getHeight()}
 	vars.CanvasW    = {token=dummyTok, value=context.canvasWidth}
 	vars.CanvasH    = {token=dummyTok, value=context.canvasHeight}
+	vars.Srgb       = {token=dummyTok, value=context.art.srgb}
 	vars.PointCount = {token=dummyTok, value=#context.points}
 
 	-- These functions are just for expressions.  @Incomplete: Argument validation for all functions.
@@ -2973,7 +3073,11 @@ function _G.loadArtFile(path, isLocal)
 	-- Success!
 	cleanup(context, loveGfxStackDepth, true)
 
-	if not context.art.canvas then
+	if context.art.canvas then
+		if context.art.srgb then
+			context.art.canvas = convertToSrgb(context.art.canvas)
+		end
+	else
 		print("Nothing was rendered!") -- Should we call ensureCanvasAndInitted()? Especially if an art file loads another.
 	end
 

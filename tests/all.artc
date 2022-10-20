@@ -30,6 +30,7 @@ end
 
 
 # Settings.
+# srgb
 canvas 940 740 aa4
 backdrop0 .3 0 .5
 # backdrop 40/255 40/255 40/255
@@ -379,12 +380,12 @@ buf"fx"
 # tint 0 .5 0 1   # 50% saturated green. (Between black[000] and green[010].)
 # tint .5 1 .5 1  # 50% saturated green. (Between green[010] and white[111].)
 
-image"forest.png"
-setbuf"forest" "forest.png"
+image"resources/forest.png"
+setbuf"forest" "resources/forest.png"
 	levels .5 1  .25 .75  mid.25
 color; buf"forest" 450 80 rot5deg
 
-setbuf"b&w" "forest.png"
+setbuf"b&w" "resources/forest.png"
 	thres .53
 	levels 0 1 .25 1
 color .95 .9 .8; buf"b&w" 320 60 scale.45 anchor.5 rot-15deg +filter
@@ -434,8 +435,8 @@ push
 	setbuf+mask; color
 		circle r80
 	mask
-		color 1 .6 .2;            pat"forest"     anchor.5 rot-30deg scale.35 ky.2 +filter +mirror
-		color; image"forest.png"; buf"forest.png" anchor.5 rot-30deg scale.35 ky.2 +filter
+		color 1 .6 .2;                      pat"forest"               anchor.5 rot-30deg scale.35 ky.2 +filter +mirror
+		color; image"resources/forest.png"; buf"resources/forest.png" anchor.5 rot-30deg scale.35 ky.2 +filter
 	maskFalse
 pop
 

@@ -1,6 +1,6 @@
 /***************************************************************
 *
-*  Main shader
+*  Linear to sRGB
 *
 *---------------------------------------------------------------
 *
@@ -9,13 +9,10 @@
 *
 ***************************************************************/
 
-#include "_main"
-#include "_srgb"
-
-uniform bool textBlendFix;
-
 vec4 effect(vec4 loveColor, Image tex, vec2 texUv, vec2 screenPos) {
-	vec4 color = Texel(tex, texUv);
-	if (textBlendFix)  color.rgb = vec3(color.a);
-	return applyMainEffect(color, texUv, screenPos, loveColor);
+	vec4 sample  = Texel(tex, texUv);
+	sample.rgb  /= sample.a;
+	sample.rgb   = pow(sample.rgb, vec3(1/2.2));
+	sample.rgb  *= sample.a;
+	return sample;
 }
